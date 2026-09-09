@@ -2,7 +2,9 @@ export default function Home() {
   return (
     <main>
       <h1>Trading AI Platform</h1>
-      <p>AI Signals - Trading Bots - Market Analysis</p>
+      <p>
+        پلتفرم هوشمند تحلیل و معاملات فارکس و کریپتو
+      </p>
     </main>
-  );
+  )
 }
