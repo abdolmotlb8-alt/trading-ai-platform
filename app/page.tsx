@@ -1,6 +1,11 @@
+import Navbar from "@/components/Navbar";
+
 export default function Home() {
   return (
     <main>
+
+      <Navbar />
+
       <section>
         <h1>
           Trading AI Platform
@@ -17,19 +22,32 @@ export default function Home() {
         </h2>
 
         <div>
-          <h3>🤖 AI Analyst</h3>
-          <p>تحلیل هوشمند بازارهای مالی</p>
+          <h3>
+            🤖 AI Analyst
+          </h3>
+          <p>
+            تحلیل هوشمند بازارهای مالی
+          </p>
         </div>
 
         <div>
-          <h3>📊 Trading Signals</h3>
-          <p>سیگنال‌های فارکس، کریپتو و طلا</p>
+          <h3>
+            📊 Trading Signals
+          </h3>
+          <p>
+            سیگنال‌های فارکس، کریپتو و طلا
+          </p>
         </div>
 
         <div>
-          <h3>⚡ Trading Bots</h3>
-          <p>ربات‌های تحلیلگر و معامله‌گر</p>
+          <h3>
+            ⚡ Trading Bots
+          </h3>
+          <p>
+            ربات‌های تحلیلگر و معامله‌گر
+          </p>
         </div>
+
       </section>
 
       <section>
@@ -42,11 +60,6 @@ export default function Home() {
         </p>
       </section>
 
-      <section>
-        <button>
-          شروع کنید
-        </button>
-      </section>
     </main>
-  )
+  );
 }
