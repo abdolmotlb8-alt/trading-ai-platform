@@ -1,45 +1,64 @@
-export default function SupportPage() {
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function SupportPage() {
+
+  const user = await getCurrentUser();
+
+
+  if (!user) {
+
+    return (
+
+      <main>
+
+        <h1>
+          ورود لازم است
+        </h1>
+
+        <p>
+          برای استفاده از پشتیبانی ابتدا وارد حساب شوید.
+        </p>
+
+      </main>
+
+    );
+
+  }
+
+
+
   return (
+
     <main>
+
 
       <h1>
         پشتیبانی کاربران
       </h1>
 
-      <p>
-        سوالات و مشکلات خود را برای تیم پشتیبانی ارسال کنید.
-      </p>
 
 
       <section>
 
         <h2>
-          ارسال پیام جدید
+          ارسال درخواست جدید
         </h2>
 
 
-        <label>
-          موضوع
-        </label>
-
-        <input
-          type="text"
-          placeholder="موضوع پیام"
-        />
-
-
-        <label>
-          پیام شما
-        </label>
-
         <textarea
-          placeholder="متن پیام خود را بنویسید"
+
+          placeholder="پیام خود را بنویسید"
+
         />
+
 
 
         <button>
+
           ارسال پیام
+
         </button>
+
 
       </section>
 
@@ -48,16 +67,37 @@ export default function SupportPage() {
       <section>
 
         <h2>
-          وضعیت تیکت‌ها
+          درخواست‌های من
         </h2>
 
+
         <p>
-          هنوز تیکتی ثبت نشده است.
+          هنوز درخواستی ثبت نشده است.
         </p>
+
 
       </section>
 
 
+
+      <section>
+
+        <h2>
+          راه‌های ارتباطی
+        </h2>
+
+
+        <p>
+          پشتیبانی تلگرام در مرحله بعد اضافه خواهد شد.
+        </p>
+
+
+      </section>
+
+
+
     </main>
+
   );
+
 }
