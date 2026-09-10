@@ -1,68 +1,139 @@
-import { cookies } from "next/headers";
-import crypto from "crypto";
+generator client {
+  provider = "prisma-client-js"
+}
 
+datasource db {
+  provider = "sqlite"
+  url      = "file:./trading.db"
+}
 
-export async function createSession(userId: string) {
+model User {
+  id String @id @default(cuid())
 
-  const token = crypto.randomUUID();
+  name String
 
+  email String @unique
 
-  const cookieStore = await cookies();
+  password String
 
+  role Role @default(USER)
 
-  cookieStore.set(
-    "session",
-    token,
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/",
-    }
-  );
+  plan Plan @default(FREE)
 
+  createdAt DateTime @default(now())
 
-  return {
-    token,
-    userId,
-  };
+  trades Trade[]
 
+  signals Signal[]
+
+  payments Payment[]
 }
 
 
+model Trade {
+  id String @id @default(cuid())
 
-export async function getSession() {
+  symbol String
 
-  const cookieStore = await cookies();
+  type String
 
-  const session =
-    cookieStore.get("session");
+  entryPrice Float
 
+  closePrice Float?
 
-  if (!session) {
-    return null;
-  }
+  profitDollar Float @default(0)
 
+  profitToman Float @default(0)
 
-  return {
-    token: session.value,
-  };
+  status String
 
+  createdAt DateTime @default(now())
+
+  userId String
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 
+model Signal {
+  id String @id @default(cuid())
 
-export async function deleteSession() {
+  symbol String
 
-  const cookieStore = await cookies();
+  market String
+
+  type String
+
+  entry String
+
+  stop String
+
+  target String
+
+  confidence String
+
+  status String
+
+  createdAt DateTime @default(now())
+
+  userId String?
+
+  user User? @relation(fields: [userId], references: [id])
+}
 
 
-  cookieStore.delete(
-    "session"
-  );
+model Bot {
+  id String @id @default(cuid())
+
+  name String
+
+  type String
+
+  status String
+
+  description String
+
+  createdAt DateTime @default(now())
+}
 
 
-  return true;
+model Payment {
+  id String @id @default(cuid())
 
+  amount Float
+
+  currency String
+
+  status String
+
+  createdAt DateTime @default(now())
+
+  userId String
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+
+model Report {
+  id String @id @default(cuid())
+
+  title String
+
+  content String
+
+  createdAt DateTime @default(now())
+}
+
+
+enum Role {
+  USER
+  VIP
+  ADMIN
+}
+
+
+enum Plan {
+  FREE
+  VIP
+  PREMIUM
 }
