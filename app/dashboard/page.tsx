@@ -1,37 +1,101 @@
-export default function DashboardPage() {
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function DashboardPage() {
+
+  const user = await getCurrentUser();
+
+
+  if (!user) {
+
+    return (
+
+      <main>
+
+        <h1>
+          ورود لازم است
+        </h1>
+
+        <p>
+          لطفاً ابتدا وارد حساب خود شوید.
+        </p>
+
+      </main>
+
+    );
+
+  }
+
+
+
   return (
+
     <main>
+
 
       <h1>
         داشبورد کاربر
       </h1>
-
-      <p>
-        مدیریت معاملات، ربات‌ها و خدمات Trading AI
-      </p>
 
 
 
       <section>
 
         <h2>
-          خلاصه حساب
+          خوش آمدید {user.name}
         </h2>
 
         <p>
-          موجودی: 520 USDT
+          ایمیل: {user.email}
         </p>
 
         <p>
-          سود امروز: +2.8%
+          نقش: {user.role}
         </p>
 
         <p>
-          سود هفتگی: +8.5%
+          پلن: {user.plan}
         </p>
 
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          سیگنال‌های معاملاتی
+        </h2>
+
         <p>
-          وضعیت حساب: VIP فعال
+          هنوز سیگنالی ثبت نشده است.
+        </p>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          معاملات من
+        </h2>
+
+        <p>
+          لیست معاملات در این بخش نمایش داده می‌شود.
+        </p>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          گزارش سود و زیان
+        </h2>
+
+        <p>
+          مجموع سود و ضرر معاملات اینجا نمایش داده خواهد شد.
         </p>
 
       </section>
@@ -45,86 +109,14 @@ export default function DashboardPage() {
         </h2>
 
         <p>
-          🤖 ربات طلا: فعال
+          ربات‌های فعال و عملکرد آنها اینجا قرار می‌گیرد.
         </p>
-
-        <p>
-          🤖 ربات کریپتو: آماده
-        </p>
-
-        <p>
-          ⚡ سیستم AI: در حال تحلیل
-        </p>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          آخرین سیگنال‌ها
-        </h2>
-
-        <p>
-          🥇 XAU/USD - خرید احتمالی
-        </p>
-
-        <p>
-          🪙 BTC/USDT - انتظار تایید روند
-        </p>
-
-        <p>
-          💱 EUR/USD - بررسی بازار
-        </p>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          معاملات اخیر
-        </h2>
-
-        <p>
-          XAU/USD : +2.1%
-        </p>
-
-        <p>
-          BTC/USDT : +1.4%
-        </p>
-
-        <p>
-          EUR/USD : -0.5%
-        </p>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          دسترسی سریع
-        </h2>
-
-        <button>
-          مشاهده سیگنال‌ها
-        </button>
-
-        <button>
-          مدیریت ربات‌ها
-        </button>
-
-        <button>
-          مشاهده گزارش عملکرد
-        </button>
 
       </section>
 
 
     </main>
+
   );
+
 }
