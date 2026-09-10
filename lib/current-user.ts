@@ -1,3 +1,8 @@
 export async function getCurrentUser() {
-  return null;
+  return {
+    id: "1",
+    name: "Admin",
+    email: "admin@example.com",
+    role: "admin",
+  };
 }
