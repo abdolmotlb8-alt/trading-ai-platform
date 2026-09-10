@@ -1,1 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
 
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./trading.db"
+}
+
+
+
+model User {
+
+  id String @id @default(cuid())
+
+  name String
+
+  email String @unique
+
+  password String
+
+  role Role @default(USER)
+
+  plan Plan @default(FREE)
+
+  createdAt DateTime @default(now())
+
+  trades Trade[]
+
+}
+
+
+
+model Trade {
+
+  id String @id @default(cuid())
+
+  symbol String
+
+  type String
+
+  entryPrice Float
+
+  closePrice Float?
+
+  profitDollar Float @default(0)
+
+  profitToman Float @default(0)
+
+  status String
+
+  createdAt DateTime @default(now())
+
+
+  userId String
+
+  user User @relation(fields: [userId], references: [id])
+
+}
+
+
+
+enum Role {
+
+  USER
+
+  VIP
+
+  ADMIN
+
+}
+
+
+
+enum Plan {
+
+  FREE
+
+  VIP
+
+  PREMIUM
+
+}
