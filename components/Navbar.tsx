@@ -1,42 +1,46 @@
-export default function Navbar() {
+export default function MobileMenu() {
   return (
-    <header>
-      <nav>
+    <nav>
 
-        <h2>
-          🤖 Trading AI
-        </h2>
-
-
-        <div>
-
-          <a href="/">
-            خانه
-          </a>
+      <a href="/">
+        🏠
+        <span>
+          خانه
+        </span>
+      </a>
 
 
-          <a href="/dashboard">
-            داشبورد
-          </a>
+      <a href="/dashboard">
+        📊
+        <span>
+          داشبورد
+        </span>
+      </a>
 
 
-          <a href="/signals">
-            سیگنال‌ها
-          </a>
+      <a href="/signals">
+        📈
+        <span>
+          سیگنال
+        </span>
+      </a>
 
 
-          <a href="/bots">
-            ربات‌ها
-          </a>
+      <a href="/bots">
+        🤖
+        <span>
+          ربات‌ها
+        </span>
+      </a>
 
 
-          <a href="/profile">
-            پروفایل
-          </a>
+      <a href="/profile">
+        👤
+        <span>
+          حساب
+        </span>
+      </a>
 
-        </div>
-
-      </nav>
-    </header>
+    </nav>
   );
 }
