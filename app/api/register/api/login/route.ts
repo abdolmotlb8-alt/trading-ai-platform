@@ -9,40 +9,46 @@ export async function POST(request: Request) {
 
     const {
       email,
-      password
+      password,
     } = body;
+
 
     if (!email || !password) {
       return NextResponse.json(
         {
-          message: "ایمیل و رمز عبور الزامی است"
+          message: "ایمیل و رمز عبور الزامی است",
         },
         {
-          status: 400
+          status: 400,
         }
       );
     }
 
-    const normalizedEmail = email
-      .trim()
-      .toLowerCase();
 
-    const user = await prisma.user.findUnique({
-      where: {
-        email: normalizedEmail
-      }
-    });
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+
+    const user =
+      await prisma.user.findUnique({
+        where: {
+          email: normalizedEmail,
+        },
+      });
+
 
     if (!user) {
       return NextResponse.json(
         {
-          message: "ایمیل یا رمز عبور اشتباه است"
+          message:
+            "ایمیل یا رمز عبور اشتباه است",
         },
         {
-          status: 401
+          status: 401,
         }
       );
     }
+
 
     const validPassword =
       await bcrypt.compare(
@@ -50,37 +56,58 @@ export async function POST(request: Request) {
         user.password
       );
 
+
     if (!validPassword) {
       return NextResponse.json(
         {
-          message: "ایمیل یا رمز عبور اشتباه است"
+          message:
+            "ایمیل یا رمز عبور اشتباه است",
         },
         {
-          status: 401
+          status: 401,
         }
       );
     }
 
+
     await createSession(user.id);
 
-    return NextResponse.json({
-      message: "ورود موفق بود",
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        plan: user.plan
-      }
-    });
-  } catch (error) {
+
     return NextResponse.json(
       {
-        message: "خطای سرور"
+        message: "ورود موفق بود",
+
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          plan: user.plan,
+        },
       },
       {
-        status: 500
+        status: 200,
       }
     );
+
+
+  } catch (error) {
+
+    console.log(
+      "LOGIN SERVER ERROR:",
+      error
+    );
+
+
+    return NextResponse.json(
+      {
+        message: "خطای سرور",
+        error: String(error),
+      },
+      {
+        status: 500,
+      }
+    );
+
   }
 }
