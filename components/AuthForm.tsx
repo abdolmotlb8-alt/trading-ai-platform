@@ -14,39 +14,58 @@ export default function AuthForm() {
 
   const [message, setMessage] = useState("");
 
+  const [user, setUser] = useState<any>(null);
+
 
 
   async function handleSubmit() {
 
-    if (mode === "register") {
-
-      const response = await fetch("/api/register", {
-
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify({
-          name,
-          email,
-          password,
-        }),
-
-      });
+    const url =
+      mode === "register"
+        ? "/api/register"
+        : "/api/login";
 
 
-      const data = await response.json();
+
+    const body =
+      mode === "register"
+        ? {
+            name,
+            email,
+            password,
+          }
+        : {
+            email,
+            password,
+          };
 
 
-      setMessage(data.message);
 
-    }
+    const response = await fetch(url, {
 
-    else {
+      method: "POST",
 
-      setMessage("سیستم ورود در مرحله بعد فعال می‌شود");
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify(body),
+
+    });
+
+
+
+    const data = await response.json();
+
+
+
+    setMessage(data.message);
+
+
+
+    if (response.ok && data.user) {
+
+      setUser(data.user);
 
     }
 
@@ -70,8 +89,6 @@ export default function AuthForm() {
       {mode === "register" && (
 
         <input
-
-          type="text"
 
           placeholder="نام کاربر"
 
@@ -135,6 +152,28 @@ export default function AuthForm() {
 
 
 
+      {user && (
+
+        <section>
+
+          <h3>
+            خوش آمدید {user.name}
+          </h3>
+
+          <p>
+            نقش: {user.role}
+          </p>
+
+          <p>
+            پلن: {user.plan}
+          </p>
+
+        </section>
+
+      )}
+
+
+
       <button
 
         onClick={() =>
@@ -148,8 +187,8 @@ export default function AuthForm() {
       >
 
         {mode === "login"
-          ? "ساخت حساب جدید"
-          : "ورود به حساب"}
+          ? "ثبت نام جدید"
+          : "ورود"}
 
       </button>
 
