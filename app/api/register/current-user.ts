@@ -11,21 +11,26 @@ export async function GET() {
 
 
     if (!session) {
+
       return NextResponse.json(
         {
-          user: null
+          message: "کاربر وارد نشده است"
         },
         {
           status: 401
         }
       );
+
     }
 
 
+
     const user = await prisma.user.findUnique({
+
       where: {
         id: session.userId
       },
+
       select: {
         id: true,
         name: true,
@@ -33,32 +38,48 @@ export async function GET() {
         role: true,
         plan: true
       }
+
     });
 
 
+
     if (!user) {
+
       return NextResponse.json(
         {
-          user: null
+          message: "کاربر پیدا نشد"
         },
         {
           status: 404
         }
       );
+
     }
 
 
-    return NextResponse.json({
-      user
-    });
+
+    return NextResponse.json(
+      {
+        user
+      },
+      {
+        status: 200
+      }
+    );
 
 
   } catch (error) {
 
+
+    console.log(
+      "CURRENT USER ERROR:",
+      error
+    );
+
+
     return NextResponse.json(
       {
-        message: "Server error",
-        error: String(error)
+        message: "خطای سرور"
       },
       {
         status: 500
