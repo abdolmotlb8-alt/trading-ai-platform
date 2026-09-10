@@ -3,6 +3,7 @@ export type CurrentUser = {
   name: string;
   email: string;
   role: "ADMIN" | "USER";
+  plan: string;
 };
 
 
@@ -13,6 +14,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     name: "Admin",
     email: "admin@example.com",
     role: "ADMIN",
+    plan: "Pro",
   };
 
 }
