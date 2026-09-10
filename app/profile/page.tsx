@@ -1,34 +1,73 @@
-export default function ProfilePage() {
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function ProfilePage() {
+
+  const user = await getCurrentUser();
+
+
+  if (!user) {
+
+    return (
+
+      <main>
+
+        <h1>
+          ورود لازم است
+        </h1>
+
+        <p>
+          برای مشاهده پروفایل ابتدا وارد حساب شوید.
+        </p>
+
+      </main>
+
+    );
+
+  }
+
+
+
   return (
+
     <main>
+
 
       <h1>
         پروفایل کاربر
       </h1>
 
-      <p>
-        مدیریت اطلاعات حساب و تنظیمات امنیتی
-      </p>
-
 
 
       <section>
 
         <h2>
-          اطلاعات کاربر
+          اطلاعات حساب
         </h2>
 
-        <p>
-          نام: کاربر Trading AI
-        </p>
 
         <p>
-          ایمیل: user@example.com
+          نام:
+          {user.name}
         </p>
 
+
         <p>
-          سطح حساب: VIP
+          ایمیل:
+          {user.email}
         </p>
+
+
+        <p>
+          نقش:
+          {user.role}
+        </p>
+
+
+        <p>
+          پلن:
+          {user.plan}
+        </p>
+
 
       </section>
 
@@ -37,24 +76,19 @@ export default function ProfilePage() {
       <section>
 
         <h2>
-          وضعیت خدمات
+          وضعیت اشتراک
         </h2>
 
-        <p>
-          ✅ اشتراک VIP فعال
-        </p>
 
         <p>
-          ✅ تلگرام متصل
+          نوع حساب: {user.plan}
         </p>
 
-        <p>
-          ✅ بروکر آماده اتصال
-        </p>
 
         <p>
-          ✅ دسترسی به ربات‌ها فعال
+          امکانات فعال بعداً در این بخش نمایش داده می‌شود.
         </p>
+
 
       </section>
 
@@ -63,64 +97,25 @@ export default function ProfilePage() {
       <section>
 
         <h2>
-          تنظیمات امنیتی
+          امنیت حساب
         </h2>
 
-        <button>
+
+        <p>
           تغییر رمز عبور
-        </button>
-
-        <button>
-          فعال‌سازی تایید دو مرحله‌ای
-        </button>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          تنظیمات حساب معاملاتی
-        </h2>
-
-        <p>
-          ریسک پیش‌فرض: 2%
         </p>
 
-        <p>
-          حالت معامله: هوشمند AI
-        </p>
 
         <p>
-          وضعیت ربات‌ها: فعال
+          مدیریت نشست‌های ورود
         </p>
 
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          دسترسی سریع
-        </h2>
-
-        <button>
-          مشاهده معاملات
-        </button>
-
-        <button>
-          مشاهده سیگنال‌ها
-        </button>
-
-        <button>
-          مدیریت اشتراک
-        </button>
 
       </section>
 
 
     </main>
+
   );
+
 }
