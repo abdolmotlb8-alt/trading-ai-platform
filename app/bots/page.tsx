@@ -1,85 +1,58 @@
-export default function BotsPage() {
-  const bots = [
-    {
-      name: "Gold AI Bot",
-      market: "XAU/USD",
-      strategy: "Trend Following",
-      profit: "+12.5%",
-      status: "فعال",
-    },
-    {
-      name: "Crypto Smart Bot",
-      market: "BTC/USDT",
-      strategy: "AI Scalping",
-      profit: "+8.2%",
-      status: "فعال",
-    },
-    {
-      name: "Forex Pro Bot",
-      market: "EUR/USD",
-      strategy: "Risk Control",
-      profit: "+5.7%",
-      status: "متوقف",
-    },
-  ];
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function BotsPage() {
+
+  const user = await getCurrentUser();
+
+
+  if (!user) {
+
+    return (
+
+      <main>
+
+        <h1>
+          ورود لازم است
+        </h1>
+
+        <p>
+          برای مشاهده ربات‌ها ابتدا وارد حساب شوید.
+        </p>
+
+      </main>
+
+    );
+
+  }
+
 
 
   return (
+
     <main>
 
+
       <h1>
-        مدیریت ربات‌ها
+        ربات‌های من
       </h1>
 
-      <p>
-        کنترل و بررسی عملکرد ربات‌های هوشمند معامله‌گر
-      </p>
-
 
 
       <section>
 
         <h2>
-          ربات‌های فعال
+          وضعیت حساب
         </h2>
 
 
-        {bots.map((bot, index) => (
-          <div key={index}>
-
-            <h3>
-              {bot.name}
-            </h3>
-
-            <p>
-              بازار: {bot.market}
-            </p>
-
-            <p>
-              استراتژی: {bot.strategy}
-            </p>
-
-            <p>
-              عملکرد: {bot.profit}
-            </p>
-
-            <p>
-              وضعیت: {bot.status}
-            </p>
+        <p>
+          کاربر: {user.name}
+        </p>
 
 
-            <button>
-              مشاهده عملکرد
-            </button>
-
-
-            <button>
-              تنظیمات ربات
-            </button>
-
-
-          </div>
-        ))}
+        <p>
+          پلن: {user.plan}
+        </p>
 
 
       </section>
@@ -89,20 +62,15 @@ export default function BotsPage() {
       <section>
 
         <h2>
-          کنترل ربات
+          ربات تحلیلگر
         </h2>
 
-        <p>
-          🤖 روشن / خاموش کردن ربات‌ها
-        </p>
 
         <p>
-          📊 تغییر استراتژی معاملاتی
+          وضعیت:
+          آماده برای اتصال سیستم تحلیل بازار
         </p>
 
-        <p>
-          ⚠️ تنظیم سطح ریسک
-        </p>
 
       </section>
 
@@ -111,24 +79,37 @@ export default function BotsPage() {
       <section>
 
         <h2>
-          امنیت ربات‌ها
+          ربات معامله‌گر
         </h2>
 
-        <p>
-          ✅ بررسی قبل از معامله
-        </p>
 
         <p>
-          ✅ توقف خودکار در شرایط خطرناک
+          وضعیت:
+          پس از تست و اتصال صرافی فعال خواهد شد.
         </p>
 
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          عملکرد ربات‌ها
+        </h2>
+
+
         <p>
-          ✅ گزارش عملکرد روزانه
+          گزارش سود، ضرر و معاملات در این بخش نمایش داده می‌شود.
         </p>
+
 
       </section>
 
 
     </main>
+
   );
+
 }
