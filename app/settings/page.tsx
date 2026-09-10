@@ -1,58 +1,125 @@
 export default function SettingsPage() {
   return (
     <main>
+
       <h1>
-        Settings
+        تنظیمات سیستم
       </h1>
 
       <p>
-        مدیریت تنظیمات حساب و سیستم معاملاتی
+        مدیریت حساب، امنیت، اعلان‌ها و تنظیمات معامله‌گری
       </p>
 
 
+
       <section>
+
         <h2>
-          Account Settings
+          تنظیمات حساب
         </h2>
 
         <p>
-          Change username and account information
+          نام کاربری: Trading User
         </p>
+
+        <p>
+          ایمیل: user@example.com
+        </p>
+
+        <button>
+          ویرایش اطلاعات
+        </button>
+
       </section>
+
 
 
       <section>
+
         <h2>
-          Trading Settings
+          تنظیمات معامله
         </h2>
 
         <p>
-          AI Bot: Enabled
+          حالت معامله: هوشمند AI
         </p>
 
         <p>
-          Risk Level: Medium
+          سطح ریسک پیش‌فرض: متوسط
         </p>
 
         <p>
-          Auto Trading: Disabled
+          حداکثر معاملات همزمان: 3
         </p>
+
       </section>
+
 
 
       <section>
+
         <h2>
-          Notifications
+          تنظیمات ربات‌ها
         </h2>
 
         <p>
-          Email Alerts: Enabled
+          🤖 اجرای خودکار ربات: فعال
         </p>
 
         <p>
-          Trade Signals: Enabled
+          📊 تحلیل قبل از معامله: فعال
         </p>
+
+        <p>
+          🛑 توقف اضطراری: فعال
+        </p>
+
       </section>
+
+
+
+      <section>
+
+        <h2>
+          اعلان‌ها
+        </h2>
+
+        <p>
+          🔔 اعلان سیگنال‌ها: فعال
+        </p>
+
+        <p>
+          📱 اعلان تلگرام: فعال
+        </p>
+
+        <p>
+          📩 اعلان ایمیل: فعال
+        </p>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          امنیت
+        </h2>
+
+        <button>
+          تغییر رمز عبور
+        </button>
+
+        <button>
+          فعال‌سازی تایید دو مرحله‌ای
+        </button>
+
+        <button>
+          خروج از همه دستگاه‌ها
+        </button>
+
+      </section>
+
 
     </main>
   );
