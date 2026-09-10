@@ -1,8 +1,12 @@
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
+
 export default async function AdminUsersPage() {
 
   const users = await prisma.user.findMany({
+
     select: {
       id: true,
       name: true,
@@ -10,7 +14,9 @@ export default async function AdminUsersPage() {
       role: true,
       plan: true,
     },
+
   });
+
 
 
   return (
@@ -24,41 +30,43 @@ export default async function AdminUsersPage() {
 
       <section>
 
-        {users.length === 0 ? (
+        {
+          users.length === 0 ? (
 
-          <p>
-            هنوز کاربری ثبت نشده است.
-          </p>
+            <p>
+              هنوز کاربری ثبت نشده است.
+            </p>
 
-        ) : (
+          ) : (
 
-          users.map((user) => (
+            users.map((user) => (
 
-            <div key={user.id}>
+              <div key={user.id}>
 
-              <p>
-                نام: {user.name}
-              </p>
+                <p>
+                  نام: {user.name}
+                </p>
 
-              <p>
-                ایمیل: {user.email}
-              </p>
+                <p>
+                  ایمیل: {user.email}
+                </p>
 
-              <p>
-                نقش: {user.role}
-              </p>
+                <p>
+                  نقش: {user.role}
+                </p>
 
-              <p>
-                پلن: {user.plan}
-              </p>
+                <p>
+                  پلن: {user.plan}
+                </p>
 
-              <hr />
+                <hr />
 
-            </div>
+              </div>
 
-          ))
+            ))
 
-        )}
+          )
+        }
 
       </section>
 
