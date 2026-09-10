@@ -1,82 +1,144 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;900&display=swap');
+
+:root {
+  --background: #050816;
+  --card: #111827;
+  --primary: #00d4ff;
+  --text: #ffffff;
+  --muted: #94a3b8;
+  --success: #22c55e;
+  --danger: #ef4444;
 }
 
-body {
-  font-family: Arial, sans-serif;
-  background: #0b1220;
-  color: white;
+
+* {
+  box-sizing: border-box;
+}
+
+
+html {
   direction: rtl;
 }
 
-main {
-  min-height: 100vh;
-  padding: 20px;
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--background);
+  color: var(--text);
+  font-family: "Vazirmatn", sans-serif;
 }
 
-section {
-  margin-bottom: 25px;
+
+
+main {
+  max-width: 1200px;
+  margin: auto;
+  padding: 30px;
 }
+
+
 
 h1 {
-  font-size: 32px;
+  font-size: 40px;
+  font-weight: 900;
   margin-bottom: 15px;
 }
+
 
 h2 {
-  font-size: 24px;
-  margin-bottom: 15px;
+  margin-top: 35px;
+  color: var(--primary);
 }
+
 
 h3 {
-  font-size: 18px;
-  margin-bottom: 10px;
+  margin-top: 15px;
 }
 
+
+
 p {
-  color: #cbd5e1;
+  color: var(--muted);
   line-height: 1.8;
 }
 
-div {
-  background: #162033;
-  padding: 20px;
-  border-radius: 15px;
-  margin-bottom: 15px;
+
+
+section {
+  background: var(--card);
+  padding: 25px;
+  border-radius: 18px;
+  margin-top: 25px;
+  border: 1px solid #1e293b;
 }
+
+
 
 button {
-  background: #00c853;
-  color: white;
+  background: var(--primary);
+  color: #000;
   border: none;
-  padding: 15px 30px;
-  border-radius: 12px;
-  font-size: 16px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  cursor: pointer;
+  margin: 8px;
+  font-weight: bold;
 }
 
-nav {
-  background: #162033;
-  padding: 15px;
-  border-radius: 15px;
-  margin-bottom: 20px;
+
+button:hover {
+  opacity: 0.8;
 }
+
+
 
 a {
   color: white;
   text-decoration: none;
-  margin: 10px;
+  margin: 8px;
 }
 
-@media (max-width: 600px) {
 
-  h1 {
-    font-size: 26px;
-  }
+
+input,
+textarea,
+select {
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: white;
+}
+
+
+
+nav {
+  background: #0f172a;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+
+
+@media (max-width: 768px) {
 
   main {
     padding: 15px;
+  }
+
+
+  h1 {
+    font-size: 28px;
+  }
+
+
+  nav {
+    flex-direction: column;
   }
 
 }
