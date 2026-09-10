@@ -1,39 +1,126 @@
 export default function ProfilePage() {
   return (
     <main>
-      <h1>User Profile</h1>
+
+      <h1>
+        پروفایل کاربر
+      </h1>
+
+      <p>
+        مدیریت اطلاعات حساب و تنظیمات امنیتی
+      </p>
+
+
 
       <section>
-        <h2>Account Information</h2>
+
+        <h2>
+          اطلاعات کاربر
+        </h2>
 
         <p>
-          Name: Trading User
+          نام: کاربر Trading AI
         </p>
 
         <p>
-          Email: user@trading.ai
+          ایمیل: user@example.com
         </p>
 
         <p>
-          Role: Investor
+          سطح حساب: VIP
         </p>
+
       </section>
+
+
 
       <section>
-        <h2>Trading Statistics</h2>
+
+        <h2>
+          وضعیت خدمات
+        </h2>
 
         <p>
-          Total Trades: 120
+          ✅ اشتراک VIP فعال
         </p>
 
         <p>
-          Win Rate: 78%
+          ✅ تلگرام متصل
         </p>
 
         <p>
-          AI Level: Advanced
+          ✅ بروکر آماده اتصال
         </p>
+
+        <p>
+          ✅ دسترسی به ربات‌ها فعال
+        </p>
+
       </section>
+
+
+
+      <section>
+
+        <h2>
+          تنظیمات امنیتی
+        </h2>
+
+        <button>
+          تغییر رمز عبور
+        </button>
+
+        <button>
+          فعال‌سازی تایید دو مرحله‌ای
+        </button>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          تنظیمات حساب معاملاتی
+        </h2>
+
+        <p>
+          ریسک پیش‌فرض: 2%
+        </p>
+
+        <p>
+          حالت معامله: هوشمند AI
+        </p>
+
+        <p>
+          وضعیت ربات‌ها: فعال
+        </p>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          دسترسی سریع
+        </h2>
+
+        <button>
+          مشاهده معاملات
+        </button>
+
+        <button>
+          مشاهده سیگنال‌ها
+        </button>
+
+        <button>
+          مدیریت اشتراک
+        </button>
+
+      </section>
+
+
     </main>
   );
 }
