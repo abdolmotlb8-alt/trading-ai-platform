@@ -1,61 +1,121 @@
 export default function CoursesPage() {
   const courses = [
     {
-      name: "دوره رایگان شروع معامله‌گری",
-      duration: "7 روز",
-      price: "رایگان",
+      title: "آموزش مقدماتی ترید",
+      level: "مبتدی",
       status: "فعال",
+      progress: "100%",
     },
     {
-      name: "دوره VIP فارکس و کریپتو",
-      duration: "30 روز",
-      price: "پرداخت تتری / ریالی",
-      status: "ویژه",
+      title: "تحلیل تکنیکال حرفه‌ای",
+      level: "متوسط",
+      status: "در حال یادگیری",
+      progress: "60%",
     },
     {
-      name: "دوره حرفه‌ای هوش مصنوعی معامله‌گری",
-      duration: "60 روز",
-      price: "پرداخت تتری / ریالی",
-      status: "پیشرفته",
+      title: "استراتژی‌های هوش مصنوعی",
+      level: "حرفه‌ای",
+      status: "VIP",
+      progress: "قفل",
     },
   ];
 
+
   return (
     <main>
+
       <h1>
         دوره‌های آموزشی
       </h1>
 
       <p>
-        آموزش معامله‌گری، تحلیل بازار و استفاده از ربات‌های هوشمند
+        یادگیری معامله‌گری، تحلیل بازار و استفاده از هوش مصنوعی
       </p>
 
 
-      {courses.map((course, index) => (
-        <section key={index}>
 
-          <h2>
-            {course.name}
-          </h2>
+      <section>
 
-          <p>
-            مدت دوره: {course.duration}
-          </p>
+        <h2>
+          دوره‌های من
+        </h2>
 
-          <p>
-            قیمت: {course.price}
-          </p>
 
-          <p>
-            وضعیت: {course.status}
-          </p>
+        {courses.map((course, index) => (
+          <div key={index}>
 
-          <button>
-            مشاهده دوره
-          </button>
+            <h3>
+              {course.title}
+            </h3>
 
-        </section>
-      ))}
+            <p>
+              سطح: {course.level}
+            </p>
+
+            <p>
+              وضعیت: {course.status}
+            </p>
+
+            <p>
+              پیشرفت: {course.progress}
+            </p>
+
+
+            <button>
+              شروع دوره
+            </button>
+
+
+          </div>
+        ))}
+
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          دوره‌های ویژه VIP
+        </h2>
+
+        <p>
+          🤖 آموزش ساخت ربات معامله‌گر
+        </p>
+
+        <p>
+          📊 آموزش تحلیل با هوش مصنوعی
+        </p>
+
+        <p>
+          🥇 آموزش معامله طلا و فارکس
+        </p>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          مزایای آموزش‌ها
+        </h2>
+
+        <p>
+          ✅ آموزش مرحله به مرحله
+        </p>
+
+        <p>
+          ✅ تمرین عملی بازار
+        </p>
+
+        <p>
+          ✅ دسترسی به محتوای VIP
+        </p>
+
+      </section>
+
 
     </main>
   );
