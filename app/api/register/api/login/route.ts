@@ -1,89 +1,96 @@
-import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { createSession } from "@/lib/session";
+
+export async function POST(request: Request) {
+
+  try {
+
+    const body = await request.json();
+
+    const {
+      email,
+      password,
+    } = body;
 
 
-export async function createSession(userId: string) {
-
-  const session = await prisma.session.create({
-    data: {
-      userId,
-    },
-  });
-
-
-  const cookieStore = await cookies();
-
-
-  cookieStore.set(
-    "session",
-    session.id,
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
+    if (!email || !password) {
+      return NextResponse.json(
+        {
+          message: "ایمیل و رمز عبور الزامی است",
+        },
+        {
+          status: 400,
+        }
+      );
     }
-  );
 
 
-  return session;
-}
-
-
-
-export async function getSession() {
-
-  const cookieStore = await cookies();
-
-
-  const sessionId =
-    cookieStore.get("session")?.value;
-
-
-  if (!sessionId) {
-    return null;
-  }
-
-
-  const session =
-    await prisma.session.findUnique({
-      where: {
-        id: sessionId,
-      },
-      include: {
-        user: true,
-      },
+    const user = await prisma.user.findUnique({
+      where:{
+        email: email.trim().toLowerCase()
+      }
     });
 
 
-  return session;
-}
+    if(!user){
+      return NextResponse.json(
+        {
+          message:"ایمیل یا رمز عبور اشتباه است"
+        },
+        {
+          status:401
+        }
+      );
+    }
 
 
-
-export async function deleteSession() {
-
-  const cookieStore = await cookies();
-
-
-  const sessionId =
-    cookieStore.get("session")?.value;
+    const checkPassword = await bcrypt.compare(
+      password,
+      user.password
+    );
 
 
-  if (sessionId) {
+    if(!checkPassword){
+      return NextResponse.json(
+        {
+          message:"ایمیل یا رمز عبور اشتباه است"
+        },
+        {
+          status:401
+        }
+      );
+    }
 
-    await prisma.session.delete({
-      where: {
-        id: sessionId,
+
+    await createSession(user.id);
+
+
+    return NextResponse.json({
+      message:"ورود موفق بود",
+      user:{
+        id:user.id,
+        name:user.name,
+        email:user.email,
+        role:user.role,
+        plan:user.plan
+      }
+    });
+
+
+  } catch(error){
+
+    console.log(error);
+
+    return NextResponse.json(
+      {
+        message:"خطای سرور"
       },
-    }).catch(() => {});
-
+      {
+        status:500
+      }
+    );
   }
 
-
-  cookieStore.delete("session");
-
-
-  return true;
 }
