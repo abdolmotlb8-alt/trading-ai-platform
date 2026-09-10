@@ -3,63 +3,129 @@ export default function TradesPage() {
     {
       symbol: "XAU/USD",
       type: "BUY",
-      result: "WIN",
-      profit: "+2.5%",
-      date: "Today",
+      volume: "0.10",
+      result: "+25 USDT",
+      status: "بسته شده",
     },
     {
       symbol: "BTC/USDT",
-      type: "SELL",
-      result: "LOSS",
-      profit: "-1.2%",
-      date: "Yesterday",
+      type: "BUY",
+      volume: "0.05",
+      result: "+80 USDT",
+      status: "باز",
     },
     {
       symbol: "EUR/USD",
-      type: "BUY",
-      result: "WIN",
-      profit: "+1.8%",
-      date: "This Week",
+      type: "SELL",
+      volume: "0.20",
+      result: "-15 USDT",
+      status: "بسته شده",
     },
   ];
+
 
   return (
     <main>
 
       <h1>
-        تاریخچه معاملات
+        مدیریت معاملات
       </h1>
 
       <p>
-        گزارش معاملات، سود و ضرر و عملکرد ربات‌ها
+        مشاهده و مدیریت معاملات انجام شده توسط کاربر و سیستم AI
       </p>
 
 
-      {trades.map((trade, index) => (
-        <section key={index}>
 
-          <h2>
-            {trade.symbol}
-          </h2>
+      <section>
 
-          <p>
-            نوع معامله: {trade.type}
-          </p>
+        <h2>
+          معاملات اخیر
+        </h2>
 
-          <p>
-            نتیجه: {trade.result}
-          </p>
 
-          <p>
-            سود/ضرر: {trade.profit}
-          </p>
+        {trades.map((trade, index) => (
+          <div key={index}>
 
-          <p>
-            تاریخ: {trade.date}
-          </p>
+            <h3>
+              {trade.symbol}
+            </h3>
 
-        </section>
-      ))}
+            <p>
+              نوع معامله: {trade.type}
+            </p>
+
+            <p>
+              حجم: {trade.volume}
+            </p>
+
+            <p>
+              نتیجه: {trade.result}
+            </p>
+
+            <p>
+              وضعیت: {trade.status}
+            </p>
+
+
+            <button>
+              مشاهده جزئیات
+            </button>
+
+
+          </div>
+        ))}
+
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          خلاصه عملکرد
+        </h2>
+
+        <p>
+          تعداد معاملات امروز: 12
+        </p>
+
+        <p>
+          معاملات موفق: 9
+        </p>
+
+        <p>
+          معاملات ناموفق: 3
+        </p>
+
+        <p>
+          سود خالص امروز: +90 USDT
+        </p>
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          کنترل معامله
+        </h2>
+
+        <p>
+          ✅ مدیریت حد ضرر
+        </p>
+
+        <p>
+          ✅ مدیریت حد سود
+        </p>
+
+        <p>
+          ✅ بررسی ریسک قبل از معامله
+        </p>
+
+      </section>
 
 
     </main>
