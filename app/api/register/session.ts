@@ -1,27 +1,64 @@
 import { cookies } from "next/headers";
+import crypto from "crypto";
 
-const SESSION_COOKIE = "trading_ai_session";
 
-export async function createSession(userId: string) {
+export async function createSession(userId:string){
+
+  const token = crypto.randomUUID();
+
   const cookieStore = await cookies();
 
-  cookieStore.set(SESSION_COOKIE, userId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+
+  cookieStore.set(
+    "session",
+    token,
+    {
+      httpOnly:true,
+      secure:process.env.NODE_ENV === "production",
+      sameSite:"lax",
+      maxAge:60 * 60 * 24 * 7,
+      path:"/"
+    }
+  );
+
+
+  return {
+    token,
+    userId
+  };
+
 }
 
-export async function getSession() {
+
+
+export async function getSession(){
+
   const cookieStore = await cookies();
 
-  return cookieStore.get(SESSION_COOKIE)?.value ?? null;
+  const session =
+    cookieStore.get("session");
+
+
+  if(!session){
+    return null;
+  }
+
+
+  return {
+    token:session.value
+  };
+
 }
 
-export async function deleteSession() {
+
+
+export async function deleteSession(){
+
   const cookieStore = await cookies();
 
-  cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete("session");
+
+
+  return true;
+
 }
