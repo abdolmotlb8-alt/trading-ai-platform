@@ -1,140 +1,68 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "sqlite"
-  url      = "file:./trading.db"
-}
+import { cookies } from "next/headers";
+import crypto from "crypto";
 
 
-model User {
-  id String @id @default(cuid())
+export async function createSession(userId: string) {
 
-  name String
-
-  email String @unique
-
-  password String
-
-  role Role @default(USER)
-
-  plan Plan @default(FREE)
-
-  createdAt DateTime @default(now())
-
-  trades Trade[]
-
-  signals Signal[]
-
-  payments Payment[]
-}
+  const token = crypto.randomUUID();
 
 
-model Trade {
-  id String @id @default(cuid())
+  const cookieStore = await cookies();
 
-  symbol String
 
-  type String
+  cookieStore.set(
+    "session",
+    token,
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+    }
+  );
 
-  entryPrice Float
 
-  closePrice Float?
+  return {
+    token,
+    userId,
+  };
 
-  profitDollar Float @default(0)
-
-  profitToman Float @default(0)
-
-  status String
-
-  createdAt DateTime @default(now())
-
-  userId String
-
-  user User @relation(fields: [userId], references: [id])
 }
 
 
-model Signal {
-  id String @id @default(cuid())
 
-  symbol String
+export async function getSession() {
 
-  market String
+  const cookieStore = await cookies();
 
-  type String
+  const session =
+    cookieStore.get("session");
 
-  entry String
 
-  stop String
+  if (!session) {
+    return null;
+  }
 
-  target String
 
-  confidence String
+  return {
+    token: session.value,
+  };
 
-  status String
-
-  createdAt DateTime @default(now())
-
-  userId String?
-
-  user User? @relation(fields: [userId], references: [id])
 }
 
 
-model Bot {
-  id String @id @default(cuid())
 
-  name String
+export async function deleteSession() {
 
-  type String
-
-  status String
-
-  description String
-
-  createdAt DateTime @default(now())
-}
+  const cookieStore = await cookies();
 
 
-model Payment {
-  id String @id @default(cuid())
-
-  amount Float
-
-  currency String
-
-  status String
-
-  createdAt DateTime @default(now())
-
-  userId String
-
-  user User @relation(fields: [userId], references: [id])
-}
+  cookieStore.delete(
+    "session"
+  );
 
 
-model Report {
-  id String @id @default(cuid())
+  return true;
 
-  title String
-
-  content String
-
-  createdAt DateTime @default(now())
-}
-
-
-enum Role {
-  USER
-  VIP
-  ADMIN
-}
-
-
-enum Plan {
-  FREE
-  VIP
-  PREMIUM
 }
