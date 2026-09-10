@@ -2,16 +2,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
-
 datasource db {
   provider = "sqlite"
   url      = "file:./trading.db"
 }
 
 
-
 model User {
-
   id String @id @default(cuid())
 
   name String
@@ -32,33 +29,26 @@ model User {
   signals Signal[]
 
   payments Payment[]
-
 }
 
 
 
 model Trade {
-
   id String @id @default(cuid())
-
 
   symbol String
 
   type String
 
-
   entryPrice Float
 
   closePrice Float?
-
 
   profitDollar Float @default(0)
 
   profitToman Float @default(0)
 
-
   status String
-
 
   createdAt DateTime @default(now())
 
@@ -66,23 +56,18 @@ model Trade {
   userId String
 
   user User @relation(fields: [userId], references: [id])
-
 }
 
 
 
 model Signal {
-
   id String @id @default(cuid())
-
 
   symbol String
 
   market String
 
-
   type String
-
 
   entry String
 
@@ -90,12 +75,9 @@ model Signal {
 
   target String
 
-
   confidence String
 
-
   status String
-
 
   createdAt DateTime @default(now())
 
@@ -103,46 +85,34 @@ model Signal {
   userId String?
 
   user User? @relation(fields: [userId], references: [id])
-
 }
 
 
 
 model Bot {
-
   id String @id @default(cuid())
-
 
   name String
 
   type String
 
-
   status String
-
 
   description String
 
-
   createdAt DateTime @default(now())
-
 }
 
 
 
 model Payment {
-
   id String @id @default(cuid())
-
 
   amount Float
 
-
   currency String
 
-
   status String
-
 
   createdAt DateTime @default(now())
 
@@ -150,45 +120,31 @@ model Payment {
   userId String
 
   user User @relation(fields: [userId], references: [id])
-
 }
 
 
 
 model Report {
-
   id String @id @default(cuid())
-
 
   title String
 
   content String
 
-
   createdAt DateTime @default(now())
-
 }
 
 
 
 enum Role {
-
   USER
-
   VIP
-
   ADMIN
-
 }
 
 
-
 enum Plan {
-
   FREE
-
   VIP
-
   PREMIUM
-
 }
