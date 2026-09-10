@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
+import crypto from "crypto";
+
 
 export async function createSession(userId: string) {
 
-  const token = userId;
+  const token = crypto.randomUUID();
 
   const cookieStore = await cookies();
 
@@ -18,25 +20,32 @@ export async function createSession(userId: string) {
     }
   );
 
-  return token;
+
+  return {
+    token,
+    userId,
+  };
 }
+
 
 
 export async function getSession() {
 
   const cookieStore = await cookies();
 
-  const session =
-    cookieStore.get("session");
+  const session = cookieStore.get("session");
+
 
   if (!session) {
     return null;
   }
 
+
   return {
-    userId: session.value,
+    token: session.value,
   };
 }
+
 
 
 export async function deleteSession() {
