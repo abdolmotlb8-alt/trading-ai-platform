@@ -1,40 +1,128 @@
-async function handleSubmit() {
-  try {
-    const url =
-      mode === "register"
-        ? "/api/register"
-        : "/api/login";
+"use client";
 
-    const body =
-      mode === "register"
-        ? {
-            name,
-            email,
-            password,
-          }
-        : {
-            email,
-            password,
-          };
+import { useState } from "react";
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+export default function AuthForm() {
 
-    const data = await response.json();
+  const [mode, setMode] = useState("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [user, setUser] = useState<any>(null);
 
-    setMessage(data.message || "پاسخی دریافت نشد");
 
-    if (response.ok && data.user) {
-      setUser(data.user);
+  async function handleSubmit() {
+    try {
+
+      const url =
+        mode === "register"
+          ? "/api/register"
+          : "/api/login";
+
+
+      const body =
+        mode === "register"
+          ? { name, email, password }
+          : { email, password };
+
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+
+      const data = await response.json();
+
+
+      setMessage(data.message || "پاسخی دریافت نشد");
+
+
+      if (response.ok && data.user) {
+        setUser(data.user);
+      }
+
+
+    } catch (error) {
+
+      console.log(error);
+      setMessage("خطا در اتصال به سرور");
+
     }
-
-  } catch (error) {
-    console.log(error);
-    setMessage("خطا در اتصال به سرور");
   }
+
+
+  return (
+    <section>
+
+      <h1>
+        {mode === "login"
+          ? "ورود به حساب"
+          : "ساخت حساب جدید"}
+      </h1>
+
+
+      {mode === "register" && (
+        <input
+          placeholder="نام کاربر"
+          value={name}
+          onChange={(e)=>setName(e.target.value)}
+        />
+      )}
+
+
+      <input
+        type="email"
+        placeholder="ایمیل"
+        value={email}
+        onChange={(e)=>setEmail(e.target.value)}
+      />
+
+
+      <input
+        type="password"
+        placeholder="رمز عبور"
+        value={password}
+        onChange={(e)=>setPassword(e.target.value)}
+      />
+
+
+      <button onClick={handleSubmit}>
+        {mode === "login" ? "ورود" : "ثبت نام"}
+      </button>
+
+
+      <p>{message}</p>
+
+
+      {user && (
+        <div>
+          <h3>خوش آمدید {user.name}</h3>
+          <p>نقش: {user.role}</p>
+          <p>پلن: {user.plan}</p>
+        </div>
+      )}
+
+
+      <button
+        onClick={() =>
+          setMode(
+            mode === "login"
+              ? "register"
+              : "login"
+          )
+        }
+      >
+        {mode === "login"
+          ? "ثبت نام جدید"
+          : "ورود"}
+      </button>
+
+
+    </section>
+  );
 }
