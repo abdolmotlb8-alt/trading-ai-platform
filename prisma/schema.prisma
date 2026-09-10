@@ -23,14 +23,12 @@ model User {
 
   createdAt DateTime @default(now())
 
-
   trades Trade[]
 
   signals Signal[]
 
   payments Payment[]
 }
-
 
 
 model Trade {
@@ -52,12 +50,10 @@ model Trade {
 
   createdAt DateTime @default(now())
 
-
   userId String
 
   user User @relation(fields: [userId], references: [id])
 }
-
 
 
 model Signal {
@@ -81,12 +77,10 @@ model Signal {
 
   createdAt DateTime @default(now())
 
-
   userId String?
 
   user User? @relation(fields: [userId], references: [id])
 }
-
 
 
 model Bot {
@@ -104,7 +98,6 @@ model Bot {
 }
 
 
-
 model Payment {
   id String @id @default(cuid())
 
@@ -116,12 +109,10 @@ model Payment {
 
   createdAt DateTime @default(now())
 
-
   userId String
 
   user User @relation(fields: [userId], references: [id])
 }
-
 
 
 model Report {
@@ -133,7 +124,6 @@ model Report {
 
   createdAt DateTime @default(now())
 }
-
 
 
 enum Role {
