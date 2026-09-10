@@ -1,7 +1,14 @@
-export default function SignalsPage() {
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function SignalsPage() {
+
+  const user = await getCurrentUser();
+
+
   const signals = [
     {
       symbol: "XAU/USD",
+      market: "طلا",
       type: "BUY",
       entry: "2440",
       stop: "2425",
@@ -11,6 +18,7 @@ export default function SignalsPage() {
     },
     {
       symbol: "BTC/USDT",
+      market: "کریپتو",
       type: "BUY",
       entry: "62000",
       stop: "60000",
@@ -20,6 +28,7 @@ export default function SignalsPage() {
     },
     {
       symbol: "EUR/USD",
+      market: "فارکس",
       type: "SELL",
       entry: "1.0900",
       stop: "1.0950",
@@ -30,16 +39,23 @@ export default function SignalsPage() {
   ];
 
 
+
   return (
+
     <main>
 
       <h1>
-        سیگنال‌های معاملاتی
+        سیگنال‌های معاملاتی AI
       </h1>
 
-      <p>
-        سیگنال‌های تحلیل شده توسط سیستم هوش مصنوعی
-      </p>
+
+      {user && (
+
+        <p>
+          کاربر: {user.name} | پلن: {user.plan}
+        </p>
+
+      )}
 
 
 
@@ -50,32 +66,45 @@ export default function SignalsPage() {
         </h2>
 
 
+
         {signals.map((signal, index) => (
+
           <div key={index}>
 
             <h3>
               {signal.symbol}
             </h3>
 
+
+            <p>
+              بازار: {signal.market}
+            </p>
+
+
             <p>
               نوع معامله: {signal.type}
             </p>
+
 
             <p>
               نقطه ورود: {signal.entry}
             </p>
 
+
             <p>
               حد ضرر: {signal.stop}
             </p>
+
 
             <p>
               حد سود: {signal.target}
             </p>
 
+
             <p>
-              اطمینان AI: {signal.confidence}
+              قدرت تحلیل AI: {signal.confidence}
             </p>
+
 
             <p>
               وضعیت: {signal.status}
@@ -88,6 +117,7 @@ export default function SignalsPage() {
 
 
           </div>
+
         ))}
 
 
@@ -98,20 +128,24 @@ export default function SignalsPage() {
       <section>
 
         <h2>
-          فیلتر سیگنال‌ها
+          دسته‌بندی بازار
         </h2>
+
 
         <p>
           🥇 طلا
         </p>
 
+
         <p>
           💱 فارکس
         </p>
 
+
         <p>
           🪙 کریپتو
         </p>
+
 
       </section>
 
@@ -120,16 +154,21 @@ export default function SignalsPage() {
       <section>
 
         <h2>
-          هشدار سیگنال
+          اعلان‌ها
         </h2>
 
+
         <p>
-          سیستم قبل از ورودهای مهم، اعلان ارسال می‌کند.
+          بعداً اتصال تلگرام برای ارسال هشدار سیگنال اضافه می‌شود.
         </p>
+
 
       </section>
 
 
+
     </main>
+
   );
+
 }
