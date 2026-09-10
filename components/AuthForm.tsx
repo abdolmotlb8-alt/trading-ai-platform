@@ -4,15 +4,18 @@ import { useState } from "react";
 
 export default function AuthForm() {
 
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState<"login" | "register">("login");
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [message, setMessage] = useState("");
   const [user, setUser] = useState<any>(null);
 
 
   async function handleSubmit() {
+
     try {
 
       const url =
@@ -23,106 +26,191 @@ export default function AuthForm() {
 
       const body =
         mode === "register"
-          ? { name, email, password }
-          : { email, password };
+          ? {
+              name,
+              email,
+              password,
+            }
+          : {
+              email,
+              password,
+            };
 
 
       const response = await fetch(url, {
+
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
         },
+
         body: JSON.stringify(body),
+
       });
 
 
       const data = await response.json();
 
 
-      setMessage(data.message || "پاسخی دریافت نشد");
+      setMessage(
+        data.message || "پاسخی دریافت نشد"
+      );
 
 
       if (response.ok && data.user) {
+
         setUser(data.user);
+
       }
 
 
     } catch (error) {
 
       console.log(error);
-      setMessage("خطا در اتصال به سرور");
+
+      setMessage(
+        "خطا در اتصال به سرور"
+      );
 
     }
+
   }
 
 
+
   return (
+
     <section>
 
       <h1>
-        {mode === "login"
+        {
+          mode === "login"
           ? "ورود به حساب"
-          : "ساخت حساب جدید"}
+          : "ساخت حساب جدید"
+        }
       </h1>
 
 
-      {mode === "register" && (
-        <input
-          placeholder="نام کاربر"
-          value={name}
-          onChange={(e)=>setName(e.target.value)}
-        />
-      )}
+      {
+        mode === "register" && (
+
+          <input
+
+            placeholder="نام کاربر"
+
+            value={name}
+
+            onChange={(e)=>
+              setName(e.target.value)
+            }
+
+          />
+
+        )
+      }
+
 
 
       <input
+
         type="email"
+
         placeholder="ایمیل"
+
         value={email}
-        onChange={(e)=>setEmail(e.target.value)}
+
+        onChange={(e)=>
+          setEmail(e.target.value)
+        }
+
       />
+
 
 
       <input
+
         type="password"
+
         placeholder="رمز عبور"
+
         value={password}
-        onChange={(e)=>setPassword(e.target.value)}
+
+        onChange={(e)=>
+          setPassword(e.target.value)
+        }
+
       />
+
 
 
       <button onClick={handleSubmit}>
-        {mode === "login" ? "ورود" : "ثبت نام"}
+
+        {
+          mode === "login"
+          ? "ورود"
+          : "ثبت نام"
+        }
+
       </button>
 
 
-      <p>{message}</p>
+
+      <p>
+        {message}
+      </p>
 
 
-      {user && (
-        <div>
-          <h3>خوش آمدید {user.name}</h3>
-          <p>نقش: {user.role}</p>
-          <p>پلن: {user.plan}</p>
-        </div>
-      )}
+
+      {
+        user && (
+
+          <div>
+
+            <h3>
+              خوش آمدید {user.name}
+            </h3>
+
+
+            <p>
+              نقش: {user.role}
+            </p>
+
+
+            <p>
+              پلن: {user.plan}
+            </p>
+
+          </div>
+
+        )
+      }
+
 
 
       <button
+
         onClick={() =>
           setMode(
             mode === "login"
-              ? "register"
-              : "login"
+            ? "register"
+            : "login"
           )
         }
+
       >
-        {mode === "login"
+
+        {
+          mode === "login"
           ? "ثبت نام جدید"
-          : "ورود"}
+          : "ورود"
+        }
+
       </button>
 
 
     </section>
+
   );
+
 }
