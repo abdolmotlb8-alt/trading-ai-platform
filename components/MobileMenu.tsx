@@ -1,57 +1,79 @@
-import Navbar from "@/components/Navbar";
-import MobileMenu from "@/components/MobileMenu";
+import Link from "next/link";
 
-export default function Home() {
+export default function MobileMenu() {
   return (
-    <main>
+    <div>
 
-      <Navbar />
+      <button>
+        ☰ منو
+      </button>
 
-      <section>
-        <h1>
-          Trading AI Platform
-        </h1>
 
-        <p>
-          پلتفرم هوشمند تحلیل بازار، سیگنال و مدیریت معاملات
-        </p>
-      </section>
+      <div>
 
-      <section>
-        <h2>
-          امکانات ما
-        </h2>
+        <Link href="/">
+          خانه
+        </Link>
 
-        <div>
-          <h3>
-            🤖 ربات های هوش مصنوعی
-          </h3>
-          <p>
-            تحلیل بازار و کمک به تصمیم‌گیری معاملاتی
-          </p>
-        </div>
 
-        <div>
-          <h3>
-            📊 سیگنال های معاملاتی
-          </h3>
-          <p>
-            فارکس، کریپتو و طلا
-          </p>
-        </div>
+        <Link href="/dashboard">
+          داشبورد
+        </Link>
 
-        <div>
-          <h3>
-            ⚡ ربات معامله‌گر
-          </h3>
-          <p>
-            مدیریت معاملات خودکار در آینده
-          </p>
-        </div>
-      </section>
 
-      <MobileMenu />
+        <Link href="/signals">
+          سیگنال‌ها
+        </Link>
 
-    </main>
+
+        <Link href="/trades">
+          معاملات
+        </Link>
+
+
+        <Link href="/bots">
+          ربات‌ها
+        </Link>
+
+
+        <Link href="/ai-analysis">
+          تحلیل AI
+        </Link>
+
+
+        <Link href="/assistant">
+          دستیار AI
+        </Link>
+
+
+        <Link href="/market">
+          بازار
+        </Link>
+
+
+        <Link href="/news">
+          اخبار
+        </Link>
+
+
+        <Link href="/courses">
+          آموزش
+        </Link>
+
+
+        <Link href="/profile">
+          پروفایل
+        </Link>
+
+
+        <Link href="/settings">
+          تنظیمات
+        </Link>
+
+
+      </div>
+
+
+    </div>
   );
 }
