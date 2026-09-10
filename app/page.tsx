@@ -1,12 +1,8 @@
-import Navbar from "@/components/Navbar";
-import MobileMenu from "@/components/MobileMenu";
+import Link from "next/link";
 
 export default function Home() {
   return (
     <main>
-
-      <Navbar />
-
 
       <section>
 
@@ -15,12 +11,22 @@ export default function Home() {
         </h1>
 
         <p>
-          پلتفرم هوشمند تحلیل و معامله‌گری در بازارهای فارکس، کریپتو و طلا
+          پلتفرم هوشمند تحلیل بازار، سیگنال، ربات معامله‌گر و مدیریت معاملات
         </p>
 
-        <button>
-          شروع رایگان
-        </button>
+
+        <Link href="/dashboard">
+          <button>
+            ورود به داشبورد
+          </button>
+        </Link>
+
+
+        <Link href="/subscription">
+          <button>
+            شروع اشتراک VIP
+          </button>
+        </Link>
 
       </section>
 
@@ -29,18 +35,18 @@ export default function Home() {
       <section>
 
         <h2>
-          چرا Trading AI؟
+          امکانات هوشمند ما
         </h2>
 
 
         <div>
 
           <h3>
-            🤖 ربات‌های هوش مصنوعی
+            🤖 AI Analysis
           </h3>
 
           <p>
-            ربات‌های تحلیلگر و معامله‌گر برای بررسی بازار و مدیریت معاملات
+            تحلیل بازار با هوش مصنوعی و بررسی روندها
           </p>
 
         </div>
@@ -50,11 +56,11 @@ export default function Home() {
         <div>
 
           <h3>
-            📊 سیگنال‌های حرفه‌ای
+            📊 Trading Signals
           </h3>
 
           <p>
-            دریافت سیگنال خرید و فروش با درصد ریسک و تحلیل بازار
+            دریافت سیگنال‌های فارکس، طلا و کریپتو
           </p>
 
         </div>
@@ -64,25 +70,11 @@ export default function Home() {
         <div>
 
           <h3>
-            📈 گزارش عملکرد
+            ⚡ Trading Bots
           </h3>
 
           <p>
-            مشاهده سود، ضرر، وین ریت و تاریخچه معاملات
-          </p>
-
-        </div>
-
-
-
-        <div>
-
-          <h3>
-            📱 اتصال هوشمند
-          </h3>
-
-          <p>
-            اتصال به تلگرام و مدیریت خدمات کاربران
+            ربات‌های هوشمند برای مدیریت معاملات
           </p>
 
         </div>
@@ -92,16 +84,14 @@ export default function Home() {
 
 
 
-
       <section>
 
         <h2>
-          بازارهای قابل پشتیبانی
+          بازارهای تحت پوشش
         </h2>
-
 
         <p>
-          🥇 Gold (XAU/USD)
+          🥇 Gold
         </p>
 
         <p>
@@ -117,29 +107,64 @@ export default function Home() {
 
 
 
-
       <section>
 
         <h2>
-          خدمات ویژه کاربران
+          چرا Trading AI؟
         </h2>
 
 
         <p>
-          دوره‌های آموزشی، کانال VIP، ربات‌های اختصاصی و پشتیبانی کاربران
+          ✅ تحلیل ۲۴ ساعته بازار
         </p>
 
 
-        <button>
-          ثبت نام و شروع
-        </button>
+        <p>
+          ✅ مدیریت ریسک هوشمند
+        </p>
+
+
+        <p>
+          ✅ دستیار هوش مصنوعی
+        </p>
+
+
+        <p>
+          ✅ ربات‌های معاملاتی قابل تنظیم
+        </p>
 
 
       </section>
 
 
 
-      <MobileMenu />
+      <section>
+
+        <h2>
+          شروع کنید
+        </h2>
+
+        <p>
+          حساب خود را بسازید و وارد دنیای معامله‌گری هوشمند شوید.
+        </p>
+
+
+        <Link href="/register">
+          <button>
+            ثبت‌نام
+          </button>
+        </Link>
+
+
+        <Link href="/login">
+          <button>
+            ورود
+          </button>
+        </Link>
+
+
+      </section>
+
 
     </main>
   );
