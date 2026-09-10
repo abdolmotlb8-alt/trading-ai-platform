@@ -1,105 +1,58 @@
-export default function ReportsPage() {
-  const trades = [
-    {
-      symbol: "XAU/USD",
-      type: "BUY",
-      profitDollar: "+20$",
-      profitToman: "+4,000,000 تومان",
-      result: "برد 🟢",
-    },
-    {
-      symbol: "BTC/USDT",
-      type: "SELL",
-      profitDollar: "-10$",
-      profitToman: "-2,000,000 تومان",
-      result: "باخت 🔴",
-    },
-    {
-      symbol: "EUR/USD",
-      type: "BUY",
-      profitDollar: "+15$",
-      profitToman: "+3,000,000 تومان",
-      result: "برد 🟢",
-    },
-  ];
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function ReportsPage() {
+
+  const user = await getCurrentUser();
+
+
+  if (!user) {
+
+    return (
+
+      <main>
+
+        <h1>
+          ورود لازم است
+        </h1>
+
+        <p>
+          برای مشاهده گزارش‌ها ابتدا وارد حساب شوید.
+        </p>
+
+      </main>
+
+    );
+
+  }
+
 
 
   return (
+
     <main>
+
 
       <h1>
         کارنامه معاملات
       </h1>
 
-      <p>
-        گزارش کامل عملکرد ربات‌ها و سیگنال‌های معاملاتی
-      </p>
-
 
 
       <section>
 
         <h2>
-          خلاصه امروز
-        </h2>
-
-        <p>
-          تعداد معاملات: 12
-        </p>
-
-        <p>
-          معاملات موفق: 9 🟢
-        </p>
-
-        <p>
-          معاملات ناموفق: 3 🔴
-        </p>
-
-        <p>
-          سود خالص امروز: +140 دلار
-        </p>
-
-        <p>
-          معادل تومان: +28,000,000 تومان
-        </p>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          معاملات امروز
+          اطلاعات حساب
         </h2>
 
 
-        {trades.map((trade, index) => (
-          <div key={index}>
-
-            <h3>
-              {trade.symbol}
-            </h3>
-
-            <p>
-              نوع: {trade.type}
-            </p>
-
-            <p>
-              نتیجه: {trade.result}
-            </p>
-
-            <p>
-              سود/ضرر دلاری: {trade.profitDollar}
-            </p>
-
-            <p>
-              تبدیل تومان: {trade.profitToman}
-            </p>
+        <p>
+          کاربر: {user.name}
+        </p>
 
 
-          </div>
-        ))}
+        <p>
+          پلن: {user.plan}
+        </p>
 
 
       </section>
@@ -109,20 +62,29 @@ export default function ReportsPage() {
       <section>
 
         <h2>
-          گزارش ربات‌ها
+          آمار کلی
         </h2>
 
-        <p>
-          🤖 Gold AI Bot: 85٪ موفقیت
-        </p>
 
         <p>
-          🤖 Crypto AI Bot: 72٪ موفقیت
+          تعداد معاملات: 0
         </p>
 
+
         <p>
-          🤖 Forex Bot: 78٪ موفقیت
+          معاملات موفق: 0
         </p>
+
+
+        <p>
+          معاملات ناموفق: 0
+        </p>
+
+
+        <p>
+          درصد موفقیت: 0%
+        </p>
+
 
       </section>
 
@@ -131,20 +93,72 @@ export default function ReportsPage() {
       <section>
 
         <h2>
-          ارسال گزارش
+          سود و زیان
         </h2>
 
-        <p>
-          📱 گزارش روزانه به تلگرام ارسال خواهد شد.
-        </p>
 
         <p>
-          ⏰ زمان ارسال: پایان روز معاملاتی
+          سود کل: 0 دلار
         </p>
+
+
+        <p>
+          ضرر کل: 0 دلار
+        </p>
+
+
+        <p>
+          تبدیل به تومان در مرحله اتصال قیمت لحظه‌ای اضافه می‌شود.
+        </p>
+
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          گزارش دوره‌ای
+        </h2>
+
+
+        <p>
+          گزارش روزانه
+        </p>
+
+
+        <p>
+          گزارش هفتگی
+        </p>
+
+
+        <p>
+          گزارش ماهانه
+        </p>
+
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          عملکرد ربات‌ها
+        </h2>
+
+
+        <p>
+          بعداً عملکرد واقعی ربات‌های تحلیلگر و معامله‌گر اینجا نمایش داده می‌شود.
+        </p>
+
 
       </section>
 
 
     </main>
+
   );
+
 }
