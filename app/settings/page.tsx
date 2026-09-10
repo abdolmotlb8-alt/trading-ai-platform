@@ -1,100 +1,69 @@
-export default function SettingsPage() {
+import { getCurrentUser } from "@/lib/current-user";
+
+export default async function SettingsPage() {
+
+  const user = await getCurrentUser();
+
+
+  if (!user) {
+
+    return (
+
+      <main>
+
+        <h1>
+          ورود لازم است
+        </h1>
+
+        <p>
+          برای مشاهده تنظیمات ابتدا وارد حساب شوید.
+        </p>
+
+      </main>
+
+    );
+
+  }
+
+
+
   return (
+
     <main>
 
+
       <h1>
-        تنظیمات سیستم
+        تنظیمات حساب
       </h1>
 
-      <p>
-        مدیریت حساب، امنیت، اعلان‌ها و تنظیمات معامله‌گری
-      </p>
-
 
 
       <section>
 
         <h2>
-          تنظیمات حساب
+          اطلاعات کاربر
         </h2>
 
-        <p>
-          نام کاربری: Trading User
-        </p>
 
         <p>
-          ایمیل: user@example.com
+          نام: {user.name}
         </p>
 
-        <button>
-          ویرایش اطلاعات
-        </button>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          تنظیمات معامله
-        </h2>
 
         <p>
-          حالت معامله: هوشمند AI
+          ایمیل: {user.email}
         </p>
+
 
         <p>
-          سطح ریسک پیش‌فرض: متوسط
+          نقش: {user.role}
         </p>
+
 
         <p>
-          حداکثر معاملات همزمان: 3
+          پلن: {user.plan}
         </p>
 
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          تنظیمات ربات‌ها
-        </h2>
-
-        <p>
-          🤖 اجرای خودکار ربات: فعال
-        </p>
-
-        <p>
-          📊 تحلیل قبل از معامله: فعال
-        </p>
-
-        <p>
-          🛑 توقف اضطراری: فعال
-        </p>
-
-      </section>
-
-
-
-      <section>
-
-        <h2>
-          اعلان‌ها
-        </h2>
-
-        <p>
-          🔔 اعلان سیگنال‌ها: فعال
-        </p>
-
-        <p>
-          📱 اعلان تلگرام: فعال
-        </p>
-
-        <p>
-          📩 اعلان ایمیل: فعال
-        </p>
 
       </section>
 
@@ -106,21 +75,55 @@ export default function SettingsPage() {
           امنیت
         </h2>
 
+
         <button>
           تغییر رمز عبور
         </button>
 
-        <button>
-          فعال‌سازی تایید دو مرحله‌ای
-        </button>
 
-        <button>
-          خروج از همه دستگاه‌ها
-        </button>
+        <p>
+          مدیریت ورودها و امنیت حساب در این بخش قرار می‌گیرد.
+        </p>
+
 
       </section>
 
 
+
+      <section>
+
+        <h2>
+          اعلان‌ها
+        </h2>
+
+
+        <p>
+          تنظیم دریافت پیام‌ها و هشدارهای معاملاتی
+        </p>
+
+
+      </section>
+
+
+
+      <section>
+
+        <h2>
+          اتصال‌ها
+        </h2>
+
+
+        <p>
+          اتصال تلگرام و سرویس‌های دیگر در این بخش اضافه خواهد شد.
+        </p>
+
+
+      </section>
+
+
+
     </main>
+
   );
+
 }
