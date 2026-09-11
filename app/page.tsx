@@ -1,328 +1,299 @@
-import Link from "next/link";
+/* =========================
+   Global Modern Style
+========================= */
 
-export default function Home() {
-  return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
 
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
 
-          <div className="text-3xl font-black text-cyan-600">
-            Trading AI
-          </div>
+html {
+  direction: rtl;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
 
 
-          <nav className="hidden md:flex gap-8 text-sm font-semibold">
+body {
+  direction: rtl;
+  background: #ffffff;
+  color: #111827;
 
-            <Link href="/">
-              خانه
-            </Link>
+  font-family:
+    "Vazirmatn",
+    "IRANSans",
+    Tahoma,
+    Arial,
+    sans-serif;
 
-            <Link href="/market">
-              بازار
-            </Link>
+  overflow-x: hidden;
 
-            <Link href="/signals">
-              سیگنال‌ها
-            </Link>
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
 
-            <Link href="/bots">
-              ربات‌ها
-            </Link>
 
-            <Link href="/ai-analysis">
-              تحلیل AI
-            </Link>
+/* جلوگیری از بیرون زدن عناصر */
 
-          </nav>
+img,
+svg,
+video {
+  max-width: 100%;
+  height: auto;
+}
 
 
-          <Link
-            href="/login"
-            className="bg-cyan-500 text-white px-6 py-3 rounded-xl font-bold hover:bg-cyan-600"
-          >
-            ورود
-          </Link>
+/* لینک ها */
 
-        </div>
-      </header>
+a {
+  color: inherit;
+  text-decoration: none;
+}
 
 
+/* =========================
+   Container حرفه ای
+========================= */
 
-      {/* Hero */}
 
-      <section className="max-w-7xl mx-auto px-6 py-24 grid md:grid-cols-2 gap-12 items-center">
+.container {
 
+  width: 100%;
 
-        <div className="text-right">
+  max-width: 1280px;
 
+  margin: 0 auto;
 
-          <h1 className="text-5xl md:text-6xl font-black leading-tight">
+  padding-left: 32px;
 
-            معامله هوشمند
-            <br />
+  padding-right: 32px;
 
-            با قدرت
-            <span className="text-cyan-600">
-              هوش مصنوعی
-            </span>
+}
 
-          </h1>
 
 
+/* =========================
+   Typography فارسی
+========================= */
 
-          <p className="mt-8 text-xl text-slate-600 leading-9">
 
-            پلتفرم حرفه‌ای تحلیل بازار، سیگنال هوشمند،
-            ربات معامله‌گر و ابزارهای پیشرفته AI برای معامله‌گران مدرن.
+h1,
+h2,
+h3,
+h4 {
 
-          </p>
+  font-weight: 800;
 
+  line-height: 1.7;
 
+  letter-spacing: -0.3px;
 
-          <div className="mt-10 flex gap-5 justify-end">
+  word-spacing: 6px;
 
+}
 
-            <Link
-              href="/register"
-              className="bg-cyan-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg"
-            >
-              شروع رایگان
-            </Link>
 
+p {
 
-            <Link
-              href="/ai-analysis"
-              className="border border-slate-300 px-8 py-4 rounded-2xl font-bold"
-            >
-              مشاهده AI
-            </Link>
+  font-size: 17px;
 
+  line-height: 2.2;
 
-          </div>
+  color: #4b5563;
 
+  word-spacing: 5px;
 
-        </div>
+  letter-spacing: 0;
 
+}
 
 
-        {/* AI Card */}
+/* متن فارسی بهتر */
 
-        <div className="bg-white rounded-3xl shadow-xl p-8 border">
+button,
+input,
+textarea {
 
+  font-family: inherit;
 
-          <div className="bg-slate-100 rounded-2xl p-6">
+}
 
-            <div className="text-cyan-600 text-5xl">
-              🤖
-            </div>
 
+/* =========================
+   Buttons Modern
+========================= */
 
-            <h3 className="text-2xl font-bold mt-5">
-              AI Market Engine
-            </h3>
 
+button {
 
-            <p className="text-slate-600 mt-4">
-              تحلیل لحظه‌ای بازار با الگوریتم‌های هوشمند.
-            </p>
+  cursor: pointer;
 
+  border: none;
 
-            <div className="mt-8 grid grid-cols-3 gap-4">
+  transition: all .3s ease;
 
+}
 
-              <div className="bg-white rounded-xl p-4 text-center">
-                <b>98%</b>
-                <p>AI</p>
-              </div>
 
+button:hover {
 
-              <div className="bg-white rounded-xl p-4 text-center">
-                <b>24/7</b>
-                <p>Online</p>
-              </div>
+  transform: translateY(-2px);
 
+}
 
-              <div className="bg-white rounded-xl p-4 text-center">
-                <b>AI</b>
-                <p>Bot</p>
-              </div>
 
 
-            </div>
+/* =========================
+   کارت های سایت
+========================= */
 
 
-          </div>
+.card {
 
+  background: white;
 
-        </div>
+  border-radius: 24px;
 
+  padding: 32px;
 
-      </section>
+  border:1px solid #e5e7eb;
 
+  box-shadow:
 
+  0 15px 40px rgba(0,0,0,.06);
 
+}
 
 
-      {/* Features */}
 
-      <section className="max-w-7xl mx-auto px-6 py-20">
+/* =========================
+   موبایل
+========================= */
 
 
-        <h2 className="text-4xl font-black text-center">
-          امکانات حرفه‌ای Trading AI
-        </h2>
+@media(max-width:768px){
 
 
-        <div className="grid md:grid-cols-3 gap-8 mt-14">
+.container {
 
+  padding-left: 22px;
 
-          {[
-            {
-              icon:"📈",
-              title:"تحلیل بازار",
-              text:"بررسی لحظه‌ای بازارهای مالی با AI"
-            },
+  padding-right: 22px;
 
-            {
-              icon:"⚡",
-              title:"سیگنال هوشمند",
-              text:"دریافت فرصت‌های معاملاتی"
-            },
+}
 
-            {
-              icon:"🤖",
-              title:"ربات معامله‌گر",
-              text:"اجرای معاملات خودکار"
-            }
 
-          ].map((item)=>(
-            
-            <div
-              key={item.title}
-              className="bg-white p-8 rounded-3xl shadow-md border hover:shadow-xl transition"
-            >
 
-              <div className="text-5xl">
-                {item.icon}
-              </div>
+h1 {
 
+ font-size:32px;
 
-              <h3 className="text-2xl font-bold mt-6">
-                {item.title}
-              </h3>
+}
 
 
-              <p className="text-slate-600 mt-4">
-                {item.text}
-              </p>
 
+h2 {
 
-            </div>
+ font-size:26px;
 
-          ))}
+}
 
 
-        </div>
 
+h3 {
 
-      </section>
+ font-size:21px;
 
+}
 
 
 
+p {
 
-      {/* Statistics */}
+ font-size:16px;
 
-      <section className="bg-white py-20">
+ line-height:2.1;
 
+}
 
-        <div className="max-w-5xl mx-auto grid md:grid-cols-4 gap-8 text-center">
 
 
-          <div>
-            <h3 className="text-4xl font-black text-cyan-600">
-              50K+
-            </h3>
-            <p>
-              کاربران
-            </p>
-          </div>
+}
 
 
-          <div>
-            <h3 className="text-4xl font-black text-cyan-600">
-              24/7
-            </h3>
-            <p>
-              تحلیل
-            </p>
-          </div>
+/* موبایل کوچک */
 
 
-          <div>
-            <h3 className="text-4xl font-black text-cyan-600">
-              AI
-            </h3>
-            <p>
-              تکنولوژی
-            </p>
-          </div>
+@media(max-width:480px){
 
 
-          <div>
-            <h3 className="text-4xl font-black text-cyan-600">
-              Pro
-            </h3>
-            <p>
-              ابزارها
-            </p>
-          </div>
+.container {
 
+ padding-left:18px;
 
-        </div>
+ padding-right:18px;
 
+}
 
-      </section>
 
+h1 {
 
+ font-size:28px;
 
+}
 
 
+p {
 
-      {/* Footer CTA */}
+ font-size:15px;
 
-      <section className="max-w-6xl mx-auto px-6 py-24">
+}
 
 
-        <div className="bg-cyan-600 rounded-3xl p-12 text-white text-center">
 
+}
 
-          <h2 className="text-4xl font-black">
-            آینده معاملات با AI شروع شده است
-          </h2>
 
 
-          <p className="mt-5 text-lg">
-            همین امروز حساب رایگان بسازید.
-          </p>
+/* =========================
+   Scrollbar زیبا
+========================= */
 
 
-          <Link
-            href="/register"
-            className="inline-block mt-8 bg-white text-cyan-600 px-10 py-4 rounded-xl font-bold"
-          >
-            ثبت نام
-          </Link>
+::-webkit-scrollbar {
 
+ width:8px;
 
-        </div>
+}
 
 
-      </section>
+::-webkit-scrollbar-track {
 
+ background:#f1f5f9;
 
-    </main>
-  );
+}
+
+
+::-webkit-scrollbar-thumb {
+
+ background:#06b6d4;
+
+ border-radius:20px;
+
+}
+
+
+/* =========================
+   انتخاب متن
+========================= */
+
+
+::selection {
+
+ background:#06b6d4;
+
+ color:white;
+
 }
