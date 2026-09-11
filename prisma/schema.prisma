@@ -1,100 +1,36 @@
-import { cookies } from "next/headers";
-import crypto from "crypto";
-import { prisma } from "@/lib/prisma";
-
-
-export async function createSession(userId: string) {
-
-  const token = crypto.randomUUID();
-
-
-  await prisma.session.create({
-    data: {
-      id: token,
-      userId: userId
-    }
-  });
-
-
-  const cookieStore = await cookies();
-
-
-  cookieStore.set(
-    "session",
-    token,
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/"
-    }
-  );
-
-
-  return true;
+generator client {
+  provider = "prisma-client-js"
 }
 
-
-
-export async function getSession() {
-
-  const cookieStore = await cookies();
-
-
-  const sessionCookie =
-    cookieStore.get("session");
-
-
-  if (!sessionCookie) {
-    return null;
-  }
-
-
-  const session =
-    await prisma.session.findUnique({
-
-      where: {
-        id: sessionCookie.value
-      }
-
-    });
-
-
-  if (!session) {
-    return null;
-  }
-
-
-  return session;
-
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
 
+  role      String   @default("USER")
+  plan      String   @default("FREE")
 
-export async function deleteSession() {
+  sessions  Session[]
 
-  const cookieStore = await cookies();
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
 
-  const sessionCookie =
-    cookieStore.get("session");
+  user      User @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
 
-
-  if (sessionCookie) {
-
-    await prisma.session.deleteMany({
-      where:{
-        id: sessionCookie.value
-      }
-    });
-
-  }
-
-
-  cookieStore.delete("session");
-
-
-  return true;
-
+  createdAt DateTime @default(now())
 }
