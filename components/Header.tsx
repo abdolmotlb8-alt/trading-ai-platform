@@ -1,15 +1,50 @@
+"use client";
+
 import Link from "next/link";
+import {
+  Menu,
+  Bell,
+  Search,
+  UserCircle
+} from "lucide-react";
+
+import { useState } from "react";
 
 
 export default function Header() {
 
+  const [open, setOpen] = useState(false);
+
+
   return (
 
-    <header className="w-full sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-100">
+    <header className="
+      sticky
+      top-0
+      z-50
+      w-full
+      bg-white/80
+      backdrop-blur-xl
+      border-b
+      border-slate-200
+    ">
 
-      <div className="max-w-7xl mx-auto px-5 sm:px-8">
 
-        <div className="flex items-center justify-between h-20">
+      <div className="
+        max-w-7xl
+        mx-auto
+        px-5
+        sm:px-8
+      ">
+
+
+        <div className="
+          h-20
+          flex
+          items-center
+          justify-between
+          gap-5
+        ">
 
 
           {/* Logo */}
@@ -17,68 +52,54 @@ export default function Header() {
           <Link
             href="/"
             className="
-            text-2xl
-            sm:text-3xl
-            font-black
-            text-cyan-600
-            whitespace-nowrap
+              text-2xl
+              font-black
+              text-cyan-600
+              whitespace-nowrap
             "
           >
+
             Trading AI
+
           </Link>
+
 
 
 
           {/* Desktop Menu */}
 
-          <nav
-            className="
+          <nav className="
             hidden
             md:flex
             items-center
             gap-8
-            text-slate-600
+            text-slate-700
             font-semibold
-            "
-          >
+          ">
 
-            <Link
-              href="/"
-              className="hover:text-cyan-600 transition"
-            >
+
+            <Link href="/" className="hover:text-cyan-600 transition">
               خانه
             </Link>
 
 
-            <Link
-              href="/market"
-              className="hover:text-cyan-600 transition"
-            >
+            <Link href="/dashboard" className="hover:text-cyan-600 transition">
+              داشبورد
+            </Link>
+
+
+            <Link href="/market" className="hover:text-cyan-600 transition">
               بازار
             </Link>
 
 
-            <Link
-              href="/signals"
-              className="hover:text-cyan-600 transition"
-            >
-              سیگنال‌ها
+            <Link href="/signals" className="hover:text-cyan-600 transition">
+              سیگنال AI
             </Link>
 
 
-            <Link
-              href="/bots"
-              className="hover:text-cyan-600 transition"
-            >
+            <Link href="/bots" className="hover:text-cyan-600 transition">
               ربات‌ها
-            </Link>
-
-
-            <Link
-              href="/ai-analysis"
-              className="hover:text-cyan-600 transition"
-            >
-              تحلیل AI
             </Link>
 
 
@@ -90,64 +111,156 @@ export default function Header() {
 
           {/* Actions */}
 
-          <div className="flex items-center gap-2">
+          <div className="
+            flex
+            items-center
+            gap-2
+          ">
 
 
-            <Link
-
-              href="/login"
-
-              className="
+            <button className="
               hidden
-              sm:block
-              px-4
-              py-2.5
+              sm:flex
+              w-10
+              h-10
+              items-center
+              justify-center
               rounded-xl
-              font-bold
-              text-slate-700
-              hover:text-cyan-600
+              hover:bg-slate-100
               transition
-              "
-
-            >
-              ورود
-            </Link>
+            ">
+              <Search size={21}/>
+            </button>
 
 
+
+            <button className="
+              hidden
+              sm:flex
+              w-10
+              h-10
+              items-center
+              justify-center
+              rounded-xl
+              hover:bg-slate-100
+              transition
+            ">
+              <Bell size={21}/>
+            </button>
 
 
 
             <Link
-
-              href="/register"
-
+              href="/login"
               className="
-              bg-gradient-to-r
-              from-cyan-500
-              to-blue-600
-              text-white
-              px-4
-              sm:px-6
-              py-2.5
-              rounded-xl
-              font-bold
-              shadow-lg
-              shadow-cyan-500/20
-              hover:scale-105
-              transition
-              whitespace-nowrap
+                hidden
+                sm:flex
+                items-center
+                gap-2
+                px-4
+                py-2
+                rounded-xl
+                text-slate-700
+                hover:text-cyan-600
+                transition
               "
-
             >
-              شروع رایگان
+
+              <UserCircle size={22}/>
+
+              ورود
+
             </Link>
 
+
+
+
+            {/* Mobile Menu Button */}
+
+            <button
+              onClick={() => setOpen(!open)}
+              className="
+                md:hidden
+                w-11
+                h-11
+                rounded-xl
+                bg-cyan-500
+                text-white
+                flex
+                items-center
+                justify-center
+              "
+            >
+
+              <Menu size={25}/>
+
+            </button>
 
 
           </div>
 
 
+
         </div>
+
+
+
+
+
+
+        {/* Mobile Menu */}
+
+        {
+          open && (
+
+            <div className="
+              md:hidden
+              pb-5
+              pt-2
+              flex
+              flex-col
+              gap-4
+              text-right
+              text-slate-700
+              font-semibold
+            ">
+
+
+              <Link href="/">
+                خانه
+              </Link>
+
+
+              <Link href="/dashboard">
+                داشبورد
+              </Link>
+
+
+              <Link href="/market">
+                بازار
+              </Link>
+
+
+              <Link href="/signals">
+                سیگنال AI
+              </Link>
+
+
+              <Link href="/bots">
+                ربات‌ها
+              </Link>
+
+
+              <Link href="/login">
+                ورود
+              </Link>
+
+
+            </div>
+
+          )
+        }
+
 
 
       </div>
