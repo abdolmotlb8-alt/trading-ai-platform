@@ -9,7 +9,6 @@ datasource db {
 }
 
 
-
 model User {
 
   id String @id @default(cuid())
@@ -24,22 +23,17 @@ model User {
 
   plan String @default("FREE")
 
-
   sessions Session[]
-
 
   createdAt DateTime @default(now())
 
   updatedAt DateTime @updatedAt
-
 }
-
 
 
 model Session {
 
   id String @id @default(cuid())
-
 
   userId String
 
@@ -49,13 +43,9 @@ model Session {
     onDelete: Cascade
   )
 
-
   token String @unique
-
 
   createdAt DateTime @default(now())
 
-
   expiresAt DateTime
-
 }
