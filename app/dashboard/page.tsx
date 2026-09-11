@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/current-user";
+import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
 
@@ -6,117 +7,96 @@ export default async function DashboardPage() {
 
 
   if (!user) {
-
-    return (
-
-      <main>
-
-        <h1>
-          ورود لازم است
-        </h1>
-
-        <p>
-          لطفاً ابتدا وارد حساب خود شوید.
-        </p>
-
-      </main>
-
-    );
-
+    redirect("/login");
   }
-
 
 
   return (
 
-    <main>
+    <main className="min-h-screen bg-black text-white p-8">
 
 
-      <h1>
-        داشبورد کاربر
-      </h1>
+      <div className="rounded-3xl border border-yellow-500/20 bg-zinc-900 p-8">
 
 
+        <h1 className="text-4xl font-bold text-yellow-400">
+          داشبورد ABOK AI
+        </h1>
 
-      <section>
 
-        <h2>
+        <h2 className="mt-6 text-2xl">
           خوش آمدید {user.name}
         </h2>
 
-        <p>
-          ایمیل: {user.email}
-        </p>
 
-        <p>
-          نقش: {user.role}
-        </p>
+        <div className="mt-6 space-y-3 text-gray-300">
 
-        <p>
-          پلن: {user.plan}
-        </p>
-
-      </section>
+          <p>
+            ایمیل:
+            {user.email}
+          </p>
 
 
+          <p>
+            نقش:
+            {user.role}
+          </p>
 
-      <section>
 
-        <h2>
-          سیگنال‌های معاملاتی
-        </h2>
+          <p>
+            پلن:
+            {user.plan}
+          </p>
 
-        <p>
-          هنوز سیگنالی ثبت نشده است.
-        </p>
+        </div>
 
-      </section>
+
+      </div>
 
 
 
-      <section>
-
-        <h2>
-          معاملات من
-        </h2>
-
-        <p>
-          لیست معاملات در این بخش نمایش داده می‌شود.
-        </p>
-
-      </section>
+      <div className="mt-8 grid gap-6 md:grid-cols-3">
 
 
-
-      <section>
-
-        <h2>
-          گزارش سود و زیان
-        </h2>
-
-        <p>
-          مجموع سود و ضرر معاملات اینجا نمایش داده خواهد شد.
-        </p>
-
-      </section>
+        <div className="rounded-3xl bg-zinc-900 p-6">
+          🤖
+          <h3 className="mt-3 text-xl text-yellow-400">
+            ربات‌های من
+          </h3>
+          <p>
+            مدیریت ربات‌های معاملاتی
+          </p>
+        </div>
 
 
 
-      <section>
+        <div className="rounded-3xl bg-zinc-900 p-6">
+          📈
+          <h3 className="mt-3 text-xl text-yellow-400">
+            معاملات
+          </h3>
+          <p>
+            مشاهده معاملات و سود و زیان
+          </p>
+        </div>
 
-        <h2>
-          وضعیت ربات‌ها
-        </h2>
 
-        <p>
-          ربات‌های فعال و عملکرد آنها اینجا قرار می‌گیرد.
-        </p>
 
-      </section>
+        <div className="rounded-3xl bg-zinc-900 p-6">
+          🧠
+          <h3 className="mt-3 text-xl text-yellow-400">
+            تحلیل AI
+          </h3>
+          <p>
+            تحلیل بازار توسط هوش مصنوعی
+          </p>
+        </div>
+
+
+      </div>
 
 
     </main>
 
   );
-
 }
