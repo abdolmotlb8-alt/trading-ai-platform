@@ -1,27 +1,45 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+
 
 export default function AuthForm() {
 
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const router = useRouter();
+
+
+  const [mode, setMode] =
+    useState<"login" | "register">("login");
+
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+
   const [message, setMessage] = useState("");
+
   const [user, setUser] = useState<any>(null);
+
 
 
   async function handleSubmit() {
 
+
     try {
+
+
+      setMessage("در حال بررسی...");
+
+
 
       const url =
         mode === "register"
           ? "/api/register"
-          : "/api/login";
+          : "/api/auth/login";
+
+
 
 
       const body =
@@ -29,53 +47,99 @@ export default function AuthForm() {
           ? {
               name,
               email,
-              password,
+              password
             }
-          : {
+          :
+            {
               email,
-              password,
+              password
             };
 
 
-      const response = await fetch(url, {
-
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify(body),
-
-      });
 
 
-      const data = await response.json();
+
+      const response =
+        await fetch(url, {
+
+
+          method: "POST",
+
+
+          headers: {
+
+            "Content-Type": "application/json"
+
+          },
+
+
+          body: JSON.stringify(body)
+
+        });
+
+
+
+
+
+      const data =
+        await response.json();
+
+
+
 
 
       setMessage(
-        data.message || "پاسخی دریافت نشد"
+        data.message ||
+        "خطای نامشخص"
       );
+
+
+
 
 
       if (response.ok && data.user) {
 
+
         setUser(data.user);
+
+
+
+        if (mode === "login") {
+
+
+          router.push("/dashboard");
+
+
+        }
+
 
       }
 
 
+
+
+
     } catch (error) {
 
-      console.log(error);
+
+      console.error(
+        "AUTH ERROR:",
+        error
+      );
+
 
       setMessage(
-        "خطا در اتصال به سرور"
+        "خطا در ارتباط با سرور"
       );
+
 
     }
 
+
   }
+
+
+
 
 
 
@@ -83,17 +147,24 @@ export default function AuthForm() {
 
     <section>
 
+
       <h1>
+
         {
           mode === "login"
           ? "ورود به حساب"
           : "ساخت حساب جدید"
         }
+
       </h1>
+
+
+
 
 
       {
         mode === "register" && (
+
 
           <input
 
@@ -107,44 +178,68 @@ export default function AuthForm() {
 
           />
 
+
         )
+
       }
+
+
+
 
 
 
       <input
 
+
         type="email"
+
 
         placeholder="ایمیل"
 
+
         value={email}
+
 
         onChange={(e)=>
           setEmail(e.target.value)
         }
 
+
       />
+
+
+
+
 
 
 
       <input
 
+
         type="password"
+
 
         placeholder="رمز عبور"
 
+
         value={password}
+
 
         onChange={(e)=>
           setPassword(e.target.value)
         }
 
+
       />
 
 
 
+
+
+
+
       <button onClick={handleSubmit}>
+
 
         {
           mode === "login"
@@ -152,65 +247,111 @@ export default function AuthForm() {
           : "ثبت نام"
         }
 
+
       </button>
 
 
 
+
+
+
       <p>
+
         {message}
+
       </p>
+
+
+
+
 
 
 
       {
         user && (
 
+
           <div>
 
+
             <h3>
+
               خوش آمدید {user.name}
+
             </h3>
 
 
             <p>
+
               نقش: {user.role}
+
             </p>
 
 
             <p>
+
               پلن: {user.plan}
+
             </p>
+
+
 
           </div>
 
+
         )
+
       }
+
+
+
+
 
 
 
       <button
 
-        onClick={() =>
+
+        onClick={() => {
+
+
           setMode(
+
             mode === "login"
             ? "register"
             : "login"
-          )
-        }
+
+          );
+
+
+          setMessage("");
+
+        }}
+
 
       >
 
+
         {
+
           mode === "login"
-          ? "ثبت نام جدید"
+
+          ? "ساخت حساب جدید"
+
           : "ورود"
+
         }
 
+
       </button>
+
+
+
 
 
     </section>
 
   );
+
 
 }
