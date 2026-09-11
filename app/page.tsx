@@ -106,3 +106,22 @@ export default function Home() {
     </main>
   )
 }
+body {
+  background:#050505;
+  font-family: Arial, sans-serif;
+}
+
+
+* {
+  box-sizing:border-box;
+}
+
+
+button {
+  transition:0.3s;
+}
+
+
+button:hover {
+  transform:scale(1.05);
+}
