@@ -1,131 +1,319 @@
+import Link from "next/link";
+
 export default function Home() {
+
   return (
+
     <main className="min-h-screen bg-black text-white">
 
-      {/* Header */}
-      <header className="flex items-center justify-between px-8 py-6 border-b border-yellow-500/20">
-        <h1 className="text-3xl font-bold text-yellow-400">
-          ABOK AI
-        </h1>
+      {/* HEADER */}
 
-        <button className="rounded-full bg-yellow-400 px-6 py-3 font-bold text-black">
-          شروع معامله
-        </button>
+      <header className="border-b border-yellow-600/30 bg-black/90">
+
+        <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
+
+          <h1 className="text-3xl font-bold text-yellow-400">
+            ABOK AI
+          </h1>
+
+
+          <nav className="hidden md:flex gap-8 text-gray-300">
+
+            <Link href="/">
+              خانه
+            </Link>
+
+            <Link href="/market">
+              بازار
+            </Link>
+
+            <Link href="/bots">
+              ربات‌ها
+            </Link>
+
+            <Link href="/courses">
+              آموزش
+            </Link>
+
+            <Link href="/support">
+              پشتیبانی
+            </Link>
+
+          </nav>
+
+
+
+          <div className="flex gap-3">
+
+            <Link
+            href="/login"
+            className="
+            border border-yellow-500
+            text-yellow-400
+            px-5 py-2
+            rounded-xl
+            hover:bg-yellow-500
+            hover:text-black
+            "
+            >
+
+              ورود
+
+            </Link>
+
+
+            <Link
+            href="/register"
+            className="
+            bg-yellow-500
+            text-black
+            px-5 py-2
+            rounded-xl
+            font-bold
+            hover:bg-yellow-400
+            "
+            >
+
+              ثبت نام
+
+            </Link>
+
+          </div>
+
+
+        </div>
+
+
       </header>
 
 
-      {/* Hero */}
-      <section className="px-6 py-20 text-center">
-
-        <h2 className="text-5xl md:text-6xl font-black text-yellow-400">
-          بروکر هوشمند نسل جدید
-        </h2>
-
-        <p className="mx-auto mt-6 max-w-3xl text-lg text-gray-300">
-          پلتفرم هوش مصنوعی برای تحلیل بازار،
-          مدیریت سرمایه و معاملات حرفه‌ای
-        </p>
 
 
-        <div className="mx-auto mt-12 flex h-48 w-48 items-center justify-center rounded-full border border-yellow-400/40 bg-yellow-400/10 text-7xl">
-          🤖
+
+      {/* HERO */}
+
+
+      <section className="max-w-6xl mx-auto px-6 py-24 text-center">
+
+
+        <div
+        className="
+        bg-zinc-900
+        border
+        border-yellow-600/30
+        rounded-3xl
+        p-12
+        shadow-2xl
+        "
+        >
+
+
+          <h2
+          className="
+          text-5xl
+          md:text-7xl
+          font-black
+          text-yellow-400
+          mb-8
+          "
+          >
+
+            معامله‌گری هوشمند با هوش مصنوعی
+
+
+          </h2>
+
+
+          <p
+          className="
+          text-gray-300
+          text-xl
+          leading-10
+          max-w-3xl
+          mx-auto
+          "
+          >
+
+            پلتفرم نسل جدید تحلیل بازار،
+            ربات‌های معاملاتی،
+            مدیریت سرمایه و آموزش حرفه‌ای.
+
+
+          </p>
+
+
+          <div className="mt-10 flex justify-center gap-5">
+
+
+            <Link
+            href="/register"
+            className="
+            bg-yellow-500
+            text-black
+            px-8 py-4
+            rounded-2xl
+            font-bold
+            "
+            >
+
+              شروع کار
+
+
+            </Link>
+
+
+            <Link
+            href="/market"
+            className="
+            border
+            border-yellow-500
+            text-yellow-400
+            px-8 py-4
+            rounded-2xl
+            "
+            >
+
+              مشاهده بازار
+
+
+            </Link>
+
+
+          </div>
+
+
         </div>
+
 
       </section>
 
 
 
-      {/* Features */}
-      <section className="grid gap-8 px-8 pb-20 md:grid-cols-3">
-
-
-        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-900 p-8">
-
-          <div className="text-5xl">
-            🤖
-          </div>
-
-          <h3 className="mt-5 text-2xl font-bold text-yellow-400">
-            ربات AI
-          </h3>
-
-          <p className="mt-3 text-gray-400">
-            تحلیل بازار با هوش مصنوعی و کمک به تصمیم‌های معاملاتی.
-          </p>
-
-        </div>
 
 
 
-        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-900 p-8">
+      {/* FEATURES */}
 
-          <div className="text-5xl">
-            📈
-          </div>
 
-          <h3 className="mt-5 text-2xl font-bold text-yellow-400">
-            معاملات حرفه‌ای
-          </h3>
-
-          <p className="mt-3 text-gray-400">
-            محیط مدرن برای مدیریت سفارش‌ها و مشاهده بازار.
-          </p>
-
-        </div>
+      <section className="
+      max-w-6xl
+      mx-auto
+      px-6
+      grid
+      md:grid-cols-3
+      gap-8
+      pb-24
+      ">
 
 
 
-        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-900 p-8">
+        <Box
+        title="🤖 ربات‌های AI"
+        text="ربات‌های هوشمند برای تحلیل و مدیریت معاملات."
+        />
 
-          <div className="text-5xl">
-            🔐
-          </div>
 
-          <h3 className="mt-5 text-2xl font-bold text-yellow-400">
-            امنیت
-          </h3>
+        <Box
+        title="📈 تحلیل بازار"
+        text="تحلیل ارز دیجیتال، فارکس و بازارهای مالی."
+        />
 
-          <p className="mt-3 text-gray-400">
-            طراحی شده با تمرکز روی امنیت کاربران و داده‌ها.
-          </p>
 
-        </div>
+        <Box
+        title="🔐 امنیت"
+        text="مدیریت کاربران، حساب‌ها و اطلاعات."
+        />
+
 
 
       </section>
 
 
 
-      {/* About */}
-
-      <section className="px-8 pb-20">
-
-        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-900 p-10 text-center">
-
-          <h3 className="text-3xl font-bold text-yellow-400">
-            آینده معاملات با ABOK
-          </h3>
-
-          <p className="mt-5 text-gray-300">
-            یک اکوسیستم هوشمند برای معامله‌گران،
-            تحلیل‌گران و کاربران بازارهای مالی.
-          </p>
-
-        </div>
-
-      </section>
 
 
+      <footer
+      className="
+      border-t
+      border-yellow-600/30
+      py-8
+      text-center
+      text-gray-400
+      "
+      >
 
-      {/* Footer */}
-
-      <footer className="border-t border-yellow-400/20 py-8 text-center text-gray-500">
-
-        © 2026 ABOK AI Platform
+        ABOK AI Platform © 2026
 
       </footer>
 
 
     </main>
+
   );
+
+}
+
+
+
+
+
+function Box(
+{
+title,
+text
+}:
+{
+title:string;
+text:string;
+}
+
+){
+
+
+return(
+
+<div
+className="
+bg-zinc-900
+border
+border-yellow-600/30
+rounded-3xl
+p-8
+hover:-translate-y-2
+transition
+"
+>
+
+<h3
+className="
+text-2xl
+text-yellow-400
+font-bold
+mb-4
+"
+>
+
+{title}
+
+</h3>
+
+
+<p
+className="
+text-gray-300
+leading-8
+"
+>
+
+{text}
+
+</p>
+
+
+</div>
+
+
+)
+
+
 }
