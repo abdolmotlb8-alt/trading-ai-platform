@@ -4,14 +4,12 @@ import { getSession } from "@/lib/session";
 
 
 export async function GET() {
-
   try {
 
     const session = await getSession();
 
 
-    if (!session) {
-
+    if (!session || !session.userId) {
       return NextResponse.json(
         {
           message: "کاربر وارد نشده است"
@@ -20,30 +18,25 @@ export async function GET() {
           status: 401
         }
       );
-
     }
 
 
     const user = await prisma.user.findUnique({
-
       where: {
-        id: session.token
+        id: session.userId
       },
-
       select: {
         id: true,
         name: true,
         email: true,
         role: true,
-        plan: true
+        plan: true,
+        createdAt: true
       }
-
     });
 
 
-
     if (!user) {
-
       return NextResponse.json(
         {
           message: "کاربر پیدا نشد"
@@ -52,9 +45,7 @@ export async function GET() {
           status: 404
         }
       );
-
     }
-
 
 
     return NextResponse.json(
@@ -68,7 +59,6 @@ export async function GET() {
 
 
   } catch (error) {
-
 
     console.log(
       "CURRENT USER ERROR:",
@@ -86,5 +76,4 @@ export async function GET() {
     );
 
   }
-
 }
