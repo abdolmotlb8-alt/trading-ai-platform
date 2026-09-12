@@ -1,3 +1,6 @@
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
+
 export type CurrentUser = {
   id: string;
   name: string;
@@ -6,15 +9,28 @@ export type CurrentUser = {
   plan: "FREE" | "VIP" | "PREMIUM";
 };
 
-
 export async function getCurrentUser(): Promise<CurrentUser | null> {
+  const session = await getSession();
+
+  if (!session) {
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: session.userId,
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
 
   return {
-    id: "1",
-    name: "Admin",
-    email: "admin@example.com",
-    role: "ADMIN",
-    plan: "PREMIUM",
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role as "ADMIN" | "USER",
+    plan: user.plan as "FREE" | "VIP" | "PREMIUM",
   };
-
 }
