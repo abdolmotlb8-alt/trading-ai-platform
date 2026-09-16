@@ -1,118 +1,379 @@
-import { getCurrentUser } from "@/lib/current-user";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
 
 export default async function DashboardPage() {
-  const user = await getCurrentUser();
+  const session = await getSession();
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: session.userId,
+    },
+  });
 
   if (!user) {
     redirect("/login");
   }
 
   return (
-    <main
-      dir="rtl"
-      className="min-h-screen bg-black text-white px-4 py-6 md:px-8"
-    >
-      <div className="mx-auto max-w-7xl">
+    <main className="dashboard-shell">
+      <div className="dashboard-container">
 
         {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 rounded-3xl border border-yellow-500/20 bg-zinc-950 p-6 md:flex-row md:items-center md:justify-between">
+        <header className="dashboard-header">
 
-          <div>
-            <p className="mb-2 text-sm text-gray-500">
-              پنل کاربری
-            </p>
-
-            <h1 className="text-3xl font-black text-yellow-400 md:text-4xl">
-              داشبورد
-            </h1>
-
-            <p className="mt-2 text-gray-400">
-              خوش آمدید {user.name}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/profile"
-              className="rounded-xl border border-yellow-500/30 px-5 py-3 text-sm text-yellow-400 transition hover:bg-yellow-500 hover:text-black"
-            >
-              پروفایل
-            </Link>
-
-            <Link
-              href="/settings"
-              className="rounded-xl border border-zinc-700 px-5 py-3 text-sm text-gray-300 transition hover:border-yellow-500/50 hover:text-yellow-400"
-            >
-              تنظیمات
-            </Link>
-          </div>
-
-        </div>
-
-
-        {/* Account information */}
-        <section className="mb-8">
-
-          <div className="rounded-3xl border border-yellow-500/20 bg-zinc-900 p-6 md:p-8">
-
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-white">
-                  اطلاعات حساب
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  وضعیت حساب کاربری شما
-                </p>
-              </div>
-
-              <div className="rounded-full border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-400">
-                ● فعال
-              </div>
+          <div className="brand">
+            <div className="brand-icon">
+              AI
             </div>
 
+            <div className="brand-text">
+              <h1>Trading AI</h1>
+              <p>
+                پلتفرم هوشمند معاملات و تحلیل بازار
+              </p>
+            </div>
+          </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
+          <div className="user-badge">
 
-              <InfoCard
-                title="نام کاربر"
-                value={user.name}
-              />
+            <div className="user-avatar">
+              {user.name?.charAt(0)?.toUpperCase() || "U"}
+            </div>
 
-              <InfoCard
-                title="ایمیل"
-                value={user.email}
-              />
+            <div className="user-info">
+              <span className="user-name">
+                {user.name}
+              </span>
 
-              <InfoCard
-                title="نقش"
-                value={user.role}
-              />
+              <span className="user-plan">
+                پلن {user.plan}
+              </span>
+            </div>
+
+          </div>
+
+        </header>
+
+        {/* Main Layout */}
+        <div className="dashboard-grid">
+
+          {/* Sidebar */}
+          <aside className="dashboard-sidebar">
+
+            <div className="sidebar-title">
+              منوی اصلی
+            </div>
+
+            <nav className="sidebar-menu">
+
+              <Link
+                href="/dashboard"
+                className="sidebar-link active"
+              >
+                <span className="sidebar-icon">⌂</span>
+                داشبورد
+              </Link>
+
+              <Link
+                href="/bots"
+                className="sidebar-link"
+              >
+                <span className="sidebar-icon">🤖</span>
+                ربات‌های من
+              </Link>
+
+              <Link
+                href="/market"
+                className="sidebar-link"
+              >
+                <span className="sidebar-icon">📈</span>
+                بازار
+              </Link>
+
+              <Link
+                href="/ai-analysis"
+                className="sidebar-link"
+              >
+                <span className="sidebar-icon">🧠</span>
+                تحلیل هوش مصنوعی
+              </Link>
+
+              <Link
+                href="/broker"
+                className="sidebar-link"
+              >
+                <span className="sidebar-icon">🔗</span>
+                اتصال بروکر
+              </Link>
+
+              <Link
+                href="/courses"
+                className="sidebar-link"
+              >
+                <span className="sidebar-icon">🎓</span>
+                آموزش
+              </Link>
+
+              <Link
+                href="/support"
+                className="sidebar-link"
+              >
+                <span className="sidebar-icon">💬</span>
+                پشتیبانی
+              </Link>
+
+            </nav>
+
+          </aside>
+
+          {/* Content */}
+          <section className="dashboard-main">
+
+            {/* Welcome */}
+            <div className="welcome-section">
+
+              <h2>
+                خوش آمدید، {user.name} 👋
+              </h2>
+
+              <p>
+                از این بخش می‌توانید حساب، ربات‌ها،
+                تحلیل‌ها و سرویس‌های معاملاتی خود را مدیریت کنید.
+              </p>
 
             </div>
 
+            {/* Stats */}
+            <div className="stats-grid">
 
-            <div className="mt-4">
+              <div className="stat-card">
+                <div className="stat-label">
+                  وضعیت حساب
+                </div>
 
-              <div className="rounded-2xl border border-yellow-500/20 bg-black p-5">
+                <div className="stat-value">
+                  فعال
+                </div>
 
-                <p className="text-sm text-gray-500">
+                <div className="stat-sub">
+                  حساب شما فعال است
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">
                   پلن فعلی
-                </p>
+                </div>
 
-                <div className="mt-2 flex items-center justify-between">
+                <div className="stat-value">
+                  {user.plan}
+                </div>
 
-                  <span className="text-2xl font-bold text-yellow-400">
-                    {user.plan}
-                  </span>
+                <div className="stat-sub">
+                  پلن حساب کاربری
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">
+                  ربات‌ها
+                </div>
+
+                <div className="stat-value">
+                  ۰
+                </div>
+
+                <div className="stat-sub">
+                  هنوز رباتی متصل نشده
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">
+                  بروکر
+                </div>
+
+                <div className="stat-value">
+                  متصل نیست
+                </div>
+
+                <div className="stat-sub">
+                  آماده اتصال
+                </div>
+              </div>
+
+            </div>
+
+            {/* Content */}
+            <div className="content-grid">
+
+              {/* Account */}
+              <div className="panel">
+
+                <div className="panel-header">
+
+                  <div>
+                    <h3 className="panel-title">
+                      اطلاعات حساب
+                    </h3>
+
+                    <p className="panel-description">
+                      اطلاعات فعلی حساب کاربری شما
+                    </p>
+                  </div>
+
+                </div>
+
+                <div className="account-list">
+
+                  <div className="account-row">
+                    <span className="account-label">
+                      نام کاربر
+                    </span>
+
+                    <span className="account-value">
+                      {user.name}
+                    </span>
+                  </div>
+
+                  <div className="account-row">
+                    <span className="account-label">
+                      ایمیل
+                    </span>
+
+                    <span className="account-value">
+                      {user.email}
+                    </span>
+                  </div>
+
+                  <div className="account-row">
+                    <span className="account-label">
+                      نقش
+                    </span>
+
+                    <span className="account-value">
+                      {user.role}
+                    </span>
+                  </div>
+
+                  <div className="account-row">
+                    <span className="account-label">
+                      پلن
+                    </span>
+
+                    <span className="account-value">
+                      {user.plan}
+                    </span>
+                  </div>
+
+                  <div className="account-row">
+
+                    <span className="account-label">
+                      وضعیت
+                    </span>
+
+                    <span className="account-value status">
+                      <span className="status-dot" />
+                      فعال
+                    </span>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* Services */}
+              <div className="panel">
+
+                <div className="panel-header">
+
+                  <div>
+                    <h3 className="panel-title">
+                      مرکز معامله‌گری
+                    </h3>
+
+                    <p className="panel-description">
+                      سرویس‌های اصلی پلتفرم
+                    </p>
+                  </div>
+
+                </div>
+
+                <div className="service-grid">
 
                   <Link
-                    href="/subscription"
-                    className="rounded-xl bg-yellow-500 px-4 py-2 text-sm font-bold text-black transition hover:bg-yellow-400"
+                    href="/bots"
+                    className="service-card"
                   >
-                    ارتقای پلن
+                    <div className="service-icon">
+                      🤖
+                    </div>
+
+                    <h4 className="service-title">
+                      ربات معاملاتی
+                    </h4>
+
+                    <p className="service-text">
+                      ساخت و مدیریت ربات‌های معاملاتی
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/ai-analysis"
+                    className="service-card"
+                  >
+                    <div className="service-icon">
+                      🧠
+                    </div>
+
+                    <h4 className="service-title">
+                      تحلیل AI
+                    </h4>
+
+                    <p className="service-text">
+                      تحلیل هوشمند بازار و دارایی‌ها
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/broker"
+                    className="service-card"
+                  >
+                    <div className="service-icon">
+                      🔗
+                    </div>
+
+                    <h4 className="service-title">
+                      اتصال بروکر
+                    </h4>
+
+                    <p className="service-text">
+                      اتصال امن حساب معاملاتی
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/support"
+                    className="service-card"
+                  >
+                    <div className="service-icon">
+                      💬
+                    </div>
+
+                    <h4 className="service-title">
+                      پشتیبانی
+                    </h4>
+
+                    <p className="service-text">
+                      ارتباط با تیم پشتیبانی Trading AI
+                    </p>
                   </Link>
 
                 </div>
@@ -121,254 +382,11 @@ export default async function DashboardPage() {
 
             </div>
 
-          </div>
+          </section>
 
-        </section>
-
-
-        {/* Main modules */}
-        <section>
-
-          <div className="mb-5">
-
-            <h2 className="text-2xl font-bold">
-              مرکز معامله‌گری
-            </h2>
-
-            <p className="mt-1 text-gray-500">
-              بخش‌های اصلی پلتفرم از اینجا در دسترس هستند.
-            </p>
-
-          </div>
-
-
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-
-
-            <DashboardModule
-              icon="🤖"
-              title="ربات‌های معاملاتی"
-              description="مدیریت، ایجاد و بررسی عملکرد ربات‌های معاملاتی."
-              href="/bots"
-            />
-
-
-            <DashboardModule
-              icon="📊"
-              title="بازارها"
-              description="بررسی بازارها و اطلاعات معاملاتی."
-              href="/market"
-            />
-
-
-            <DashboardModule
-              icon="🧠"
-              title="تحلیل هوش مصنوعی"
-              description="دریافت تحلیل و بررسی بازار توسط سیستم هوش مصنوعی."
-              href="/ai-analysis"
-            />
-
-
-            <DashboardModule
-              icon="📈"
-              title="معاملات"
-              description="مشاهده معاملات، وضعیت و عملکرد معاملات."
-              href="/trades"
-            />
-
-
-            <DashboardModule
-              icon="💰"
-              title="عملکرد"
-              description="بررسی سود، زیان و آمار عملکرد معاملاتی."
-              href="/performance"
-            />
-
-
-            <DashboardModule
-              icon="📋"
-              title="گزارش‌ها"
-              description="مشاهده گزارش‌های معاملاتی و تحلیلی."
-              href="/reports"
-            />
-
-
-            <DashboardModule
-              icon="📡"
-              title="سیگنال‌ها"
-              description="مشاهده سیگنال‌ها و فرصت‌های معاملاتی."
-              href="/signals"
-            />
-
-
-            <DashboardModule
-              icon="🛡️"
-              title="مدیریت ریسک"
-              description="کنترل ریسک و تنظیمات مدیریت سرمایه."
-              href="/risk"
-            />
-
-
-            <DashboardModule
-              icon="📅"
-              title="تقویم اقتصادی"
-              description="مشاهده رویدادهای مهم اقتصادی."
-              href="/economic"
-            />
-
-          </div>
-
-        </section>
-
-
-        {/* Bottom area */}
-        <section className="mt-8 grid gap-5 md:grid-cols-2">
-
-
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-
-            <div className="flex items-center gap-4">
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-yellow-500/10 text-2xl">
-                🤖
-              </div>
-
-              <div>
-                <h3 className="font-bold text-white">
-                  وضعیت ربات‌ها
-                </h3>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  هنوز رباتی فعال نشده است.
-                </p>
-              </div>
-
-            </div>
-
-            <Link
-              href="/bot-builder"
-              className="mt-5 block rounded-xl border border-yellow-500/30 py-3 text-center text-sm text-yellow-400 transition hover:bg-yellow-500 hover:text-black"
-            >
-              ساخت ربات جدید
-            </Link>
-
-          </div>
-
-
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-
-            <div className="flex items-center gap-4">
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-yellow-500/10 text-2xl">
-                🧠
-              </div>
-
-              <div>
-                <h3 className="font-bold text-white">
-                  دستیار هوش مصنوعی
-                </h3>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  تحلیل و راهنمایی هوشمند برای معامله‌گری.
-                </p>
-              </div>
-
-            </div>
-
-            <Link
-              href="/assistant"
-              className="mt-5 block rounded-xl bg-yellow-500 py-3 text-center text-sm font-bold text-black transition hover:bg-yellow-400"
-            >
-              ورود به دستیار AI
-            </Link>
-
-          </div>
-
-
-        </section>
-
-
-        {/* Footer */}
-        <footer className="mt-10 border-t border-zinc-900 py-6 text-center text-sm text-gray-600">
-          پلتفرم هوش مصنوعی معامله‌گری
-        </footer>
+        </div>
 
       </div>
     </main>
-  );
-}
-
-
-/* ----------------------------- */
-/* Information Card               */
-/* ----------------------------- */
-
-function InfoCard({
-  title,
-  value,
-}: {
-  title: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-black p-5">
-
-      <p className="text-sm text-gray-500">
-        {title}
-      </p>
-
-      <p className="mt-2 truncate text-lg font-bold text-white">
-        {value}
-      </p>
-
-    </div>
-  );
-}
-
-
-/* ----------------------------- */
-/* Dashboard Module               */
-/* ----------------------------- */
-
-function DashboardModule({
-  icon,
-  title,
-  description,
-  href,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-3xl border border-zinc-800 bg-zinc-900 p-6 transition duration-200 hover:-translate-y-1 hover:border-yellow-500/40 hover:bg-zinc-950"
-    >
-
-      <div className="flex items-start justify-between">
-
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-yellow-500/10 text-3xl">
-          {icon}
-        </div>
-
-        <span className="text-gray-600 transition group-hover:text-yellow-400">
-          ←
-        </span>
-
-      </div>
-
-
-      <h3 className="mt-5 text-xl font-bold text-yellow-400">
-        {title}
-      </h3>
-
-
-      <p className="mt-3 text-sm leading-7 text-gray-400">
-        {description}
-      </p>
-
-    </Link>
   );
 }
