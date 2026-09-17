@@ -29,20 +29,20 @@ export default async function DashboardPage() {
 
         .dashboard-page {
           min-height: 100vh;
+          padding: 24px;
           background:
-            radial-gradient(circle at 90% 0%, rgba(6,182,212,.12), transparent 28%),
-            radial-gradient(circle at 0% 100%, rgba(37,99,235,.12), transparent 30%),
-            #07111f;
+            radial-gradient(circle at 85% 0%, rgba(6,182,212,.14), transparent 28%),
+            radial-gradient(circle at 5% 80%, rgba(37,99,235,.12), transparent 30%),
+            #06111f;
           color: #f8fafc;
           font-family: Arial, Tahoma, sans-serif;
-          padding: 24px;
         }
 
         .dashboard-wrapper {
-          width: min(1450px, 100%);
+          width: min(1480px, 100%);
           margin: 0 auto;
           display: grid;
-          grid-template-columns: 250px minmax(0, 1fr);
+          grid-template-columns: 255px minmax(0, 1fr);
           gap: 24px;
           direction: ltr;
         }
@@ -52,35 +52,40 @@ export default async function DashboardPage() {
           direction: rtl;
         }
 
+        /* ================= SIDEBAR ================= */
+
         .sidebar {
-          background: rgba(10, 20, 35, .88);
-          border: 1px solid rgba(148,163,184,.12);
-          border-radius: 24px;
-          padding: 20px;
           min-height: calc(100vh - 48px);
+          height: fit-content;
           position: sticky;
           top: 24px;
-          height: fit-content;
-          box-shadow: 0 20px 60px rgba(0,0,0,.2);
+          padding: 20px;
+          border-radius: 26px;
+          background: rgba(8, 20, 35, .94);
+          border: 1px solid rgba(148,163,184,.12);
+          box-shadow: 0 25px 70px rgba(0,0,0,.25);
         }
 
         .brand {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 6px 4px 24px;
+          padding: 4px 4px 22px;
+          text-decoration: none;
+          color: white;
           border-bottom: 1px solid rgba(148,163,184,.1);
         }
 
         .brand-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 14px;
+          width: 46px;
+          height: 46px;
+          flex-shrink: 0;
           display: grid;
           place-items: center;
+          border-radius: 15px;
           background: linear-gradient(135deg,#06b6d4,#2563eb);
           font-weight: 900;
-          box-shadow: 0 10px 30px rgba(6,182,212,.25);
+          box-shadow: 0 12px 30px rgba(6,182,212,.22);
         }
 
         .brand-title {
@@ -89,15 +94,16 @@ export default async function DashboardPage() {
         }
 
         .brand-subtitle {
-          margin-top: 4px;
+          margin-top: 5px;
           color: #64748b;
           font-size: 10px;
         }
 
         .menu-title {
+          margin: 25px 8px 12px;
           color: #64748b;
           font-size: 11px;
-          margin: 24px 8px 10px;
+          font-weight: 700;
         }
 
         .menu {
@@ -106,36 +112,57 @@ export default async function DashboardPage() {
         }
 
         .menu a {
+          min-height: 47px;
           display: flex;
           align-items: center;
-          gap: 11px;
-          min-height: 46px;
+          gap: 12px;
           padding: 0 13px;
-          border-radius: 13px;
+          border-radius: 14px;
           color: #94a3b8;
           text-decoration: none;
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 700;
           transition: .2s;
         }
 
         .menu a:hover {
-          background: rgba(255,255,255,.05);
-          color: #fff;
+          color: white;
+          background: rgba(255,255,255,.045);
         }
 
         .menu a.active {
-          background: rgba(34,211,238,.1);
-          color: #22d3ee;
-          border: 1px solid rgba(34,211,238,.12);
+          color: #67e8f9;
+          background: linear-gradient(
+            135deg,
+            rgba(6,182,212,.13),
+            rgba(37,99,235,.08)
+          );
+          border: 1px solid rgba(34,211,238,.16);
+          box-shadow: 0 8px 25px rgba(6,182,212,.06);
+        }
+
+        .menu-icon {
+          width: 30px;
+          height: 30px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 9px;
+          background: rgba(255,255,255,.035);
+          font-size: 15px;
         }
 
         .support-box {
-          margin-top: 24px;
+          margin-top: 25px;
           padding: 16px;
           border-radius: 18px;
-          background: linear-gradient(135deg,rgba(6,182,212,.1),rgba(37,99,235,.06));
-          border: 1px solid rgba(34,211,238,.1);
+          background:
+            linear-gradient(
+              135deg,
+              rgba(6,182,212,.12),
+              rgba(37,99,235,.07)
+            );
+          border: 1px solid rgba(34,211,238,.13);
         }
 
         .support-box strong {
@@ -144,46 +171,51 @@ export default async function DashboardPage() {
         }
 
         .support-box p {
-          color: #64748b;
-          font-size: 11px;
-          line-height: 1.9;
-          margin: 8px 0 12px;
+          margin: 9px 0 13px;
+          color: #7f91a8;
+          font-size: 10px;
+          line-height: 2;
         }
 
-        .coming {
+        .support-button {
           display: block;
+          padding: 10px;
+          border-radius: 11px;
           text-align: center;
-          padding: 8px;
-          border-radius: 10px;
-          background: rgba(255,255,255,.04);
-          color: #64748b;
+          color: #67e8f9;
+          background: rgba(34,211,238,.07);
+          border: 1px solid rgba(34,211,238,.1);
           font-size: 10px;
+          font-weight: 700;
+          text-decoration: none;
         }
+
+        /* ================= MAIN ================= */
 
         .main-content {
           min-width: 0;
         }
 
         .topbar {
-          min-height: 74px;
-          padding: 15px 18px;
+          min-height: 76px;
+          margin-bottom: 20px;
+          padding: 16px 20px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 15px;
-          background: rgba(10,20,35,.82);
-          border: 1px solid rgba(148,163,184,.12);
+          gap: 18px;
           border-radius: 22px;
-          margin-bottom: 20px;
+          background: rgba(8,20,35,.9);
+          border: 1px solid rgba(148,163,184,.12);
         }
 
         .top-title {
-          font-size: 19px;
+          font-size: 20px;
           font-weight: 900;
         }
 
         .top-subtitle {
-          margin-top: 5px;
+          margin-top: 6px;
           color: #64748b;
           font-size: 11px;
         }
@@ -191,18 +223,18 @@ export default async function DashboardPage() {
         .user-area {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 11px;
         }
 
         .status {
           display: flex;
           align-items: center;
           gap: 7px;
-          padding: 9px 12px;
+          padding: 10px 13px;
           border-radius: 12px;
           background: rgba(34,197,94,.07);
           color: #86efac;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
         }
 
@@ -211,11 +243,13 @@ export default async function DashboardPage() {
           height: 7px;
           border-radius: 50%;
           background: #22c55e;
+          box-shadow: 0 0 10px rgba(34,197,94,.7);
         }
 
         .user-avatar {
-          width: 42px;
-          height: 42px;
+          width: 44px;
+          height: 44px;
+          flex-shrink: 0;
           display: grid;
           place-items: center;
           border-radius: 14px;
@@ -223,27 +257,33 @@ export default async function DashboardPage() {
           font-weight: 900;
         }
 
+        /* ================= WELCOME ================= */
+
         .welcome {
           position: relative;
           overflow: hidden;
-          padding: 28px;
-          border-radius: 26px;
-          border: 1px solid rgba(34,211,238,.12);
-          background:
-            linear-gradient(135deg,rgba(8,47,73,.8),rgba(10,20,35,.92));
           margin-bottom: 20px;
+          padding: 30px;
+          border-radius: 27px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(8,47,73,.88),
+              rgba(8,20,35,.96)
+            );
+          border: 1px solid rgba(34,211,238,.14);
         }
 
-        .welcome::after {
+        .welcome::before {
           content: "";
           position: absolute;
-          width: 230px;
-          height: 230px;
+          width: 260px;
+          height: 260px;
           left: -100px;
-          top: -110px;
+          top: -130px;
           border-radius: 50%;
           background: rgba(34,211,238,.08);
-          filter: blur(20px);
+          filter: blur(25px);
         }
 
         .welcome-content {
@@ -252,64 +292,69 @@ export default async function DashboardPage() {
         }
 
         .welcome-label {
-          display: inline-block;
-          padding: 7px 11px;
+          display: inline-flex;
+          padding: 8px 13px;
           border-radius: 999px;
-          background: rgba(34,211,238,.08);
           color: #67e8f9;
+          background: rgba(34,211,238,.07);
           border: 1px solid rgba(34,211,238,.13);
           font-size: 10px;
           font-weight: 700;
         }
 
         .welcome h1 {
-          margin: 15px 0 8px;
-          font-size: clamp(25px,3vw,36px);
+          margin: 17px 0 9px;
+          font-size: clamp(26px,3vw,38px);
+          line-height: 1.4;
         }
 
         .welcome p {
+          max-width: 760px;
           margin: 0;
-          max-width: 720px;
           color: #94a3b8;
           font-size: 13px;
-          line-height: 2;
+          line-height: 2.1;
         }
+
+        /* ================= STATS ================= */
 
         .stats {
           display: grid;
-          grid-template-columns: repeat(4,1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 15px;
-          margin-bottom: 20px;
+          margin-bottom: 26px;
         }
 
         .stat {
+          min-width: 0;
           padding: 20px;
           border-radius: 20px;
-          background: rgba(10,20,35,.82);
+          background: rgba(8,20,35,.88);
           border: 1px solid rgba(148,163,184,.11);
         }
 
         .stat-icon {
-          width: 40px;
-          height: 40px;
+          width: 42px;
+          height: 42px;
+          margin-bottom: 16px;
           display: grid;
           place-items: center;
-          border-radius: 12px;
+          border-radius: 13px;
           background: rgba(34,211,238,.08);
           color: #22d3ee;
           font-size: 18px;
-          margin-bottom: 16px;
         }
 
         .stat-label {
           color: #64748b;
-          font-size: 11px;
+          font-size: 10px;
         }
 
         .stat-value {
-          margin-top: 6px;
-          font-size: 20px;
+          margin-top: 7px;
+          font-size: 19px;
           font-weight: 900;
+          overflow-wrap: anywhere;
         }
 
         .green {
@@ -324,31 +369,41 @@ export default async function DashboardPage() {
           color: #fbbf24;
         }
 
-        .section-title {
-          margin: 25px 0 13px;
+        /* ================= SECTION HEADER ================= */
+
+        .section-header {
+          margin: 28px 0 14px;
+          padding: 0 3px;
         }
 
-        .section-title h2 {
+        .section-header h2 {
           margin: 0;
           font-size: 18px;
         }
 
-        .section-title p {
-          margin: 5px 0 0;
+        .section-header p {
+          margin: 6px 0 0;
           color: #64748b;
           font-size: 11px;
+          line-height: 1.8;
         }
+
+        /* ================= FEATURE CARDS ================= */
 
         .quick-grid {
           display: grid;
-          grid-template-columns: repeat(4,1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 15px;
         }
 
         .quick-card {
+          min-width: 0;
+          min-height: 205px;
           padding: 20px;
-          border-radius: 20px;
-          background: rgba(10,20,35,.82);
+          display: flex;
+          flex-direction: column;
+          border-radius: 21px;
+          background: rgba(8,20,35,.88);
           border: 1px solid rgba(148,163,184,.11);
           text-decoration: none;
           color: white;
@@ -357,52 +412,66 @@ export default async function DashboardPage() {
 
         .quick-card:hover {
           transform: translateY(-3px);
-          border-color: rgba(34,211,238,.3);
-          background: rgba(14,28,47,.95);
+          border-color: rgba(34,211,238,.28);
+          background: rgba(11,28,47,.96);
         }
 
         .quick-icon {
-          width: 42px;
-          height: 42px;
+          width: 46px;
+          height: 46px;
+          flex-shrink: 0;
           display: grid;
           place-items: center;
-          border-radius: 13px;
+          border-radius: 14px;
           background: rgba(34,211,238,.08);
           color: #22d3ee;
-          font-size: 19px;
+          font-size: 20px;
         }
 
         .quick-card h3 {
-          margin: 15px 0 6px;
+          margin: 17px 0 8px;
           font-size: 14px;
+          line-height: 1.6;
         }
 
         .quick-card p {
           margin: 0;
-          color: #64748b;
-          font-size: 11px;
-          line-height: 1.8;
+          color: #718198;
+          font-size: 10px;
+          line-height: 2;
         }
 
         .quick-arrow {
-          margin-top: 13px;
+          margin-top: auto;
+          padding-top: 16px;
           color: #22d3ee;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
         }
 
+        /* ================= LOWER PANELS ================= */
+
         .bottom-grid {
           display: grid;
-          grid-template-columns: 1.4fr 1fr;
+          grid-template-columns: 1.35fr 1fr;
           gap: 15px;
           margin-top: 20px;
         }
 
         .panel {
-          padding: 22px;
+          min-width: 0;
+          padding: 23px;
           border-radius: 22px;
-          background: rgba(10,20,35,.82);
+          background: rgba(8,20,35,.88);
           border: 1px solid rgba(148,163,184,.11);
+        }
+
+        .panel-title-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+          margin-bottom: 18px;
         }
 
         .panel h2 {
@@ -411,20 +480,31 @@ export default async function DashboardPage() {
         }
 
         .panel-description {
-          margin: 6px 0 18px;
+          margin: 6px 0 0;
           color: #64748b;
-          font-size: 11px;
+          font-size: 10px;
+          line-height: 1.8;
+        }
+
+        .panel-badge {
+          flex-shrink: 0;
+          padding: 8px 10px;
+          border-radius: 10px;
+          color: #67e8f9;
+          background: rgba(34,211,238,.07);
+          font-size: 9px;
         }
 
         .account-grid {
           display: grid;
           grid-template-columns: repeat(2,1fr);
-          gap: 10px;
+          gap: 11px;
         }
 
         .account-item {
-          padding: 14px;
-          border-radius: 14px;
+          min-width: 0;
+          padding: 15px;
+          border-radius: 15px;
           background: rgba(255,255,255,.025);
           border: 1px solid rgba(255,255,255,.05);
         }
@@ -432,14 +512,15 @@ export default async function DashboardPage() {
         .account-item span {
           display: block;
           color: #64748b;
-          font-size: 10px;
+          font-size: 9px;
         }
 
         .account-item strong {
           display: block;
-          margin-top: 7px;
-          font-size: 13px;
-          word-break: break-word;
+          margin-top: 8px;
+          color: #e2e8f0;
+          font-size: 12px;
+          overflow-wrap: anywhere;
         }
 
         .feature-list {
@@ -448,21 +529,23 @@ export default async function DashboardPage() {
         }
 
         .feature {
+          min-width: 0;
           display: flex;
           align-items: center;
           gap: 12px;
           padding: 13px;
-          border-radius: 14px;
+          border-radius: 15px;
           background: rgba(255,255,255,.025);
           border: 1px solid rgba(255,255,255,.05);
         }
 
         .feature-icon {
-          width: 36px;
-          height: 36px;
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
           display: grid;
           place-items: center;
-          border-radius: 10px;
+          border-radius: 11px;
           background: rgba(34,211,238,.07);
           font-size: 15px;
         }
@@ -474,21 +557,76 @@ export default async function DashboardPage() {
 
         .feature span {
           display: block;
-          margin-top: 3px;
+          margin-top: 4px;
           color: #64748b;
           font-size: 9px;
         }
 
-        @media (max-width: 1100px) {
+        /* ================= QUICK INFO ================= */
+
+        .info-section {
+          margin-top: 20px;
+          padding: 22px;
+          border-radius: 22px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(6,182,212,.07),
+              rgba(37,99,235,.04)
+            );
+          border: 1px solid rgba(34,211,238,.1);
+        }
+
+        .info-title {
+          margin: 0 0 16px;
+          font-size: 15px;
+        }
+
+        .info-grid {
+          display: grid;
+          grid-template-columns: repeat(3,1fr);
+          gap: 12px;
+        }
+
+        .info-card {
+          min-width: 0;
+          padding: 15px;
+          border-radius: 15px;
+          background: rgba(5,15,28,.65);
+          border: 1px solid rgba(148,163,184,.08);
+        }
+
+        .info-card strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .info-card span {
+          display: block;
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 9px;
+          line-height: 1.8;
+        }
+
+        /* ================= TABLET ================= */
+
+        @media (max-width: 1150px) {
           .dashboard-wrapper {
-            grid-template-columns: 210px minmax(0,1fr);
+            grid-template-columns: 220px minmax(0,1fr);
           }
 
           .stats,
           .quick-grid {
             grid-template-columns: repeat(2,1fr);
           }
+
+          .bottom-grid {
+            grid-template-columns: 1fr;
+          }
         }
+
+        /* ================= MOBILE ================= */
 
         @media (max-width: 800px) {
           .dashboard-page {
@@ -504,16 +642,35 @@ export default async function DashboardPage() {
           }
 
           .topbar {
+            min-height: auto;
+            padding: 15px;
             border-radius: 18px;
+          }
+
+          .top-title {
+            font-size: 16px;
+          }
+
+          .top-subtitle {
+            line-height: 1.8;
           }
 
           .status {
             display: none;
           }
 
+          .user-avatar {
+            width: 40px;
+            height: 40px;
+          }
+
           .welcome {
-            padding: 22px;
-            border-radius: 20px;
+            padding: 23px;
+            border-radius: 21px;
+          }
+
+          .welcome h1 {
+            font-size: 25px;
           }
 
           .stats,
@@ -521,44 +678,64 @@ export default async function DashboardPage() {
             grid-template-columns: repeat(2,1fr);
           }
 
-          .bottom-grid {
+          .quick-card {
+            min-height: 190px;
+          }
+
+          .info-grid {
             grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 500px) {
+        @media (max-width: 520px) {
           .stats,
           .quick-grid,
           .account-grid {
             grid-template-columns: 1fr;
           }
 
-          .top-title {
-            font-size: 16px;
-          }
-
           .welcome h1 {
-            font-size: 24px;
+            font-size: 23px;
           }
 
-          .stat,
-          .quick-card,
-          .panel {
-            padding: 17px;
+          .welcome p {
+            font-size: 11px;
+          }
+
+          .stat {
+            padding: 18px;
+          }
+
+          .quick-card {
+            min-height: 175px;
+          }
+
+          .panel,
+          .info-section {
+            padding: 18px;
+          }
+
+          .panel-title-row {
+            align-items: flex-start;
+            flex-direction: column;
           }
         }
       `}</style>
 
       <div className="dashboard-wrapper">
 
-        {/* Sidebar */}
+        {/* SIDEBAR */}
+
         <aside className="sidebar">
 
           <Link href="/" className="brand">
             <div className="brand-icon">AI</div>
 
             <div>
-              <div className="brand-title">Trading AI</div>
+              <div className="brand-title">
+                Trading AI
+              </div>
+
               <div className="brand-subtitle">
                 Smart Trading Platform
               </div>
@@ -572,70 +749,82 @@ export default async function DashboardPage() {
           <nav className="menu">
 
             <Link href="/dashboard" className="active">
-              🏠
+              <span className="menu-icon">🏠</span>
               <span>داشبورد</span>
             </Link>
 
             <Link href="/market">
-              📊
+              <span className="menu-icon">📊</span>
               <span>بازار و نمودار</span>
             </Link>
 
             <Link href="/bots">
-              🤖
+              <span className="menu-icon">🤖</span>
               <span>ربات‌های معاملاتی</span>
             </Link>
 
             <Link href="/ai-analysis">
-              🧠
+              <span className="menu-icon">🧠</span>
               <span>تحلیل هوشمند AI</span>
             </Link>
 
-            <Link href="/broker">
-              🔗
-              <span>اتصال بروکر</span>
-            </Link>
-
             <Link href="/news">
-              📰
+              <span className="menu-icon">📰</span>
               <span>اخبار بازار</span>
             </Link>
 
-            <Link href="/courses">
-              🎓
-              <span>آموزش</span>
+            <Link href="/broker">
+              <span className="menu-icon">🔗</span>
+              <span>اتصال بروکر</span>
             </Link>
 
             <Link href="/economic">
-              🌍
+              <span className="menu-icon">🌍</span>
               <span>تقویم اقتصادی</span>
             </Link>
 
+            <Link href="/courses">
+              <span className="menu-icon">🎓</span>
+              <span>آموزش</span>
+            </Link>
+
             <Link href="/payments">
-              💳
+              <span className="menu-icon">💳</span>
               <span>کیف پول و پرداخت</span>
+            </Link>
+
+            <Link href="/support">
+              <span className="menu-icon">🎧</span>
+              <span>پشتیبانی</span>
             </Link>
 
           </nav>
 
           <div className="support-box">
-            <strong>🎧 پشتیبانی</strong>
+
+            <strong>
+              🎧 مرکز پشتیبانی
+            </strong>
 
             <p>
-              مرکز پشتیبانی Trading AI به‌زودی برای کاربران فعال خواهد شد.
+              برای سوالات و مشکلات خود می‌توانید
+              از مرکز پشتیبانی Trading AI استفاده کنید.
             </p>
 
-            <span className="coming">
-              به‌زودی
-            </span>
+            <Link href="/support" className="support-button">
+              ورود به پشتیبانی
+            </Link>
+
           </div>
 
         </aside>
 
-        {/* Main Content */}
+        {/* MAIN */}
+
         <section className="main-content">
 
-          {/* Topbar */}
+          {/* TOPBAR */}
+
           <header className="topbar">
 
             <div>
@@ -663,7 +852,8 @@ export default async function DashboardPage() {
 
           </header>
 
-          {/* Welcome */}
+          {/* WELCOME */}
+
           <section className="welcome">
 
             <div className="welcome-content">
@@ -678,109 +868,174 @@ export default async function DashboardPage() {
 
               <p>
                 به پنل حرفه‌ای Trading AI خوش آمدید.
-                از اینجا می‌توانید بازار، ربات‌ها، تحلیل هوشمند
-                و اتصال بروکر خود را مدیریت کنید.
+                از اینجا می‌توانید بازار، ربات‌ها،
+                تحلیل هوشمند، اخبار و سایر ابزارهای
+                معاملاتی خود را مدیریت کنید.
               </p>
 
             </div>
 
           </section>
 
-          {/* Stats */}
+          {/* STATS */}
+
           <section className="stats">
 
             <div className="stat">
               <div className="stat-icon">✓</div>
               <div className="stat-label">وضعیت حساب</div>
-              <div className="stat-value green">فعال</div>
+              <div className="stat-value green">
+                فعال
+              </div>
             </div>
 
             <div className="stat">
               <div className="stat-icon">◆</div>
               <div className="stat-label">پلن فعلی</div>
-              <div className="stat-value cyan">{user.plan}</div>
+              <div className="stat-value cyan">
+                {user.plan}
+              </div>
             </div>
 
             <div className="stat">
               <div className="stat-icon">🤖</div>
               <div className="stat-label">ربات‌های فعال</div>
-              <div className="stat-value">0</div>
+              <div className="stat-value">
+                0
+              </div>
             </div>
 
             <div className="stat">
               <div className="stat-icon">🔗</div>
               <div className="stat-label">اتصال بروکر</div>
-              <div className="stat-value orange">متصل نیست</div>
+              <div className="stat-value orange">
+                متصل نیست
+              </div>
             </div>
 
           </section>
 
-          {/* Quick Actions */}
-          <div className="section-title">
-            <h2>دسترسی سریع</h2>
+          {/* QUICK ACCESS */}
+
+          <div className="section-header">
+
+            <h2>
+              دسترسی سریع
+            </h2>
+
             <p>
-              بخش‌های اصلی پلتفرم را از اینجا مدیریت کنید.
+              مهم‌ترین بخش‌های Trading AI در کارت‌های جداگانه
             </p>
+
           </div>
 
           <section className="quick-grid">
 
             <Link href="/market" className="quick-card">
-              <div className="quick-icon">📊</div>
-              <h3>بازار و نمودار</h3>
+
+              <div className="quick-icon">
+                📊
+              </div>
+
+              <h3>
+                بازار و نمودار
+              </h3>
+
               <p>
                 مشاهده بازارها، قیمت‌ها و نمودارهای معاملاتی
               </p>
+
               <div className="quick-arrow">
                 ورود به بازار ←
               </div>
+
             </Link>
 
             <Link href="/bots" className="quick-card">
-              <div className="quick-icon">🤖</div>
-              <h3>ربات‌های معاملاتی</h3>
+
+              <div className="quick-icon">
+                🤖
+              </div>
+
+              <h3>
+                ربات‌های معاملاتی
+              </h3>
+
               <p>
                 ساخت و مدیریت ربات‌های هوشمند معاملاتی
               </p>
+
               <div className="quick-arrow">
                 مدیریت ربات‌ها ←
               </div>
+
             </Link>
 
             <Link href="/ai-analysis" className="quick-card">
-              <div className="quick-icon">🧠</div>
-              <h3>تحلیل هوشمند</h3>
+
+              <div className="quick-icon">
+                🧠
+              </div>
+
+              <h3>
+                تحلیل هوشمند AI
+              </h3>
+
               <p>
                 بررسی بازار با ابزارهای تحلیل هوش مصنوعی
               </p>
+
               <div className="quick-arrow">
                 مشاهده تحلیل ←
               </div>
+
             </Link>
 
-            <Link href="/broker" className="quick-card">
-              <div className="quick-icon">🔗</div>
-              <h3>اتصال بروکر</h3>
-              <p>
-                اتصال حساب معاملاتی و مدیریت ارتباط با بروکر
-              </p>
-              <div className="quick-arrow">
-                اتصال بروکر ←
+            <Link href="/news" className="quick-card">
+
+              <div className="quick-icon">
+                📰
               </div>
+
+              <h3>
+                اخبار بازار
+              </h3>
+
+              <p>
+                مشاهده اخبار مهم و اطلاعات مرتبط با بازار
+              </p>
+
+              <div className="quick-arrow">
+                مشاهده اخبار ←
+              </div>
+
             </Link>
 
           </section>
 
-          {/* Bottom */}
+          {/* ACCOUNT + DEVELOPMENT */}
+
           <section className="bottom-grid">
 
             <div className="panel">
 
-              <h2>اطلاعات حساب</h2>
+              <div className="panel-title-row">
 
-              <p className="panel-description">
-                مشخصات حساب کاربری شما
-              </p>
+                <div>
+                  <h2>
+                    اطلاعات حساب
+                  </h2>
+
+                  <p className="panel-description">
+                    مشخصات حساب کاربری شما
+                  </p>
+                </div>
+
+                <span className="panel-badge">
+                  حساب فعال
+                </span>
+
+              </div>
 
               <div className="account-grid">
 
@@ -810,47 +1065,131 @@ export default async function DashboardPage() {
 
             <div className="panel">
 
-              <h2>امکانات در حال توسعه</h2>
+              <div className="panel-title-row">
 
-              <p className="panel-description">
-                قابلیت‌های جدید به‌تدریج فعال می‌شوند.
-              </p>
+                <div>
+                  <h2>
+                    امکانات پلتفرم
+                  </h2>
+
+                  <p className="panel-description">
+                    وضعیت قابلیت‌های Trading AI
+                  </p>
+                </div>
+
+              </div>
 
               <div className="feature-list">
 
                 <div className="feature">
-                  <div className="feature-icon">📈</div>
+                  <div className="feature-icon">
+                    📈
+                  </div>
+
                   <div>
-                    <strong>چارت واقعی بازار</strong>
-                    <span>در مرحله توسعه</span>
+                    <strong>
+                      چارت بازار
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
                   </div>
                 </div>
 
                 <div className="feature">
-                  <div className="feature-icon">🤖</div>
+                  <div className="feature-icon">
+                    🤖
+                  </div>
+
                   <div>
-                    <strong>ربات خودکار</strong>
-                    <span>در مرحله توسعه</span>
+                    <strong>
+                      ربات خودکار
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
                   </div>
                 </div>
 
                 <div className="feature">
-                  <div className="feature-icon">🔗</div>
+                  <div className="feature-icon">
+                    🔗
+                  </div>
+
                   <div>
-                    <strong>اتصال بروکر</strong>
-                    <span>در مرحله توسعه</span>
+                    <strong>
+                      اتصال بروکر
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
                   </div>
                 </div>
 
                 <div className="feature">
-                  <div className="feature-icon">🧠</div>
+                  <div className="feature-icon">
+                    🧠
+                  </div>
+
                   <div>
-                    <strong>تحلیل پیشرفته AI</strong>
-                    <span>در مرحله توسعه</span>
+                    <strong>
+                      تحلیل پیشرفته AI
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
                   </div>
                 </div>
 
               </div>
+
+            </div>
+
+          </section>
+
+          {/* PLATFORM INFO */}
+
+          <section className="info-section">
+
+            <h2 className="info-title">
+              راهنمای سریع
+            </h2>
+
+            <div className="info-grid">
+
+              <Link href="/bots" className="info-card">
+                <strong>
+                  🤖 مدیریت ربات‌ها
+                </strong>
+
+                <span>
+                  مشاهده و مدیریت ربات‌های معاملاتی
+                </span>
+              </Link>
+
+              <Link href="/broker" className="info-card">
+                <strong>
+                  🔗 اتصال بروکر
+                </strong>
+
+                <span>
+                  مدیریت اتصال حساب معاملاتی
+                </span>
+              </Link>
+
+              <Link href="/support" className="info-card">
+                <strong>
+                  🎧 پشتیبانی
+                </strong>
+
+                <span>
+                  دریافت راهنمایی و ارسال درخواست
+                </span>
+              </Link>
 
             </div>
 
