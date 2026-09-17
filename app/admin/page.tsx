@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminPage() {
   const user = await getCurrentUser();
 
@@ -15,37 +17,45 @@ export default async function AdminPage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "30px",
+          padding: "30px 18px",
           fontFamily: "Arial, sans-serif",
         }}
       >
         <div
           style={{
             width: "100%",
-            maxWidth: "500px",
+            maxWidth: "480px",
             background: "#0a1929",
             border: "1px solid #17304a",
             borderRadius: "24px",
-            padding: "40px",
+            padding: "40px 28px",
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: "45px", marginBottom: "20px" }}>
+          <div style={{ fontSize: "48px", marginBottom: "18px" }}>
             🔐
           </div>
 
-          <h1>ورود لازم است</h1>
+          <h1 style={{ margin: 0, fontSize: "25px" }}>
+            ورود لازم است
+          </h1>
 
-          <p style={{ color: "#94a3b8", lineHeight: 1.8 }}>
-            ابتدا وارد حساب مدیریت شوید.
+          <p
+            style={{
+              color: "#94a3b8",
+              lineHeight: 1.9,
+              marginTop: "14px",
+            }}
+          >
+            برای ورود به پنل مدیریت ابتدا وارد حساب کاربری خود شوید.
           </p>
 
           <Link
             href="/login"
             style={{
               display: "inline-block",
-              marginTop: "20px",
-              padding: "13px 25px",
+              marginTop: "18px",
+              padding: "13px 26px",
               borderRadius: "12px",
               background: "#0891b2",
               color: "#fff",
@@ -70,37 +80,45 @@ export default async function AdminPage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "30px",
+          padding: "30px 18px",
           fontFamily: "Arial, sans-serif",
         }}
       >
         <div
           style={{
             width: "100%",
-            maxWidth: "500px",
+            maxWidth: "480px",
             background: "#0a1929",
             border: "1px solid #4a1d1d",
             borderRadius: "24px",
-            padding: "40px",
+            padding: "40px 28px",
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: "45px", marginBottom: "20px" }}>
+          <div style={{ fontSize: "48px", marginBottom: "18px" }}>
             🚫
           </div>
 
-          <h1>دسترسی غیرمجاز</h1>
+          <h1 style={{ margin: 0, fontSize: "25px" }}>
+            دسترسی غیرمجاز
+          </h1>
 
-          <p style={{ color: "#94a3b8", lineHeight: 1.8 }}>
-            این بخش فقط مخصوص مدیر سایت است.
+          <p
+            style={{
+              color: "#94a3b8",
+              lineHeight: 1.9,
+              marginTop: "14px",
+            }}
+          >
+            این بخش فقط برای مدیر سایت قابل دسترسی است.
           </p>
 
           <Link
             href="/dashboard"
             style={{
               display: "inline-block",
-              marginTop: "20px",
-              padding: "13px 25px",
+              marginTop: "18px",
+              padding: "13px 26px",
               borderRadius: "12px",
               background: "#1e293b",
               color: "#fff",
@@ -121,17 +139,17 @@ export default async function AdminPage() {
         minHeight: "100vh",
         background: "#06111f",
         color: "#f8fafc",
-        padding: "30px 18px 60px",
+        padding: "30px 18px 70px",
         fontFamily: "Arial, sans-serif",
       }}
     >
       <div
         style={{
+          width: "100%",
           maxWidth: "1200px",
           margin: "0 auto",
         }}
       >
-        {/* Header */}
         <header
           style={{
             background:
@@ -139,7 +157,7 @@ export default async function AdminPage() {
             border: "1px solid #17304a",
             borderRadius: "24px",
             padding: "28px",
-            marginBottom: "24px",
+            marginBottom: "22px",
           }}
         >
           <div
@@ -161,7 +179,7 @@ export default async function AdminPage() {
                   marginBottom: "8px",
                 }}
               >
-                TRADING AI • ADMIN
+                TRADING AI • ADMIN PANEL
               </div>
 
               <h1
@@ -171,18 +189,17 @@ export default async function AdminPage() {
                   fontWeight: "800",
                 }}
               >
-                پنل مدیریت سایت
+                پنل مدیریت Trading AI
               </h1>
 
               <p
                 style={{
                   color: "#94a3b8",
-                  margin: "10px 0 0",
                   lineHeight: 1.8,
+                  margin: "10px 0 0",
                 }}
               >
-                مدیریت کاربران، اشتراک‌ها، معاملات، ربات‌ها و
-                پلتفرم
+                مدیریت کاربران، اشتراک‌ها، ربات‌ها، گزارش‌ها و پشتیبانی
               </p>
             </div>
 
@@ -191,7 +208,7 @@ export default async function AdminPage() {
                 background: "#082536",
                 border: "1px solid #16465b",
                 borderRadius: "16px",
-                padding: "15px 20px",
+                padding: "15px 22px",
                 minWidth: "130px",
                 textAlign: "center",
               }}
@@ -218,23 +235,22 @@ export default async function AdminPage() {
           </div>
         </header>
 
-        {/* Admin Info */}
         <section
           style={{
             background: "#081827",
             border: "1px solid #142b40",
             borderRadius: "22px",
             padding: "24px",
-            marginBottom: "24px",
+            marginBottom: "22px",
           }}
         >
           <h2
             style={{
-              margin: "0 0 20px",
+              margin: "0 0 18px",
               fontSize: "20px",
             }}
           >
-            👤 اطلاعات مدیر
+            👤 حساب مدیر
           </h2>
 
           <div
@@ -246,16 +262,12 @@ export default async function AdminPage() {
             }}
           >
             <InfoBox title="نام" value={user.name} />
-
             <InfoBox title="ایمیل" value={user.email} />
-
             <InfoBox title="نقش" value={user.role} />
-
-            <InfoBox title="پلن فعلی" value={user.plan} />
+            <InfoBox title="پلن" value={user.plan} />
           </div>
         </section>
 
-        {/* Management Cards */}
         <section>
           <div style={{ marginBottom: "18px" }}>
             <h2
@@ -270,10 +282,10 @@ export default async function AdminPage() {
             <p
               style={{
                 color: "#64748b",
-                marginTop: "8px",
+                margin: "8px 0 0",
               }}
             >
-              بخش‌های مدیریتی Trading AI
+              دسترسی سریع به بخش‌های مدیریتی سایت
             </p>
           </div>
 
@@ -289,28 +301,28 @@ export default async function AdminPage() {
               href="/admin/users"
               icon="👥"
               title="مدیریت کاربران"
-              description="مشاهده کاربران، حساب‌ها و سطح دسترسی"
+              description="مشاهده کاربران و مدیریت نقش و پلن حساب‌ها"
             />
 
             <AdminCard
               href="/admin/plans"
               icon="💎"
               title="مدیریت اشتراک‌ها"
-              description="مدیریت پلن‌های رایگان، VIP و Premium"
+              description="مدیریت پلن‌های رایگان، VIP، Premium و Lifetime"
             />
 
             <AdminCard
               href="/admin/reports"
               icon="📊"
               title="گزارش‌ها"
-              description="مشاهده گزارش عملکرد و فعالیت پلتفرم"
+              description="مشاهده گزارش فعالیت و عملکرد پلتفرم"
             />
 
             <AdminCard
               href="/admin/bots"
               icon="🤖"
               title="مدیریت ربات‌ها"
-              description="کنترل و بررسی ربات‌های معامله‌گر"
+              description="مدیریت و بررسی ربات‌های معامله‌گر"
             />
 
             <AdminCard
@@ -329,10 +341,9 @@ export default async function AdminPage() {
           </div>
         </section>
 
-        {/* Status */}
         <section
           style={{
-            marginTop: "24px",
+            marginTop: "22px",
             background: "#081827",
             border: "1px solid #142b40",
             borderRadius: "22px",
@@ -356,21 +367,9 @@ export default async function AdminPage() {
               gap: "14px",
             }}
           >
-            <StatusBox
-              title="سیستم"
-              value="فعال"
-            />
-
-            <StatusBox
-              title="احراز هویت"
-              value="فعال"
-            />
-
-            <StatusBox
-              title="سطح دسترسی"
-              value="ADMIN"
-            />
-
+            <StatusBox title="سیستم" value="فعال" />
+            <StatusBox title="احراز هویت" value="فعال" />
+            <StatusBox title="سطح دسترسی" value="ADMIN" />
             <StatusBox
               title="ربات‌های معاملاتی"
               value="در حال توسعه"
@@ -440,7 +439,6 @@ function AdminCard({
         border: "1px solid #142b40",
         borderRadius: "20px",
         padding: "24px",
-        transition: "0.2s",
       }}
     >
       <div
