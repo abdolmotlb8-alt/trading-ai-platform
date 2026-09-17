@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import UserActions from "./UserActions";
 
 export const dynamic = "force-dynamic";
 
@@ -295,7 +296,12 @@ export default async function AdminUsersPage() {
                 color: "#94a3b8",
               }}
             >
-              <div style={{ fontSize: "40px", marginBottom: "15px" }}>
+              <div
+                style={{
+                  fontSize: "40px",
+                  marginBottom: "15px",
+                }}
+              >
                 👥
               </div>
 
@@ -398,6 +404,12 @@ export default async function AdminUsersPage() {
                       "fa-IR"
                     )}
                   </div>
+
+                  <UserActions
+                    userId={user.id}
+                    currentRole={user.role}
+                    currentPlan={user.plan}
+                  />
                 </div>
               ))}
             </div>
@@ -426,7 +438,12 @@ function StatCard({
         padding: "22px",
       }}
     >
-      <div style={{ fontSize: "28px", marginBottom: "15px" }}>
+      <div
+        style={{
+          fontSize: "28px",
+          marginBottom: "15px",
+        }}
+      >
         {icon}
       </div>
 
@@ -440,7 +457,9 @@ function StatCard({
         {title}
       </div>
 
-      <strong style={{ fontSize: "27px" }}>{value}</strong>
+      <strong style={{ fontSize: "27px" }}>
+        {value}
+      </strong>
     </div>
   );
 }
