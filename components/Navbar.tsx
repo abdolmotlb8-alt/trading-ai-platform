@@ -25,6 +25,7 @@ export default function Navbar() {
         <Link href="/market">بازار</Link>
         <Link href="/news">اخبار</Link>
         <Link href="/courses">آموزش</Link>
+        <Link href="/support">پشتیبانی</Link>
         <Link href="/login">ورود</Link>
       </div>
     </nav>
