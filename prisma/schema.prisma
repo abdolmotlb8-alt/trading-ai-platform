@@ -17,6 +17,9 @@ model User {
 
   sessions       Session[]
   supportTickets SupportTicket[]
+  tradingBots    TradingBot[]
+  tradingSignals TradingSignal[]
+  trades         Trade[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -46,11 +49,81 @@ model SupportTicket {
 
 model SupportMessage {
   id         String   @id @default(cuid())
-  ticketId  String
-  senderId  String?
+  ticketId   String
+  senderId   String?
   senderType String
   message    String
   createdAt  DateTime @default(now())
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model TradingBot {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  type        String
+  description String?
+  symbol      String?
+  timeframe   String?
+  isActive    Boolean  @default(false)
+
+  takeProfit  Float?
+  stopLoss    Float?
+  riskReward  Float?
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signals TradingSignal[]
+  trades  Trade[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TradingSignal {
+  id         String   @id @default(cuid())
+  userId     String
+  botId      String
+
+  symbol     String
+  timeframe  String?
+  direction  String
+  entry      Float?
+  takeProfit Float?
+  stopLoss   Float?
+  riskReward Float?
+
+  confidence Float?
+  status     String   @default("WAITING")
+
+  createdAt DateTime @default(now())
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot  TradingBot  @relation(fields: [botId], references: [id], onDelete: Cascade)
+}
+
+model Trade {
+  id          String   @id @default(cuid())
+  userId      String
+  botId       String
+
+  symbol      String
+  direction   String
+
+  entryPrice  Float?
+  exitPrice   Float?
+  takeProfit  Float?
+  stopLoss    Float?
+
+  quantity    Float?
+  profitLoss  Float?
+
+  status      String   @default("OPEN")
+  source      String   @default("SIMULATION")
+
+  openedAt    DateTime @default(now())
+  closedAt    DateTime?
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot  TradingBot @relation(fields: [botId], references: [id], onDelete: Cascade)
 }
