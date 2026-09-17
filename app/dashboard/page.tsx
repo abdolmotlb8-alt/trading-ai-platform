@@ -1,7 +1,104 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+
+function Icon({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
+      {children}
+    </span>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="m3 10 9-7 9 7" />
+      <path d="M5 9v11h14V9" />
+      <path d="M9 20v-6h6v6" />
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="m7 15 3-4 3 2 5-7" />
+    </svg>
+  );
+}
+
+function BotIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="7" width="16" height="12" rx="3" />
+      <path d="M12 3v4" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <path d="M8 16h8" />
+    </svg>
+  );
+}
+
+function BrainIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 3 3 3 0 0 0 2 3v1a3 3 0 0 0 3 3" />
+      <path d="M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 3 3 3 0 0 1-2 3v1a3 3 0 0 1-3 3" />
+      <path d="M9 8h6M9 12h6M9 16h6" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15" />
+      <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 7 20l1.15-1.15" />
+    </svg>
+  );
+}
+
+function WalletIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 7h15a2 2 0 0 1 2 2v10H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13" />
+      <path d="M16 13h5" />
+      <circle cx="16" cy="13" r=".7" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.9 1.9-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-2.7v-.09a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-1.9-1.9.06-.06A1.7 1.7 0 0 0 7.78 15a1.7 1.7 0 0 0-1.55-1.03H6v-2.7h.09A1.7 1.7 0 0 0 7.64 10a1.7 1.7 0 0 0-.34-1.88l-.06-.06 1.9-1.9.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.55V5h2.7v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.9 1.9-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.55 1.03H21v2.7h-.09A1.7 1.7 0 0 0 19.4 15Z" />
+    </svg>
+  );
+}
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -20,559 +117,569 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const isAdmin = user.role === "ADMIN";
-
   return (
     <main
       dir="rtl"
-      className="min-h-screen bg-[#06101f] text-white"
+      className="min-h-screen bg-[#070b14] text-white"
     >
-      {/* Background */}
-      <div className="fixed inset-0 -z-0 overflow-hidden">
-        <div className="absolute right-[-180px] top-[-180px] h-[420px] w-[420px] rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="absolute left-[-180px] bottom-[-180px] h-[420px] w-[420px] rounded-full bg-blue-600/10 blur-3xl" />
-      </div>
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.10),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.08),transparent_28%)]">
+        <div className="mx-auto flex min-h-screen max-w-[1600px]">
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1500px]">
+          {/* Sidebar */}
+          <aside className="hidden w-[270px] shrink-0 border-l border-white/10 bg-[#0b1120]/90 p-5 lg:block">
+            <div className="sticky top-5">
 
-        {/* SIDEBAR */}
-        <aside className="hidden w-[270px] shrink-0 border-l border-white/10 bg-[#081525]/95 p-5 lg:block">
-
-          {/* Logo */}
-          <div className="mb-8 flex items-center gap-3 border-b border-white/10 pb-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 text-lg font-black shadow-lg shadow-cyan-500/20">
-              AI
-            </div>
-
-            <div>
-              <h1 className="text-lg font-black">
-                Trading AI
-              </h1>
-
-              <p className="mt-1 text-xs text-slate-400">
-                پنل هوشمند معاملاتی
-              </p>
-            </div>
-          </div>
-
-          {/* User */}
-          <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <div className="flex items-center gap-3">
-
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 font-bold">
-                {user.name?.charAt(0)?.toUpperCase() || "U"}
-              </div>
-
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold">
-                  {user.name}
-                </p>
-
-                <p className="mt-1 truncate text-xs text-slate-400">
-                  {user.email}
-                </p>
-              </div>
-
-            </div>
-          </div>
-
-          {/* Menu */}
-          <div className="mb-3 px-2 text-xs font-bold text-slate-500">
-            منوی اصلی
-          </div>
-
-          <nav className="space-y-2">
-
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-3 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-bold text-cyan-300 transition hover:bg-cyan-400/15"
-            >
-              <span>⌂</span>
-              <span>داشبورد</span>
-            </Link>
-
-            <Link
-              href="/bots"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
-            >
-              <span>🤖</span>
-              <span>ربات‌های معاملاتی</span>
-            </Link>
-
-            <Link
-              href="/ai-analysis"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
-            >
-              <span>🧠</span>
-              <span>تحلیل هوش مصنوعی</span>
-            </Link>
-
-            <Link
-              href="/market"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
-            >
-              <span>📈</span>
-              <span>بازار</span>
-            </Link>
-
-            <Link
-              href="/broker"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
-            >
-              <span>🔗</span>
-              <span>اتصال بروکر</span>
-            </Link>
-
-            <Link
-              href="/courses"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
-            >
-              <span>🎓</span>
-              <span>آموزش</span>
-            </Link>
-
-          </nav>
-
-          {/* Management */}
-          <div className="mb-3 mt-8 px-2 text-xs font-bold text-slate-500">
-            حساب و مدیریت
-          </div>
-
-          <nav className="space-y-2">
-
-            <Link
-              href="/panel"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
-            >
-              <span>👤</span>
-              <span>حساب کاربری</span>
-            </Link>
-
-            {isAdmin && (
-              <Link
-                href="/admin"
-                className="flex items-center gap-3 rounded-xl border border-purple-400/20 bg-purple-400/10 px-4 py-3 text-sm font-bold text-purple-300 transition hover:bg-purple-400/15"
-              >
-                <span>🛡️</span>
-                <span>مدیریت سایت</span>
-              </Link>
-            )}
-
-          </nav>
-
-          {/* Bottom */}
-          <div className="mt-10 rounded-2xl border border-cyan-400/10 bg-gradient-to-br from-cyan-400/10 to-blue-600/10 p-4">
-            <p className="text-sm font-bold">
-              Trading AI
-            </p>
-
-            <p className="mt-2 text-xs leading-6 text-slate-400">
-              مرکز مدیریت معاملات، تحلیل بازار و ربات‌های هوشمند
-            </p>
-          </div>
-
-        </aside>
-
-        {/* MAIN */}
-        <section className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8">
-
-          {/* Mobile Header */}
-          <div className="mb-5 flex items-center justify-between rounded-2xl border border-white/10 bg-[#0a1729]/90 p-4 lg:hidden">
-
-            <div className="flex items-center gap-3">
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 font-black">
-                AI
-              </div>
-
-              <div>
-                <p className="font-bold">
-                  Trading AI
-                </p>
-
-                <p className="text-xs text-slate-400">
-                  پنل کاربری
-                </p>
-              </div>
-
-            </div>
-
-            <Link
-              href="/panel"
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5"
-            >
-              👤
-            </Link>
-
-          </div>
-
-          {/* Welcome */}
-          <div className="mb-6 overflow-hidden rounded-3xl border border-cyan-400/10 bg-gradient-to-br from-[#0b1b30] via-[#0a1728] to-[#081321] p-6 shadow-2xl shadow-black/20 sm:p-8">
-
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-
-              <div>
-                <div className="mb-3 inline-flex rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300">
-                  پنل مدیریت Trading AI
+              {/* Logo */}
+              <Link href="/" className="mb-8 flex items-center gap-3 px-2">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 text-lg font-black shadow-lg shadow-cyan-500/20">
+                  AI
                 </div>
 
-                <h2 className="text-2xl font-black tracking-tight sm:text-3xl">
-                  خوش آمدید، {user.name} 👋
-                </h2>
+                <div>
+                  <div className="text-lg font-black tracking-tight">
+                    Trading AI
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Smart Trading Platform
+                  </div>
+                </div>
+              </Link>
 
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">
-                  از اینجا می‌توانید وضعیت حساب، ربات‌های معاملاتی،
-                  تحلیل‌های هوش مصنوعی و سرویس‌های Trading AI را مدیریت کنید.
-                </p>
+              {/* Menu */}
+              <div className="space-y-2">
+
+                <Link
+                  href="/dashboard"
+                  className="flex items-center gap-3 rounded-2xl bg-cyan-400/10 px-4 py-3.5 text-sm font-bold text-cyan-300 ring-1 ring-cyan-400/10"
+                >
+                  <HomeIcon />
+                  داشبورد
+                </Link>
+
+                <Link
+                  href="/market"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <ChartIcon />
+                  بازار و نمودار
+                </Link>
+
+                <Link
+                  href="/bots"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <BotIcon />
+                  ربات‌های معاملاتی
+                </Link>
+
+                <Link
+                  href="/ai-analysis"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <BrainIcon />
+                  تحلیل هوش مصنوعی
+                </Link>
+
+                <Link
+                  href="/broker"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <LinkIcon />
+                  اتصال بروکر
+                </Link>
+
+                <Link
+                  href="/courses"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center text-sm">
+                    🎓
+                  </span>
+                  آموزش
+                </Link>
+
+                <Link
+                  href="/news"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center text-sm">
+                    📰
+                  </span>
+                  اخبار بازار
+                </Link>
+
+                <Link
+                  href="/economic"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center text-sm">
+                    🌍
+                  </span>
+                  تقویم اقتصادی
+                </Link>
+
+                <Link
+                  href="/payments"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <WalletIcon />
+                  کیف پول و پرداخت
+                </Link>
+
               </div>
 
-              <div className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
-                <p className="text-xs text-slate-500">
-                  پلن فعلی
+              {/* Bottom box */}
+              <div className="mt-8 rounded-3xl border border-cyan-400/10 bg-gradient-to-br from-cyan-400/10 to-blue-500/5 p-5">
+                <div className="mb-3 text-sm font-bold">
+                  مرکز پشتیبانی
+                </div>
+
+                <p className="mb-4 text-xs leading-6 text-slate-500">
+                  برای مدیریت حساب و استفاده از امکانات Trading AI آماده‌ایم.
                 </p>
 
-                <p className="mt-1 text-lg font-black text-cyan-300">
-                  {user.plan}
-                </p>
+                <div className="rounded-xl bg-white/5 px-3 py-2 text-center text-xs text-slate-400">
+                  پشتیبانی به‌زودی فعال می‌شود
+                </div>
               </div>
 
             </div>
+          </aside>
 
-          </div>
+          {/* Main */}
+          <section className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
 
-          {/* Stats */}
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {/* Top bar */}
+            <header className="mb-7 flex flex-col gap-4 rounded-3xl border border-white/10 bg-[#0b1120]/80 p-4 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+              
+              <div>
+                <div className="text-xs font-medium text-slate-500">
+                  پنل کاربری
+                </div>
+                <div className="mt-1 text-lg font-black">
+                  Trading AI Dashboard
+                </div>
+              </div>
 
-            <StatCard
-              title="وضعیت حساب"
-              value="فعال"
-              description="حساب شما فعال است"
-              icon="✓"
-              accent="cyan"
-            />
+              <div className="flex items-center gap-3">
 
-            <StatCard
-              title="پلن فعلی"
-              value={user.plan}
-              description="سطح حساب کاربری"
-              icon="◆"
-              accent="blue"
-            />
+                <div className="hidden rounded-2xl border border-emerald-400/10 bg-emerald-400/5 px-4 py-2.5 sm:block">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
+                    سیستم فعال است
+                  </div>
+                </div>
 
-            <StatCard
-              title="ربات‌های متصل"
-              value="۰"
-              description="هنوز رباتی متصل نشده"
-              icon="⚡"
-              accent="purple"
-            />
+                <Link
+                  href="/"
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  صفحه اصلی
+                </Link>
 
-            <StatCard
-              title="بروکر"
-              value="متصل نیست"
-              description="آماده اتصال"
-              icon="↗"
-              accent="amber"
-            />
+              </div>
+            </header>
 
-          </div>
+            {/* Welcome */}
+            <section className="relative mb-7 overflow-hidden rounded-[30px] border border-cyan-400/10 bg-gradient-to-br from-[#0d1b2e] via-[#0b1322] to-[#0b1120] p-6 shadow-2xl shadow-black/20 sm:p-8">
+              
+              <div className="absolute -left-16 -top-16 h-40 w-40 rounded-full bg-cyan-400/10 blur-3xl" />
+              <div className="absolute -bottom-20 right-20 h-48 w-48 rounded-full bg-blue-500/10 blur-3xl" />
 
-          {/* Main Grid */}
-          <div className="grid gap-6 xl:grid-cols-[1.4fr_.8fr]">
-
-            {/* Services */}
-            <section className="rounded-3xl border border-white/10 bg-[#0a1728]/90 p-5 shadow-xl shadow-black/10 sm:p-6">
-
-              <div className="mb-6 flex items-center justify-between gap-4">
+              <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
 
                 <div>
-                  <h3 className="text-xl font-black">
-                    مرکز معامله‌گری
-                  </h3>
+                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/10 bg-cyan-400/5 px-3 py-1.5 text-xs font-semibold text-cyan-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                    حساب شما فعال است
+                  </div>
 
-                  <p className="mt-1 text-sm text-slate-400">
-                    سرویس‌های اصلی پلتفرم
+                  <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
+                    سلام {user.name} 👋
+                  </h1>
+
+                  <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">
+                    به پنل Trading AI خوش آمدید. از اینجا می‌توانید بازار،
+                    ربات‌های معاملاتی، تحلیل هوش مصنوعی و اتصال بروکر را مدیریت کنید.
                   </p>
                 </div>
 
-                <span className="rounded-xl bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-300">
-                  Trading AI
-                </span>
+                <div className="shrink-0 rounded-3xl border border-white/10 bg-black/20 px-6 py-5 backdrop-blur">
+                  <div className="text-xs text-slate-500">
+                    پلن فعلی
+                  </div>
 
-              </div>
+                  <div className="mt-2 text-xl font-black text-cyan-300">
+                    {user.plan}
+                  </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-
-                <ServiceCard
-                  href="/bots"
-                  icon="🤖"
-                  title="ربات‌های معاملاتی"
-                  description="ساخت، مدیریت و اجرای ربات‌های معاملاتی"
-                />
-
-                <ServiceCard
-                  href="/ai-analysis"
-                  icon="🧠"
-                  title="تحلیل هوش مصنوعی"
-                  description="تحلیل هوشمند بازار و دارایی‌ها"
-                />
-
-                <ServiceCard
-                  href="/market"
-                  icon="📊"
-                  title="بازار"
-                  description="مشاهده اطلاعات و وضعیت بازار"
-                />
-
-                <ServiceCard
-                  href="/broker"
-                  icon="🔗"
-                  title="اتصال بروکر"
-                  description="اتصال حساب معاملاتی به پلتفرم"
-                />
-
-              </div>
-
-            </section>
-
-            {/* Account */}
-            <section className="rounded-3xl border border-white/10 bg-[#0a1728]/90 p-5 shadow-xl shadow-black/10 sm:p-6">
-
-              <div className="mb-6">
-                <h3 className="text-xl font-black">
-                  اطلاعات حساب
-                </h3>
-
-                <p className="mt-1 text-sm text-slate-400">
-                  وضعیت فعلی حساب شما
-                </p>
-              </div>
-
-              <div className="space-y-3">
-
-                <AccountRow
-                  label="نام کاربر"
-                  value={user.name}
-                />
-
-                <AccountRow
-                  label="ایمیل"
-                  value={user.email}
-                />
-
-                <AccountRow
-                  label="نقش"
-                  value={user.role}
-                />
-
-                <AccountRow
-                  label="پلن"
-                  value={user.plan}
-                />
-
-                <div className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-400/10 bg-emerald-400/5 px-4 py-4">
-                  <span className="text-sm text-slate-400">
-                    وضعیت
-                  </span>
-
-                  <span className="flex items-center gap-2 text-sm font-bold text-emerald-400">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
-                    فعال
-                  </span>
+                  <div className="mt-1 text-xs text-slate-500">
+                    وضعیت حساب: فعال
+                  </div>
                 </div>
 
               </div>
+            </section>
 
-              <Link
-                href="/panel"
-                className="mt-5 flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10"
-              >
-                مشاهده حساب کاربری
-              </Link>
+            {/* Stats */}
+            <section className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+              <div className="rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 shadow-xl shadow-black/10">
+                <div className="flex items-start justify-between">
+                  <Icon>
+                    <ChartIcon />
+                  </Icon>
+
+                  <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300">
+                    Active
+                  </span>
+                </div>
+
+                <div className="mt-5 text-sm text-slate-500">
+                  وضعیت حساب
+                </div>
+
+                <div className="mt-1 text-xl font-black">
+                  فعال
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 shadow-xl shadow-black/10">
+                <div className="flex items-start justify-between">
+                  <Icon>
+                    <WalletIcon />
+                  </Icon>
+
+                  <span className="rounded-full bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold text-cyan-300">
+                    Plan
+                  </span>
+                </div>
+
+                <div className="mt-5 text-sm text-slate-500">
+                  پلن حساب
+                </div>
+
+                <div className="mt-1 text-xl font-black">
+                  {user.plan}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 shadow-xl shadow-black/10">
+                <div className="flex items-start justify-between">
+                  <Icon>
+                    <BotIcon />
+                  </Icon>
+
+                  <span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-[10px] font-bold text-amber-300">
+                    Soon
+                  </span>
+                </div>
+
+                <div className="mt-5 text-sm text-slate-500">
+                  ربات‌های فعال
+                </div>
+
+                <div className="mt-1 text-xl font-black">
+                  0
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 shadow-xl shadow-black/10">
+                <div className="flex items-start justify-between">
+                  <Icon>
+                    <LinkIcon />
+                  </Icon>
+
+                  <span className="rounded-full bg-orange-400/10 px-2.5 py-1 text-[10px] font-bold text-orange-300">
+                    Offline
+                  </span>
+                </div>
+
+                <div className="mt-5 text-sm text-slate-500">
+                  اتصال بروکر
+                </div>
+
+                <div className="mt-1 text-xl font-black">
+                  متصل نیست
+                </div>
+              </div>
 
             </section>
 
-          </div>
+            {/* Quick actions */}
+            <section className="mb-7">
+              <div className="mb-4">
+                <h2 className="text-xl font-black">
+                  دسترسی سریع
+                </h2>
 
-          {/* Coming Soon */}
-          <section className="mt-6 rounded-3xl border border-white/10 bg-[#0a1728]/90 p-5 sm:p-6">
+                <p className="mt-1 text-sm text-slate-500">
+                  مهم‌ترین بخش‌های Trading AI را از اینجا باز کنید.
+                </p>
+              </div>
 
-            <div className="mb-5">
-              <h3 className="text-xl font-black">
-                امکانات پلتفرم
-              </h3>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 
-              <p className="mt-1 text-sm text-slate-400">
-                بخش‌هایی که در مراحل بعدی فعال می‌شوند
-              </p>
-            </div>
+                <Link
+                  href="/market"
+                  className="group rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/20 hover:bg-[#0d1628]"
+                >
+                  <Icon>
+                    <ChartIcon />
+                  </Icon>
 
-            <div className="grid gap-4 md:grid-cols-3">
+                  <h3 className="mt-5 font-black">
+                    مشاهده بازار
+                  </h3>
 
-              <ComingSoon
-                icon="⚡"
-                title="اجرای ربات"
-                text="اتصال و اجرای ربات‌های معاملاتی"
-              />
+                  <p className="mt-2 text-xs leading-6 text-slate-500">
+                    مشاهده قیمت‌ها و نمودارهای بازار
+                  </p>
 
-              <ComingSoon
-                icon="💬"
-                title="پشتیبانی"
-                text="سیستم پشتیبانی و مدیریت درخواست‌ها"
-              />
+                  <div className="mt-4 flex items-center gap-2 text-xs font-bold text-cyan-300">
+                    ورود به بازار
+                    <ArrowIcon />
+                  </div>
+                </Link>
 
-              <ComingSoon
-                icon="🛡️"
-                title="مدیریت سایت"
-                text="مدیریت کاربران، ربات‌ها و سرویس‌ها"
-              />
+                <Link
+                  href="/bots"
+                  className="group rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/20 hover:bg-[#0d1628]"
+                >
+                  <Icon>
+                    <BotIcon />
+                  </Icon>
+
+                  <h3 className="mt-5 font-black">
+                    ربات‌های معاملاتی
+                  </h3>
+
+                  <p className="mt-2 text-xs leading-6 text-slate-500">
+                    مدیریت و ساخت ربات‌های هوشمند
+                  </p>
+
+                  <div className="mt-4 flex items-center gap-2 text-xs font-bold text-cyan-300">
+                    مشاهده ربات‌ها
+                    <ArrowIcon />
+                  </div>
+                </Link>
+
+                <Link
+                  href="/ai-analysis"
+                  className="group rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/20 hover:bg-[#0d1628]"
+                >
+                  <Icon>
+                    <BrainIcon />
+                  </Icon>
+
+                  <h3 className="mt-5 font-black">
+                    تحلیل AI
+                  </h3>
+
+                  <p className="mt-2 text-xs leading-6 text-slate-500">
+                    بررسی هوشمند وضعیت بازار
+                  </p>
+
+                  <div className="mt-4 flex items-center gap-2 text-xs font-bold text-cyan-300">
+                    ورود به تحلیل
+                    <ArrowIcon />
+                  </div>
+                </Link>
+
+                <Link
+                  href="/broker"
+                  className="group rounded-3xl border border-white/10 bg-[#0b1120]/80 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/20 hover:bg-[#0d1628]"
+                >
+                  <Icon>
+                    <LinkIcon />
+                  </Icon>
+
+                  <h3 className="mt-5 font-black">
+                    اتصال بروکر
+                  </h3>
+
+                  <p className="mt-2 text-xs leading-6 text-slate-500">
+                    اتصال حساب معاملاتی به پلتفرم
+                  </p>
+
+                  <div className="mt-4 flex items-center gap-2 text-xs font-bold text-cyan-300">
+                    مدیریت بروکر
+                    <ArrowIcon />
+                  </div>
+                </Link>
+
+              </div>
+            </section>
+
+            {/* Bottom panels */}
+            <section className="grid gap-5 xl:grid-cols-3">
+
+              {/* Account */}
+              <div className="rounded-3xl border border-white/10 bg-[#0b1120]/80 p-6 xl:col-span-2">
+                <div className="mb-6 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-black">
+                      اطلاعات حساب
+                    </h2>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      مشخصات حساب کاربری شما
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-300">
+                    {user.role}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.025] p-4">
+                    <div className="text-xs text-slate-500">
+                      نام کاربر
+                    </div>
+
+                    <div className="mt-2 font-bold">
+                      {user.name}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.025] p-4">
+                    <div className="text-xs text-slate-500">
+                      ایمیل
+                    </div>
+
+                    <div className="mt-2 break-all text-sm font-bold">
+                      {user.email}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.025] p-4">
+                    <div className="text-xs text-slate-500">
+                      پلن
+                    </div>
+
+                    <div className="mt-2 font-bold text-cyan-300">
+                      {user.plan}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.025] p-4">
+                    <div className="text-xs text-slate-500">
+                      وضعیت
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-2 font-bold text-emerald-300">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      فعال
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Future features */}
+              <div className="rounded-3xl border border-white/10 bg-[#0b1120]/80 p-6">
+
+                <h2 className="font-black">
+                  امکانات در حال توسعه
+                </h2>
+
+                <p className="mt-1 text-xs leading-6 text-slate-500">
+                  بخش‌های جدید Trading AI به‌تدریج فعال می‌شوند.
+                </p>
+
+                <div className="mt-5 space-y-3">
+
+                  <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+                    <span className="text-lg">📊</span>
+                    <div>
+                      <div className="text-sm font-bold">
+                        چارت زنده بازار
+                      </div>
+                      <div className="text-[11px] text-slate-600">
+                        در حال توسعه
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+                    <span className="text-lg">🤖</span>
+                    <div>
+                      <div className="text-sm font-bold">
+                        ربات خودکار
+                      </div>
+                      <div className="text-[11px] text-slate-600">
+                        در حال توسعه
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+                    <span className="text-lg">🔗</span>
+                    <div>
+                      <div className="text-sm font-bold">
+                        اتصال بروکر
+                      </div>
+                      <div className="text-[11px] text-slate-600">
+                        در حال توسعه
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+                    <span className="text-lg">🧠</span>
+                    <div>
+                      <div className="text-sm font-bold">
+                        تحلیل پیشرفته AI
+                      </div>
+                      <div className="text-[11px] text-slate-600">
+                        در حال توسعه
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </section>
+
+            {/* Mobile navigation */}
+            <div className="mt-6 grid grid-cols-2 gap-3 lg:hidden">
+
+              <Link
+                href="/market"
+                className="rounded-2xl border border-white/10 bg-[#0b1120] p-4 text-center text-sm font-bold text-slate-300"
+              >
+                📊 بازار
+              </Link>
+
+              <Link
+                href="/bots"
+                className="rounded-2xl border border-white/10 bg-[#0b1120] p-4 text-center text-sm font-bold text-slate-300"
+              >
+                🤖 ربات‌ها
+              </Link>
+
+              <Link
+                href="/ai-analysis"
+                className="rounded-2xl border border-white/10 bg-[#0b1120] p-4 text-center text-sm font-bold text-slate-300"
+              >
+                🧠 تحلیل AI
+              </Link>
+
+              <Link
+                href="/broker"
+                className="rounded-2xl border border-white/10 bg-[#0b1120] p-4 text-center text-sm font-bold text-slate-300"
+              >
+                🔗 بروکر
+              </Link>
 
             </div>
 
           </section>
-
-          {/* Footer */}
-          <footer className="py-8 text-center text-xs text-slate-500">
-            Trading AI • پنل هوشمند معاملات
-          </footer>
-
-        </section>
-
+        </div>
       </div>
     </main>
-  );
-}
-
-function StatCard({
-  title,
-  value,
-  description,
-  icon,
-  accent,
-}: {
-  title: string;
-  value: string;
-  description: string;
-  icon: string;
-  accent: "cyan" | "blue" | "purple" | "amber";
-}) {
-  const styles = {
-    cyan: "border-cyan-400/10 bg-cyan-400/5 text-cyan-300",
-    blue: "border-blue-400/10 bg-blue-400/5 text-blue-300",
-    purple: "border-purple-400/10 bg-purple-400/5 text-purple-300",
-    amber: "border-amber-400/10 bg-amber-400/5 text-amber-300",
-  };
-
-  return (
-    <div className="rounded-3xl border border-white/10 bg-[#0a1728]/90 p-5 shadow-xl shadow-black/10">
-      <div className="flex items-start justify-between gap-4">
-
-        <div>
-          <p className="text-sm text-slate-400">
-            {title}
-          </p>
-
-          <p className="mt-3 text-xl font-black text-white">
-            {value}
-          </p>
-
-          <p className="mt-2 text-xs leading-5 text-slate-500">
-            {description}
-          </p>
-        </div>
-
-        <div
-          className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${styles[accent]}`}
-        >
-          {icon}
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-function ServiceCard({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-2xl border border-white/10 bg-white/[0.025] p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/20 hover:bg-cyan-400/[0.04]"
-    >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/15 to-blue-500/15 text-xl">
-        {icon}
-      </div>
-
-      <h4 className="font-bold text-white transition group-hover:text-cyan-300">
-        {title}
-      </h4>
-
-      <p className="mt-2 text-xs leading-6 text-slate-500">
-        {description}
-      </p>
-
-      <div className="mt-4 text-xs font-bold text-cyan-400">
-        ورود به بخش ←
-      </div>
-    </Link>
-  );
-}
-
-function AccountRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.025] px-4 py-3">
-      <span className="text-sm text-slate-500">
-        {label}
-      </span>
-
-      <span className="max-w-[60%] truncate text-left text-sm font-bold text-slate-200">
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function ComingSoon({
-  icon,
-  title,
-  text,
-}: {
-  icon: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 text-lg">
-        {icon}
-      </div>
-
-      <h4 className="font-bold">
-        {title}
-      </h4>
-
-      <p className="mt-2 text-xs leading-6 text-slate-500">
-        {text}
-      </p>
-
-      <span className="mt-4 inline-flex rounded-full border border-white/10 px-3 py-1 text-[10px] font-bold text-slate-500">
-        به‌زودی
-      </span>
-    </div>
   );
 }
