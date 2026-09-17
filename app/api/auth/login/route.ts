@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/session";
 
-const ADMIN_EMAIL = "ایمیل-خودت-را-اینجا-بگذار";
+const ADMIN_EMAIL = "abdolmotlb8@gmail.com";
 
 export async function POST(request: Request) {
   try {
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // تبدیل حساب مالک سایت به ADMIN
+    // حساب مالک سایت را به ADMIN تبدیل می‌کند
     let currentRole = user.role;
 
     if (normalizedEmail === ADMIN_EMAIL.toLowerCase()) {
