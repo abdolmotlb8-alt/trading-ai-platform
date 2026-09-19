@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type Bot = {
@@ -112,7 +113,7 @@ const defaultForm: FormState = {
   maxSpread: "30",
   cooldown: "5",
 
-  trailingStop: false,
+  trailingStop: true,
   trailingStopDistance: "2",
 
   breakEven: false,
@@ -131,34 +132,38 @@ const defaultForm: FormState = {
   botEnabled: false,
 };
 
-const marketOptions = [
+const markets = [
   {
-    label: "طلا / XAUUSD",
+    label: "طلا XAUUSD",
     value: "XAU/USD",
     symbol: "XAUUSD",
-    type: "FOREX",
+    marketType: "FOREX",
+    icon: "🪙",
   },
   {
-    label: "بیت‌کوین / BTCUSDT",
+    label: "بیت‌کوین BTCUSDT",
     value: "BTC/USDT",
     symbol: "BTCUSDT",
-    type: "CRYPTO",
+    marketType: "CRYPTO",
+    icon: "₿",
   },
   {
-    label: "اتریوم / ETHUSDT",
+    label: "اتریوم ETHUSDT",
     value: "ETH/USDT",
     symbol: "ETHUSDT",
-    type: "CRYPTO",
+    marketType: "CRYPTO",
+    icon: "Ξ",
   },
   {
-    label: "یورو دلار / EURUSD",
+    label: "یورو دلار EURUSD",
     value: "EUR/USD",
     symbol: "EURUSD",
-    type: "FOREX",
+    marketType: "FOREX",
+    icon: "💱",
   },
 ];
 
-const strategyOptions = [
+const strategies = [
   "تحلیل چندتأییدی",
   "پرایس اکشن",
   "کندل استیک",
@@ -166,7 +171,7 @@ const strategyOptions = [
   "روندی",
 ];
 
-function numberOrDefault(
+function toNumber(
   value: string,
   fallback: number
 ) {
@@ -179,29 +184,45 @@ function numberOrDefault(
 
 function botToForm(bot: Bot): FormState {
   const market =
-    marketOptions.find(
-      (item) => item.symbol === bot.symbol
+    markets.find(
+      (item) =>
+        item.symbol === bot.symbol
     )?.value ?? "XAU/USD";
 
   return {
     botName: bot.name || "Gold AI Bot",
     market,
+
     strategy:
       bot.category === "TRADING"
         ? "تحلیل چندتأییدی"
-        : bot.category || "تحلیل چندتأییدی",
+        : bot.category ||
+          "تحلیل چندتأییدی",
 
     lotMode:
       bot.lotMode === "RISK_PERCENT"
         ? "risk"
         : "fixed",
 
-    lotSize: String(bot.lotSize ?? 0.01),
-    riskPercent: String(bot.riskPercent ?? 1),
+    lotSize: String(
+      bot.lotSize ?? 0.01
+    ),
 
-    takeProfit: String(bot.takeProfit ?? 5),
-    stopLoss: String(bot.stopLoss ?? 4),
-    riskReward: String(bot.riskReward ?? 1.25),
+    riskPercent: String(
+      bot.riskPercent ?? 1
+    ),
+
+    takeProfit: String(
+      bot.takeProfit ?? 5
+    ),
+
+    stopLoss: String(
+      bot.stopLoss ?? 4
+    ),
+
+    riskReward: String(
+      bot.riskReward ?? 1.25
+    ),
 
     dailyProfit: String(
       bot.dailyProfitStop ?? 20
@@ -273,7 +294,8 @@ export default function BotBuilderPage() {
   const [form, setForm] =
     useState<FormState>(defaultForm);
 
-  const [bots, setBots] = useState<Bot[]>([]);
+  const [bots, setBots] =
+    useState<Bot[]>([]);
 
   const [selectedBotId, setSelectedBotId] =
     useState<string | null>(null);
@@ -290,14 +312,17 @@ export default function BotBuilderPage() {
   const [error, setError] =
     useState("");
 
-  const selectedMarket = useMemo(() => {
-    return (
-      marketOptions.find(
+  const [mobileMenu, setMobileMenu] =
+    useState(false);
+
+  const selectedMarket = useMemo(
+    () =>
+      markets.find(
         (item) =>
           item.value === form.market
-      ) ?? marketOptions[0]
-    );
-  }, [form.market]);
+      ) ?? markets[0],
+    [form.market]
+  );
 
   function updateField<K extends keyof FormState>(
     field: K,
@@ -325,7 +350,8 @@ export default function BotBuilderPage() {
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -340,23 +366,22 @@ export default function BotBuilderPage() {
       setBots(loadedBots);
 
       if (loadedBots.length > 0) {
-        const firstBot =
-          loadedBots[0];
-
         setSelectedBotId(
-          firstBot.id
+          loadedBots[0].id
         );
 
         setForm(
-          botToForm(firstBot)
+          botToForm(
+            loadedBots[0]
+          )
         );
       }
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
 
       setError(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "خطا در دریافت ربات‌ها."
       );
     } finally {
@@ -371,9 +396,9 @@ export default function BotBuilderPage() {
   function selectBot(bot: Bot) {
     setSelectedBotId(bot.id);
     setForm(botToForm(bot));
-
     setMessage("");
     setError("");
+    setMobileMenu(false);
   }
 
   function createNewBot() {
@@ -381,7 +406,9 @@ export default function BotBuilderPage() {
 
     setForm({
       ...defaultForm,
-      botName: `ربات جدید ${bots.length + 1}`,
+      botName: `ربات جدید ${
+        bots.length + 1
+      }`,
     });
 
     setMessage("");
@@ -398,7 +425,6 @@ export default function BotBuilderPage() {
         setError(
           "لطفاً نام ربات را وارد کنید."
         );
-
         setSaving(false);
         return;
       }
@@ -410,12 +436,15 @@ export default function BotBuilderPage() {
         category: "TRADING",
 
         description:
-          "ربات معامله‌گر با مدیریت ریسک و فیلترهای معاملاتی.",
+          "ربات معاملاتی Trading AI با مدیریت ریسک حرفه‌ای.",
 
-        symbol: selectedMarket.symbol,
+        symbol:
+          selectedMarket.symbol,
+
         timeframe: "15m",
+
         marketType:
-          selectedMarket.type,
+          selectedMarket.marketType,
 
         isActive:
           form.botEnabled,
@@ -425,41 +454,36 @@ export default function BotBuilderPage() {
             ? "RISK_PERCENT"
             : "FIXED",
 
-        lotSize:
-          numberOrDefault(
-            form.lotSize,
-            0.01
-          ),
+        lotSize: toNumber(
+          form.lotSize,
+          0.01
+        ),
 
-        riskPercent:
-          numberOrDefault(
-            form.riskPercent,
-            1
-          ),
+        riskPercent: toNumber(
+          form.riskPercent,
+          1
+        ),
 
-        takeProfit:
-          numberOrDefault(
-            form.takeProfit,
-            5
-          ),
+        takeProfit: toNumber(
+          form.takeProfit,
+          5
+        ),
 
-        stopLoss:
-          numberOrDefault(
-            form.stopLoss,
-            4
-          ),
+        stopLoss: toNumber(
+          form.stopLoss,
+          4
+        ),
 
-        riskReward:
-          numberOrDefault(
-            form.riskReward,
-            1.25
-          ),
+        riskReward: toNumber(
+          form.riskReward,
+          1.25
+        ),
 
         trailingStop:
           form.trailingStop,
 
         trailingStopDistance:
-          numberOrDefault(
+          toNumber(
             form.trailingStopDistance,
             2
           ),
@@ -468,19 +492,19 @@ export default function BotBuilderPage() {
           form.breakEven,
 
         breakEvenTrigger:
-          numberOrDefault(
+          toNumber(
             form.breakEvenTrigger,
             2
           ),
 
         dailyProfitStop:
-          numberOrDefault(
+          toNumber(
             form.dailyProfit,
             20
           ),
 
         dailyLossLimit:
-          numberOrDefault(
+          toNumber(
             form.dailyLoss,
             12
           ),
@@ -489,7 +513,7 @@ export default function BotBuilderPage() {
           Math.max(
             0,
             Math.floor(
-              numberOrDefault(
+              toNumber(
                 form.maxStopLosses,
                 3
               )
@@ -500,7 +524,7 @@ export default function BotBuilderPage() {
           Math.max(
             1,
             Math.floor(
-              numberOrDefault(
+              toNumber(
                 form.maxOpenTrades,
                 1
               )
@@ -514,7 +538,7 @@ export default function BotBuilderPage() {
           form.sellEnabled,
 
         maxSpread:
-          numberOrDefault(
+          toNumber(
             form.maxSpread,
             30
           ),
@@ -523,7 +547,7 @@ export default function BotBuilderPage() {
           Math.max(
             0,
             Math.floor(
-              numberOrDefault(
+              toNumber(
                 form.cooldown,
                 5
               )
@@ -542,7 +566,7 @@ export default function BotBuilderPage() {
             Math.max(
               0,
               Math.floor(
-                numberOrDefault(
+                toNumber(
                   form.signalThreshold,
                   80
                 )
@@ -554,7 +578,7 @@ export default function BotBuilderPage() {
           Math.max(
             0,
             Math.floor(
-              numberOrDefault(
+              toNumber(
                 form.minConfirmations,
                 5
               )
@@ -601,10 +625,10 @@ export default function BotBuilderPage() {
         );
       }
 
-      const savedBot: Bot | undefined =
-        data?.bot;
+      if (data?.bot) {
+        const savedBot: Bot =
+          data.bot;
 
-      if (savedBot) {
         setBots((current) => {
           const exists =
             current.some(
@@ -643,12 +667,12 @@ export default function BotBuilderPage() {
           ? "تنظیمات ربات با موفقیت ذخیره شد."
           : "ربات جدید با موفقیت ساخته شد."
       );
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
 
       setError(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "خطا در ذخیره تنظیمات."
       );
     } finally {
@@ -659,213 +683,318 @@ export default function BotBuilderPage() {
   return (
     <main
       dir="rtl"
-      className="min-h-screen bg-[#020817] text-white"
+      className="min-h-screen overflow-x-hidden bg-[#020817] text-white"
     >
-      <div className="mx-auto max-w-[1450px] px-3 py-4 sm:px-5 lg:px-8 lg:py-7">
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute right-[10%] top-[8%] h-72 w-72 rounded-full bg-cyan-500/10 blur-[120px]" />
+        <div className="absolute bottom-[10%] left-[5%] h-80 w-80 rounded-full bg-blue-600/10 blur-[140px]" />
+        <div className="absolute right-[45%] top-[45%] h-48 w-48 rounded-full bg-cyan-400/5 blur-[100px]" />
+      </div>
 
-        {/* TOP HEADER */}
-        <header className="mb-6 flex flex-col gap-4 rounded-[26px] border border-cyan-500/20 bg-[#061426]/95 p-4 shadow-[0_0_40px_rgba(0,180,255,0.06)] sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+      {/* HEADER */}
+      <header className="sticky top-0 z-50 border-b border-cyan-400/10 bg-[#020817]/90 backdrop-blur-2xl">
+        <div className="mx-auto flex min-h-[72px] max-w-[1500px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
 
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-2xl shadow-[0_0_25px_rgba(34,211,238,0.12)]">
+            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-2xl shadow-[0_0_25px_rgba(34,211,238,0.12)]">
               🤖
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]" />
             </div>
 
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight sm:text-2xl">
-                  Trading AI
-                </h1>
-
-                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
-                  آنلاین
-                </span>
+              <div className="text-base font-black tracking-tight sm:text-lg">
+                Trading AI
               </div>
 
-              <p className="mt-1 text-xs text-slate-500">
-                Smart Trading • Better Results
-              </p>
-            </div>
-
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
-              سیستم آماده است
-            </div>
-
-            <button
-              type="button"
-              onClick={createNewBot}
-              className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-black text-slate-300 transition hover:border-cyan-500/40 hover:text-cyan-300"
-            >
-              + ربات جدید
-            </button>
-
-            <button
-              type="button"
-              onClick={saveSettings}
-              disabled={saving}
-              className="rounded-xl bg-gradient-to-r from-cyan-400 to-cyan-500 px-5 py-2.5 text-xs font-black text-slate-950 shadow-[0_0_25px_rgba(34,211,238,0.18)] transition hover:brightness-110 disabled:opacity-50"
-            >
-              {saving
-                ? "در حال ذخیره..."
-                : "ذخیره تنظیمات"}
-            </button>
-
-          </div>
-        </header>
-
-        {/* TITLE */}
-        <section className="mb-6">
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-cyan-400">
-                <span className="text-xl">
-                  ⚙️
-                </span>
-
-                <span className="text-xs font-black">
-                  BOT MANAGEMENT
-                </span>
-              </div>
-
-              <h2 className="text-3xl font-black tracking-tight sm:text-4xl">
-                تنظیمات و ساخت ربات
-              </h2>
-
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">
-                ربات معاملاتی خود را با تنظیمات دقیق،
-                مدیریت ریسک و کنترل‌های حرفه‌ای مدیریت کنید.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-              <div className="text-[10px] text-slate-500">
-                وضعیت فعلی
-              </div>
-
-              <div className="mt-1 flex items-center gap-2 text-sm font-black">
-                <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    form.botEnabled
-                      ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"
-                      : "bg-slate-600"
-                  }`}
-                />
-
-                {form.botEnabled
-                  ? "ربات فعال"
-                  : "ربات خاموش"}
+              <div className="text-[9px] tracking-wider text-cyan-400/70">
+                SMART TRADING • BETTER RESULTS
               </div>
             </div>
 
           </div>
 
-        </section>
+          <div className="hidden items-center gap-3 sm:flex">
 
-        {/* MESSAGE */}
-        {message && (
-          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm font-bold text-emerald-300">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15">
-              ✓
-            </span>
-
-            {message}
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-5 rounded-2xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm font-bold leading-7 text-red-300">
-            {error}
-          </div>
-        )}
-
-        {/* MY BOTS */}
-        <section className="mb-6 rounded-[26px] border border-slate-800 bg-[#061426]/90 p-4 shadow-[0_15px_50px_rgba(0,0,0,0.2)] sm:p-5">
-
-          <div className="mb-4 flex items-center justify-between gap-3">
-
-            <div>
-              <h3 className="text-base font-black">
-                ربات‌های من
-              </h3>
-
-              <p className="mt-1 text-xs text-slate-500">
-                ربات موردنظر را برای ویرایش انتخاب کنید.
-              </p>
+            <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-4 py-2 text-[10px] font-bold text-emerald-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
+              سیستم آنلاین است
             </div>
 
-            <div className="rounded-full border border-slate-800 bg-slate-950 px-3 py-1.5 text-[10px] text-slate-500">
-              {loading
-                ? "در حال دریافت..."
-                : `${bots.length} ربات`}
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/80">
+              🔔
+            </div>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/80">
+              👤
             </div>
 
           </div>
 
-          {loading ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 text-center text-xs text-slate-500">
-              در حال دریافت اطلاعات...
-            </div>
-          ) : bots.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-7 text-center">
-              <div className="text-3xl">
-                🤖
+          <button
+            type="button"
+            onClick={() =>
+              setMobileMenu(
+                !mobileMenu
+              )
+            }
+            className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs sm:hidden"
+          >
+            ☰
+          </button>
+
+        </div>
+      </header>
+
+      {/* MOBILE MENU */}
+      {mobileMenu && (
+        <div className="fixed right-3 top-[82px] z-50 w-56 rounded-2xl border border-cyan-400/20 bg-[#061426]/95 p-3 shadow-2xl backdrop-blur-xl sm:hidden">
+          <MobileNavItem
+            icon="⌂"
+            text="داشبورد"
+          />
+          <MobileNavItem
+            icon="🤖"
+            text="ربات ساز"
+            active
+          />
+          <MobileNavItem
+            icon="◎"
+            text="ربات‌های من"
+          />
+          <MobileNavItem
+            icon="◉"
+            text="تحلیلگر AI"
+          />
+          <MobileNavItem
+            icon="▣"
+            text="بازارها"
+          />
+          <MobileNavItem
+            icon="◫"
+            text="گزارش‌ها"
+          />
+          <MobileNavItem
+            icon="⚙"
+            text="تنظیمات"
+          />
+        </div>
+      )}
+
+      <div className="mx-auto flex max-w-[1500px]">
+
+        {/* SIDEBAR */}
+        <aside className="hidden w-[210px] shrink-0 border-l border-cyan-400/10 py-6 lg:block">
+
+          <div className="sticky top-[90px] space-y-2 px-4">
+
+            <NavItem
+              icon="⌂"
+              text="داشبورد"
+            />
+
+            <NavItem
+              icon="🤖"
+              text="ربات ساز"
+              active
+            />
+
+            <NavItem
+              icon="◎"
+              text="ربات‌های من"
+            />
+
+            <NavItem
+              icon="◉"
+              text="تحلیلگر AI"
+            />
+
+            <NavItem
+              icon="▣"
+              text="بازارها"
+            />
+
+            <NavItem
+              icon="◫"
+              text="گزارش‌ها"
+            />
+
+            <NavItem
+              icon="⚙"
+              text="تنظیمات"
+            />
+
+            <div className="my-6 h-px bg-slate-800" />
+
+            <NavItem
+              icon="◌"
+              text="پشتیبانی"
+            />
+
+          </div>
+
+        </aside>
+
+        {/* MAIN */}
+        <div className="min-w-0 flex-1 px-3 py-5 sm:px-5 sm:py-7 lg:px-7 lg:py-8">
+
+          {/* HERO */}
+          <section className="relative mb-5 overflow-hidden rounded-[26px] border border-cyan-400/20 bg-gradient-to-br from-[#08233d] via-[#061426] to-[#03101f] p-5 shadow-[0_0_50px_rgba(0,180,255,0.06)] sm:p-7">
+
+            <div className="absolute -left-20 -top-20 h-48 w-48 rounded-full bg-cyan-400/10 blur-[80px]" />
+
+            <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+
+              <div className="flex items-center gap-4">
+
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-3xl shadow-[0_0_35px_rgba(34,211,238,0.12)]">
+                  🤖
+                </div>
+
+                <div>
+                  <div className="mb-1 text-[10px] font-black tracking-[0.18em] text-cyan-400">
+                    BOT MANAGEMENT
+                  </div>
+
+                  <h1 className="text-2xl font-black sm:text-3xl">
+                    تنظیمات و ساخت ربات
+                  </h1>
+
+                  <p className="mt-2 max-w-xl text-xs leading-6 text-slate-400 sm:text-sm">
+                    ربات معاملاتی خود را با تنظیمات دقیق،
+                    مدیریت ریسک حرفه‌ای و کنترل کامل مدیریت کنید.
+                  </p>
+                </div>
+
               </div>
 
-              <p className="mt-3 text-sm font-black text-slate-300">
-                هنوز رباتی ساخته نشده است.
-              </p>
+              <div className="flex items-center gap-3 rounded-2xl border border-cyan-400/20 bg-slate-950/40 px-5 py-4">
 
-              <p className="mt-1 text-xs text-slate-500">
-                تنظیمات را وارد کنید و ربات را ذخیره کنید.
-              </p>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-xl">
+                  ⚡
+                </div>
+
+                <div>
+                  <div className="text-[10px] text-slate-500">
+                    وضعیت ربات
+                  </div>
+
+                  <div className="mt-1 flex items-center gap-2 text-sm font-black">
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        form.botEnabled
+                          ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]"
+                          : "bg-slate-600"
+                      }`}
+                    />
+
+                    {form.botEnabled
+                      ? "فعال"
+                      : "خاموش"}
+                  </div>
+                </div>
+
+              </div>
+
             </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {bots.map((bot) => {
-                const selected =
-                  bot.id ===
-                  selectedBotId;
+          </section>
 
-                return (
+          {/* BOTS */}
+          <section className="mb-5 rounded-[26px] border border-cyan-400/15 bg-[#061426]/80 p-4 shadow-[0_15px_50px_rgba(0,0,0,0.2)] backdrop-blur-xl sm:p-5">
+
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-lg">
+                  🤖
+                </div>
+
+                <div>
+                  <h2 className="text-sm font-black">
+                    ربات‌های من
+                  </h2>
+
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    ربات موردنظر را برای ویرایش انتخاب کنید.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={createNewBot}
+                className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-2.5 text-xs font-black text-cyan-300 transition hover:bg-cyan-400/10"
+              >
+                + ربات جدید
+              </button>
+
+            </div>
+
+            {loading ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 text-center text-xs text-slate-500">
+                در حال دریافت ربات‌ها...
+              </div>
+            ) : bots.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/30 p-7 text-center">
+                <div className="text-3xl">
+                  🤖
+                </div>
+
+                <div className="mt-3 text-sm font-black">
+                  هنوز رباتی ساخته نشده است.
+                </div>
+
+                <div className="mt-1 text-[10px] text-slate-500">
+                  بعد از تکمیل تنظیمات، ربات خود را ذخیره کنید.
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+
+                {bots.map((bot) => (
                   <button
                     key={bot.id}
                     type="button"
                     onClick={() =>
                       selectBot(bot)
                     }
-                    className={`rounded-2xl border p-4 text-right transition ${
-                      selected
-                        ? "border-cyan-400/50 bg-cyan-400/[0.07] shadow-[0_0_25px_rgba(34,211,238,0.07)]"
-                        : "border-slate-800 bg-slate-950/50 hover:border-slate-700"
+                    className={`group rounded-2xl border p-4 text-right transition ${
+                      selectedBotId ===
+                      bot.id
+                        ? "border-cyan-400/50 bg-cyan-400/[0.06] shadow-[0_0_30px_rgba(34,211,238,0.06)]"
+                        : "border-slate-800 bg-slate-950/30 hover:border-cyan-400/20"
                     }`}
                   >
 
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3">
 
-                      <div>
-                        <div className="text-sm font-black text-slate-100">
-                          {bot.name}
+                      <div className="flex items-center gap-3">
+
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/5 text-xl">
+                          {bot.symbol ===
+                          "XAUUSD"
+                            ? "🪙"
+                            : "₿"}
                         </div>
 
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          {bot.symbol} •{" "}
-                          {bot.timeframe}
+                        <div>
+                          <div className="text-sm font-black">
+                            {bot.name}
+                          </div>
+
+                          <div className="mt-1 text-[10px] text-slate-500">
+                            {bot.symbol} •{" "}
+                            {bot.timeframe}
+                          </div>
                         </div>
+
                       </div>
 
                       <span
-                        className={`rounded-full px-2 py-1 text-[9px] font-black ${
+                        className={`rounded-full px-2.5 py-1 text-[9px] font-black ${
                           bot.isActive
-                            ? "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                            : "border border-slate-700 bg-slate-800 text-slate-500"
+                            ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                            : "border border-slate-700 bg-slate-800/70 text-slate-500"
                         }`}
                       >
                         {bot.isActive
@@ -875,110 +1004,162 @@ export default function BotBuilderPage() {
 
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2">
+                    <div className="mt-4 grid grid-cols-3 gap-2">
 
-                      <MiniStat
+                      <StatBox
                         label="TP"
                         value={`$${bot.takeProfit ?? 0}`}
-                        positive
+                        type="green"
                       />
 
-                      <MiniStat
+                      <StatBox
                         label="SL"
                         value={`$${bot.stopLoss ?? 0}`}
-                        danger
+                        type="red"
+                      />
+
+                      <StatBox
+                        label="R/R"
+                        value={`${bot.riskReward ?? 0}`}
+                        type="blue"
                       />
 
                     </div>
 
                   </button>
-                );
-              })}
+                ))}
+
+              </div>
+            )}
+
+          </section>
+
+          {/* ALERT */}
+          {(message || error) && (
+            <div
+              className={`mb-5 rounded-2xl border px-4 py-3 text-xs font-bold ${
+                message
+                  ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-300"
+                  : "border-red-400/20 bg-red-400/5 text-red-300"
+              }`}
+            >
+              {message || error}
             </div>
           )}
 
-        </section>
-
-        {/* MAIN CONTENT */}
-        <div className="space-y-6">
-
-          {/* 01 BASIC */}
+          {/* SECTION 01 */}
           <SettingsCard
             number="01"
             icon="⚙️"
             title="مشخصات اصلی ربات"
             description="نام، بازار و استراتژی معاملاتی ربات را مشخص کنید."
+            action={
+              <button
+                type="button"
+                onClick={createNewBot}
+                className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-3 py-2 text-[10px] font-black text-cyan-300"
+              >
+                + ربات جدید
+              </button>
+            }
           >
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-3">
 
-              <InputField
+              <FieldCard
+                icon="🤖"
                 label="نام ربات"
-                value={form.botName}
-                onChange={(value) =>
-                  updateField(
-                    "botName",
-                    value
-                  )
-                }
-                placeholder="Gold AI Bot"
-              />
+              >
+                <input
+                  value={form.botName}
+                  onChange={(event) =>
+                    updateField(
+                      "botName",
+                      event.target.value
+                    )
+                  }
+                  className="dark-input"
+                  placeholder="Gold AI Bot"
+                />
+              </FieldCard>
 
-              <SelectField
+              <FieldCard
+                icon={selectedMarket.icon}
                 label="بازار"
-                value={form.market}
-                onChange={(value) =>
-                  updateField(
-                    "market",
-                    value
-                  )
-                }
-                options={marketOptions.map(
-                  (item) => ({
-                    label: item.label,
-                    value: item.value,
-                  })
-                )}
-              />
+              >
+                <select
+                  value={form.market}
+                  onChange={(event) =>
+                    updateField(
+                      "market",
+                      event.target.value
+                    )
+                  }
+                  className="dark-input cursor-pointer"
+                >
+                  {markets.map(
+                    (market) => (
+                      <option
+                        key={
+                          market.value
+                        }
+                        value={
+                          market.value
+                        }
+                      >
+                        {market.label}
+                      </option>
+                    )
+                  )}
+                </select>
+              </FieldCard>
 
-              <SelectField
+              <FieldCard
+                icon="🎯"
                 label="استراتژی"
-                value={form.strategy}
-                onChange={(value) =>
-                  updateField(
-                    "strategy",
-                    value
-                  )
-                }
-                options={strategyOptions.map(
-                  (item) => ({
-                    label: item,
-                    value: item,
-                  })
-                )}
-              />
+              >
+                <select
+                  value={form.strategy}
+                  onChange={(event) =>
+                    updateField(
+                      "strategy",
+                      event.target.value
+                    )
+                  }
+                  className="dark-input cursor-pointer"
+                >
+                  {strategies.map(
+                    (strategy) => (
+                      <option
+                        key={strategy}
+                        value={strategy}
+                      >
+                        {strategy}
+                      </option>
+                    )
+                  )}
+                </select>
+              </FieldCard>
 
             </div>
 
           </SettingsCard>
 
-          {/* 02 RISK */}
+          {/* SECTION 02 */}
           <SettingsCard
             number="02"
             icon="🛡️"
             title="حجم معامله و مدیریت ریسک"
-            description="حجم معاملات و میزان ریسک را کنترل کنید."
+            description="حجم معاملات و میزان ریسک هر معامله را کنترل کنید."
           >
 
             <div className="grid gap-4 lg:grid-cols-3">
 
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-
-                <div className="mb-3 text-xs font-bold text-slate-400">
-                  روش تعیین حجم
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-900 p-1.5">
+              <FieldCard
+                icon="📊"
+                label="روش تعیین حجم"
+              >
+                <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#020817] p-1.5">
 
                   <button
                     type="button"
@@ -988,10 +1169,10 @@ export default function BotBuilderPage() {
                         "fixed"
                       )
                     }
-                    className={`rounded-lg px-3 py-2.5 text-xs font-black transition ${
+                    className={`rounded-lg px-3 py-3 text-[10px] font-black transition ${
                       form.lotMode ===
                       "fixed"
-                        ? "bg-cyan-400 text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+                        ? "bg-cyan-400 text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.22)]"
                         : "text-slate-500 hover:text-slate-300"
                     }`}
                   >
@@ -1006,10 +1187,10 @@ export default function BotBuilderPage() {
                         "risk"
                       )
                     }
-                    className={`rounded-lg px-3 py-2.5 text-xs font-black transition ${
+                    className={`rounded-lg px-3 py-3 text-[10px] font-black transition ${
                       form.lotMode ===
                       "risk"
-                        ? "bg-cyan-400 text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+                        ? "bg-cyan-400 text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.22)]"
                         : "text-slate-500 hover:text-slate-300"
                     }`}
                   >
@@ -1017,47 +1198,56 @@ export default function BotBuilderPage() {
                   </button>
 
                 </div>
+              </FieldCard>
 
-              </div>
-
-              <NumberField
+              <FieldCard
+                icon="◈"
                 label="Lot Size"
-                value={form.lotSize}
-                onChange={(value) =>
-                  updateField(
-                    "lotSize",
-                    value
-                  )
-                }
-                step="0.01"
-                suffix="LOT"
-              />
+              >
+                <StepperInput
+                  value={
+                    form.lotSize
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "lotSize",
+                      value
+                    )
+                  }
+                  step={0.01}
+                  suffix="LOT"
+                />
+              </FieldCard>
 
-              <NumberField
+              <FieldCard
+                icon="%"
                 label="درصد ریسک هر معامله"
-                value={
-                  form.riskPercent
-                }
-                onChange={(value) =>
-                  updateField(
-                    "riskPercent",
-                    value
-                  )
-                }
-                step="0.1"
-                suffix="%"
-              />
+              >
+                <StepperInput
+                  value={
+                    form.riskPercent
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "riskPercent",
+                      value
+                    )
+                  }
+                  step={0.1}
+                  suffix="%"
+                />
+              </FieldCard>
 
             </div>
 
-            <InfoBar>
+            <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-[10px] leading-6 text-amber-300">
               ⚠️ حجم و درصد ریسک باید متناسب با موجودی حساب،
               حد ضرر و قوانین بروکر انتخاب شود.
-            </InfoBar>
+            </div>
 
           </SettingsCard>
 
-          {/* 03 TP SL */}
+          {/* SECTION 03 */}
           <SettingsCard
             number="03"
             icon="🎯"
@@ -1065,128 +1255,165 @@ export default function BotBuilderPage() {
             description="مقادیر TP، SL و نسبت ریسک به بازده را مشخص کنید."
           >
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-3">
 
-              <NumberField
+              <FieldCard
+                icon="💰"
                 label="Take Profit"
-                value={form.takeProfit}
-                onChange={(value) =>
-                  updateField(
-                    "takeProfit",
-                    value
-                  )
-                }
-                step="0.1"
-                suffix="$"
-                positive
-              />
+                accent="green"
+              >
+                <StepperInput
+                  value={
+                    form.takeProfit
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "takeProfit",
+                      value
+                    )
+                  }
+                  step={0.1}
+                  suffix="$"
+                />
+              </FieldCard>
 
-              <NumberField
+              <FieldCard
+                icon="🎯"
                 label="Stop Loss"
-                value={form.stopLoss}
-                onChange={(value) =>
-                  updateField(
-                    "stopLoss",
-                    value
-                  )
-                }
-                step="0.1"
-                suffix="$"
-                danger
-              />
+                accent="red"
+              >
+                <StepperInput
+                  value={
+                    form.stopLoss
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "stopLoss",
+                      value
+                    )
+                  }
+                  step={0.1}
+                  suffix="$"
+                />
+              </FieldCard>
 
-              <NumberField
+              <FieldCard
+                icon="R"
                 label="Risk / Reward"
-                value={form.riskReward}
-                onChange={(value) =>
-                  updateField(
-                    "riskReward",
-                    value
-                  )
-                }
-                step="0.05"
-                suffix="R"
-              />
+                accent="blue"
+              >
+                <StepperInput
+                  value={
+                    form.riskReward
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "riskReward",
+                      value
+                    )
+                  }
+                  step={0.05}
+                  suffix="R"
+                />
+              </FieldCard>
 
             </div>
 
           </SettingsCard>
 
-          {/* 04 DAILY */}
+          {/* SECTION 04 */}
           <SettingsCard
             number="04"
             icon="📅"
             title="محدودیت‌های روزانه"
-            description="پس از رسیدن به این محدودیت‌ها، سیستم می‌تواند معاملات جدید را متوقف کند."
+            description="با رسیدن به این محدودیت‌ها، سیستم می‌تواند معاملات جدید را متوقف کند."
           >
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
-              <NumberField
+              <FieldCard
+                icon="💚"
                 label="توقف سود روزانه"
-                value={
-                  form.dailyProfit
-                }
-                onChange={(value) =>
-                  updateField(
-                    "dailyProfit",
-                    value
-                  )
-                }
-                step="1"
-                suffix="$"
-                positive
-              />
+                accent="green"
+              >
+                <StepperInput
+                  value={
+                    form.dailyProfit
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "dailyProfit",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="$"
+                />
+              </FieldCard>
 
-              <NumberField
+              <FieldCard
+                icon="❤️"
                 label="حداکثر ضرر روزانه"
-                value={form.dailyLoss}
-                onChange={(value) =>
-                  updateField(
-                    "dailyLoss",
-                    value
-                  )
-                }
-                step="1"
-                suffix="$"
-                danger
-              />
+                accent="red"
+              >
+                <StepperInput
+                  value={
+                    form.dailyLoss
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "dailyLoss",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="$"
+                />
+              </FieldCard>
 
-              <NumberField
-                label="حداکثر Stop Loss روزانه"
-                value={
-                  form.maxStopLosses
-                }
-                onChange={(value) =>
-                  updateField(
-                    "maxStopLosses",
-                    value
-                  )
-                }
-                step="1"
-                suffix="بار"
-              />
+              <FieldCard
+                icon="🟡"
+                label="حداکثر Stop Loss"
+              >
+                <StepperInput
+                  value={
+                    form.maxStopLosses
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "maxStopLosses",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="بار"
+                />
+              </FieldCard>
 
-              <NumberField
+              <FieldCard
+                icon="🔵"
                 label="حداکثر معاملات باز"
-                value={
-                  form.maxOpenTrades
-                }
-                onChange={(value) =>
-                  updateField(
-                    "maxOpenTrades",
-                    value
-                  )
-                }
-                step="1"
-                suffix="معامله"
-              />
+              >
+                <StepperInput
+                  value={
+                    form.maxOpenTrades
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "maxOpenTrades",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="معامله"
+                />
+              </FieldCard>
 
             </div>
 
           </SettingsCard>
 
-          {/* 05 EXECUTION */}
+          {/* SECTION 05 */}
           <SettingsCard
             number="05"
             icon="⚡"
@@ -1194,9 +1421,9 @@ export default function BotBuilderPage() {
             description="شرایط و فیلترهای ورود به معاملات را کنترل کنید."
           >
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 lg:grid-cols-2">
 
-              <ToggleSetting
+              <ToggleRow
                 icon="🟢"
                 title="معاملات BUY"
                 description="اجازه ارسال معاملات خرید"
@@ -1211,7 +1438,7 @@ export default function BotBuilderPage() {
                 }
               />
 
-              <ToggleSetting
+              <ToggleRow
                 icon="🔴"
                 title="معاملات SELL"
                 description="اجازه ارسال معاملات فروش"
@@ -1226,7 +1453,7 @@ export default function BotBuilderPage() {
                 }
               />
 
-              <ToggleSetting
+              <ToggleRow
                 icon="🎯"
                 title="Trailing Stop"
                 description="حرکت حد ضرر همراه با معامله"
@@ -1241,7 +1468,7 @@ export default function BotBuilderPage() {
                 }
               />
 
-              <ToggleSetting
+              <ToggleRow
                 icon="⚖️"
                 title="Break Even"
                 description="انتقال حد ضرر به نقطه ورود"
@@ -1256,8 +1483,8 @@ export default function BotBuilderPage() {
                 }
               />
 
-              <ToggleSetting
-                icon="🕐"
+              <ToggleRow
+                icon="◷"
                 title="Session Filter"
                 description="معامله فقط در ساعات مجاز"
                 enabled={
@@ -1271,7 +1498,7 @@ export default function BotBuilderPage() {
                 }
               />
 
-              <ToggleSetting
+              <ToggleRow
                 icon="📰"
                 title="News Filter"
                 description="فیلتر شرایط خبری بازار"
@@ -1286,7 +1513,94 @@ export default function BotBuilderPage() {
                 }
               />
 
-              <ToggleSetting
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+
+              {form.trailingStop && (
+                <FieldCard
+                  icon="↗"
+                  label="فاصله Trailing Stop"
+                >
+                  <StepperInput
+                    value={
+                      form.trailingStopDistance
+                    }
+                    onChange={(value) =>
+                      updateField(
+                        "trailingStopDistance",
+                        value
+                      )
+                    }
+                    step={0.1}
+                    suffix="$"
+                  />
+                </FieldCard>
+              )}
+
+              {form.breakEven && (
+                <FieldCard
+                  icon="⚖"
+                  label="تریگر Break Even"
+                >
+                  <StepperInput
+                    value={
+                      form.breakEvenTrigger
+                    }
+                    onChange={(value) =>
+                      updateField(
+                        "breakEvenTrigger",
+                        value
+                      )
+                    }
+                    step={0.1}
+                    suffix="$"
+                  />
+                </FieldCard>
+              )}
+
+              <FieldCard
+                icon="⚡"
+                label="حداکثر Spread"
+              >
+                <StepperInput
+                  value={
+                    form.maxSpread
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "maxSpread",
+                      value
+                    )
+                  }
+                  step={0.1}
+                  suffix="pip"
+                />
+              </FieldCard>
+
+              <FieldCard
+                icon="◷"
+                label="Cooldown بین معاملات"
+              >
+                <StepperInput
+                  value={
+                    form.cooldown
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "cooldown",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="دقیقه"
+                />
+              </FieldCard>
+
+            </div>
+
+            <div className="mt-4">
+              <ToggleRow
                 icon="✈️"
                 title="Telegram"
                 description="ارسال وضعیت ربات به تلگرام"
@@ -1300,124 +1614,63 @@ export default function BotBuilderPage() {
                   )
                 }
               />
-
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-
-              {form.trailingStop && (
-                <NumberField
-                  label="فاصله Trailing Stop"
-                  value={
-                    form.trailingStopDistance
-                  }
-                  onChange={(value) =>
-                    updateField(
-                      "trailingStopDistance",
-                      value
-                    )
-                  }
-                  step="0.1"
-                  suffix="$"
-                />
-              )}
-
-              {form.breakEven && (
-                <NumberField
-                  label="تریگر Break Even"
-                  value={
-                    form.breakEvenTrigger
-                  }
-                  onChange={(value) =>
-                    updateField(
-                      "breakEvenTrigger",
-                      value
-                    )
-                  }
-                  step="0.1"
-                  suffix="$"
-                />
-              )}
-
-              <NumberField
-                label="حداکثر Spread"
-                value={
-                  form.maxSpread
-                }
-                onChange={(value) =>
-                  updateField(
-                    "maxSpread",
-                    value
-                  )
-                }
-                step="0.1"
-                suffix="pip"
-              />
-
-              <NumberField
-                label="Cooldown بین معاملات"
-                value={
-                  form.cooldown
-                }
-                onChange={(value) =>
-                  updateField(
-                    "cooldown",
-                    value
-                  )
-                }
-                step="1"
-                suffix="دقیقه"
-              />
-
             </div>
 
           </SettingsCard>
 
-          {/* 06 SIGNAL */}
+          {/* SECTION 06 */}
           <SettingsCard
             number="06"
-            icon="🧠"
+            icon="◎"
             title="فیلتر و قدرت سیگنال"
             description="حداقل کیفیت لازم برای اجازه ورود به معامله."
           >
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
 
-              <NumberField
+              <FieldCard
+                icon="💎"
                 label="حداقل امتیاز سیگنال"
-                value={
-                  form.signalThreshold
-                }
-                onChange={(value) =>
-                  updateField(
-                    "signalThreshold",
-                    value
-                  )
-                }
-                step="1"
-                suffix="/100"
-              />
+              >
+                <StepperInput
+                  value={
+                    form.signalThreshold
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "signalThreshold",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="/100"
+                />
+              </FieldCard>
 
-              <NumberField
+              <FieldCard
+                icon="🛡️"
                 label="حداقل تأییدیه‌ها"
-                value={
-                  form.minConfirmations
-                }
-                onChange={(value) =>
-                  updateField(
-                    "minConfirmations",
-                    value
-                  )
-                }
-                step="1"
-                suffix="تأیید"
-              />
+              >
+                <StepperInput
+                  value={
+                    form.minConfirmations
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "minConfirmations",
+                      value
+                    )
+                  }
+                  step={1}
+                  suffix="تأیید"
+                />
+              </FieldCard>
 
             </div>
 
           </SettingsCard>
 
-          {/* 07 BOT STATUS */}
+          {/* SECTION 07 */}
           <SettingsCard
             number="07"
             icon="🤖"
@@ -1425,22 +1678,35 @@ export default function BotBuilderPage() {
             description="فعال یا غیرفعال بودن ربات را مشخص کنید."
           >
 
-            <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-4 rounded-2xl border border-cyan-400/10 bg-[#020817]/50 p-4 sm:flex-row sm:items-center sm:justify-between">
 
-              <div>
-                <div className="text-sm font-black">
-                  {form.botEnabled
-                    ? "ربات فعال است"
-                    : "ربات خاموش است"}
+              <div className="flex items-center gap-3">
+
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                    form.botEnabled
+                      ? "bg-emerald-400/10 text-emerald-300"
+                      : "bg-slate-800 text-slate-500"
+                  }`}
+                >
+                  🤖
                 </div>
 
-                <p className="mt-1 text-xs leading-6 text-slate-500">
-                  تغییر این گزینه فقط وضعیت ذخیره‌شده ربات را
-                  تغییر می‌دهد.
-                </p>
+                <div>
+                  <div className="text-sm font-black">
+                    {form.botEnabled
+                      ? "ربات فعال است"
+                      : "ربات خاموش است"}
+                  </div>
+
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    وضعیت ربات پس از ذخیره در دیتابیس ثبت می‌شود.
+                  </div>
+                </div>
+
               </div>
 
-              <Switch
+              <ToggleSwitch
                 enabled={
                   form.botEnabled
                 }
@@ -1456,23 +1722,25 @@ export default function BotBuilderPage() {
 
           </SettingsCard>
 
-          {/* SAVE AREA */}
-          <section className="rounded-[26px] border border-cyan-400/20 bg-gradient-to-r from-cyan-500/[0.08] via-[#061426] to-[#061426] p-4 shadow-[0_0_40px_rgba(34,211,238,0.05)] sm:p-5">
+          {/* SAVE */}
+          <section className="relative mt-5 overflow-hidden rounded-[26px] border border-cyan-400/25 bg-gradient-to-r from-cyan-500/10 via-[#061426] to-[#061426] p-4 shadow-[0_0_50px_rgba(34,211,238,0.07)] sm:p-5">
+
+            <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-cyan-300 to-blue-600" />
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
               <div className="flex items-center gap-3">
 
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
-                  ✓
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-xl text-cyan-300">
+                  ℹ️
                 </div>
 
                 <div>
                   <div className="text-sm font-black">
-                    تنظیمات آماده ذخیره‌سازی است
+                    تنظیمات آماده ذخیره‌سازی است.
                   </div>
 
-                  <div className="mt-1 text-xs text-slate-500">
+                  <div className="mt-1 text-[10px] leading-5 text-slate-500">
                     اطلاعات پس از ذخیره در دیتابیس باقی می‌ماند.
                   </div>
                 </div>
@@ -1481,15 +1749,19 @@ export default function BotBuilderPage() {
 
               <button
                 type="button"
-                onClick={saveSettings}
+                onClick={
+                  saveSettings
+                }
                 disabled={saving}
-                className="rounded-2xl bg-gradient-to-r from-cyan-400 to-cyan-500 px-7 py-3.5 text-sm font-black text-slate-950 shadow-[0_0_30px_rgba(34,211,238,0.2)] transition hover:scale-[1.01] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-400 to-sky-400 px-7 py-4 text-sm font-black text-slate-950 shadow-[0_0_35px_rgba(34,211,238,0.22)] transition hover:scale-[1.01] hover:shadow-[0_0_45px_rgba(34,211,238,0.3)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving
-                  ? "در حال ذخیره..."
-                  : selectedBotId
-                  ? "ذخیره تغییرات ربات"
-                  : "ساخت و ذخیره ربات"}
+                <span className="relative z-10">
+                  {saving
+                    ? "در حال ذخیره..."
+                    : selectedBotId
+                    ? "ذخیره تنظیمات ربات"
+                    : "ساخت و ذخیره ربات"}
+                </span>
               </button>
 
             </div>
@@ -1500,36 +1772,79 @@ export default function BotBuilderPage() {
       </div>
 
       <style jsx>{`
-        .number-input {
+        .dark-input {
           width: 100%;
-          border: 1px solid rgba(51, 65, 85, 0.8);
-          background: rgba(2, 8, 23, 0.75);
-          color: white;
-          border-radius: 14px;
-          padding: 13px 14px;
+          height: 48px;
+          border-radius: 13px;
+          border: 1px solid rgba(24, 86, 125, 0.8);
+          background: linear-gradient(
+            180deg,
+            rgba(6, 30, 52, 0.95),
+            rgba(3, 20, 37, 0.95)
+          );
+          padding: 0 14px;
+          color: #e2f7ff;
+          font-size: 13px;
+          font-weight: 700;
           outline: none;
-          transition: 0.2s;
+          transition: 0.2s ease;
         }
 
-        .number-input:focus {
-          border-color: rgba(34, 211, 238, 0.55);
+        .dark-input:focus {
+          border-color: rgba(34, 211, 238, 0.8);
           box-shadow:
             0 0 0 3px rgba(34, 211, 238, 0.06),
-            0 0 25px rgba(34, 211, 238, 0.04);
+            0 0 25px rgba(34, 211, 238, 0.08);
         }
 
-        .number-input::-webkit-inner-spin-button,
-        .number-input::-webkit-outer-spin-button {
-          opacity: 0.5;
-        }
-
-        select {
-          color-scheme: dark;
+        .dark-input::placeholder {
+          color: #64748b;
         }
 
         select option {
-          background: #0f172a;
-          color: white;
+          background: #061426;
+          color: #e2f7ff;
+        }
+
+        .stepper-input {
+          width: 100%;
+          height: 48px;
+          border-radius: 13px;
+          border: 1px solid rgba(24, 86, 125, 0.8);
+          background: linear-gradient(
+            180deg,
+            rgba(6, 30, 52, 0.95),
+            rgba(3, 20, 37, 0.95)
+          );
+          color: #e2f7ff;
+          padding: 0 58px 0 58px;
+          text-align: center;
+          font-size: 14px;
+          font-weight: 900;
+          outline: none;
+        }
+
+        .stepper-input:focus {
+          border-color: rgba(34, 211, 238, 0.8);
+          box-shadow:
+            0 0 0 3px rgba(34, 211, 238, 0.06),
+            0 0 25px rgba(34, 211, 238, 0.08);
+        }
+
+        .stepper-input::-webkit-inner-spin-button,
+        .stepper-input::-webkit-outer-spin-button {
+          opacity: 0.35;
+        }
+
+        @media (max-width: 640px) {
+          .dark-input {
+            height: 50px;
+            font-size: 12px;
+          }
+
+          .stepper-input {
+            height: 50px;
+          }
         }
       `}</style>
     </main>
@@ -1541,186 +1856,183 @@ function SettingsCard({
   icon,
   title,
   description,
+  action,
   children,
 }: {
   number: string;
   icon: string;
   title: string;
   description: string;
-  children: React.ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-[26px] border border-slate-800 bg-[#061426]/90 p-4 shadow-[0_15px_50px_rgba(0,0,0,0.18)] sm:p-6">
+    <section className="relative mb-5 overflow-hidden rounded-[26px] border border-cyan-400/15 bg-gradient-to-br from-[#071b30]/95 via-[#061426]/95 to-[#03101f]/95 p-4 shadow-[0_15px_60px_rgba(0,0,0,0.24)] backdrop-blur-xl sm:p-6">
 
-      <div className="mb-5 flex items-start gap-3 border-b border-slate-800/80 pb-5">
+      <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-cyan-400/5 blur-[70px]" />
 
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.07] text-lg">
-          {icon}
-        </div>
+      <div className="relative mb-5 flex flex-col gap-4 border-b border-cyan-400/10 pb-5 sm:flex-row sm:items-center sm:justify-between">
 
-        <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3">
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/25 bg-cyan-400/10 text-sm font-black text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.08)]">
+            {number}
+          </div>
 
-            <span className="rounded-lg bg-slate-900 px-2 py-1 text-[9px] font-black text-slate-600">
-              {number}
-            </span>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/5 text-lg">
+            {icon}
+          </div>
 
+          <div>
             <h2 className="text-base font-black sm:text-lg">
               {title}
             </h2>
 
+            <p className="mt-1 text-[10px] leading-5 text-cyan-300/60">
+              {description}
+            </p>
           </div>
-
-          <p className="mt-1 text-xs leading-6 text-slate-500">
-            {description}
-          </p>
 
         </div>
 
+        {action}
+
       </div>
 
-      {children}
+      <div className="relative">
+        {children}
+      </div>
 
     </section>
   );
 }
 
-function InputField({
+function FieldCard({
+  icon,
   label,
-  value,
-  onChange,
-  placeholder,
+  accent = "cyan",
+  children,
 }: {
+  icon: string;
   label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+  accent?: "cyan" | "green" | "red" | "blue";
+  children: ReactNode;
 }) {
+  const accentClass =
+    accent === "green"
+      ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/20"
+      : accent === "red"
+      ? "text-red-300 bg-red-400/10 border-red-400/20"
+      : accent === "blue"
+      ? "text-sky-300 bg-sky-400/10 border-sky-400/20"
+      : "text-cyan-300 bg-cyan-400/10 border-cyan-400/20";
+
   return (
-    <label className="block">
+    <div className="rounded-2xl border border-cyan-400/10 bg-[#020817]/45 p-3.5 transition hover:border-cyan-400/20 hover:bg-[#031426]/70">
 
-      <span className="mb-2 block text-[11px] font-bold text-slate-400">
-        {label}
-      </span>
+      <div className="mb-2.5 flex items-center gap-2">
 
-      <input
-        value={value}
-        onChange={(event) =>
-          onChange(event.target.value)
-        }
-        placeholder={placeholder}
-        className="number-input"
-      />
+        <span
+          className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-black ${accentClass}`}
+        >
+          {icon}
+        </span>
 
-    </label>
+        <span className="text-[10px] font-bold text-slate-400">
+          {label}
+        </span>
+
+      </div>
+
+      {children}
+
+    </div>
   );
 }
 
-function NumberField({
-  label,
+function StepperInput({
   value,
   onChange,
   step,
   suffix,
-  positive,
-  danger,
 }: {
-  label: string;
   value: string;
   onChange: (value: string) => void;
-  step?: string;
+  step: number;
   suffix?: string;
-  positive?: boolean;
-  danger?: boolean;
 }) {
+  function changeValue(
+    direction: number
+  ) {
+    const current =
+      Number(value) || 0;
+
+    const next =
+      current +
+      step * direction;
+
+    const decimals =
+      step < 1 ? 2 : 0;
+
+    onChange(
+      Math.max(
+        0,
+        Number(
+          next.toFixed(
+            decimals
+          )
+        )
+      ).toString()
+    );
+  }
+
   return (
-    <label className="block">
+    <div className="relative">
 
-      <span className="mb-2 block text-[11px] font-bold text-slate-400">
-        {label}
-      </span>
+      <button
+        type="button"
+        onClick={() =>
+          changeValue(-1)
+        }
+        className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg border border-cyan-400/10 bg-slate-900 text-slate-400 transition hover:border-cyan-400/30 hover:text-cyan-300"
+      >
+        −
+      </button>
 
-      <div className="relative">
-
-        <input
-          type="number"
-          min="0"
-          step={step}
-          value={value}
-          onChange={(event) =>
-            onChange(event.target.value)
-          }
-          className={`number-input ${
-            suffix
-              ? "pl-16"
-              : ""
-          }`}
-        />
-
-        {suffix && (
-          <span
-            className={`absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black ${
-              positive
-                ? "text-emerald-400"
-                : danger
-                ? "text-red-400"
-                : "text-slate-500"
-            }`}
-          >
-            {suffix}
-          </span>
-        )}
-
-      </div>
-
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: {
-    label: string;
-    value: string;
-  }[];
-}) {
-  return (
-    <label className="block">
-
-      <span className="mb-2 block text-[11px] font-bold text-slate-400">
-        {label}
-      </span>
-
-      <select
+      <input
+        type="number"
+        min="0"
+        step={step}
         value={value}
         onChange={(event) =>
-          onChange(event.target.value)
+          onChange(
+            event.target.value
+          )
         }
-        className="number-input cursor-pointer"
-      >
-        {options.map((option) => (
-          <option
-            key={option.value}
-            value={option.value}
-          >
-            {option.label}
-          </option>
-        ))}
-      </select>
+        className="stepper-input"
+      />
 
-    </label>
+      {suffix && (
+        <span className="pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 text-[9px] font-black text-cyan-400/60">
+          {suffix}
+        </span>
+      )}
+
+      <button
+        type="button"
+        onClick={() =>
+          changeValue(1)
+        }
+        className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg border border-cyan-400/10 bg-slate-900 text-slate-400 transition hover:border-cyan-400/30 hover:text-cyan-300"
+      >
+        +
+      </button>
+
+    </div>
   );
 }
 
-function ToggleSetting({
+function ToggleRow({
   icon,
   title,
   description,
@@ -1734,15 +2046,15 @@ function ToggleSetting({
   onClick: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 transition hover:border-slate-700">
+    <div className="flex min-h-[76px] items-center justify-between gap-4 rounded-2xl border border-cyan-400/10 bg-[#020817]/45 px-4 py-3 transition hover:border-cyan-400/20 hover:bg-[#031426]/70">
 
       <div className="flex min-w-0 items-center gap-3">
 
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm ${
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
             enabled
-              ? "bg-cyan-400/10 text-cyan-300"
-              : "bg-slate-900 text-slate-600"
+              ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-300"
+              : "border-slate-800 bg-slate-900 text-slate-600"
           }`}
         >
           {icon}
@@ -1750,11 +2062,11 @@ function ToggleSetting({
 
         <div className="min-w-0">
 
-          <div className="text-sm font-black text-slate-200">
+          <div className="text-xs font-black text-slate-200">
             {title}
           </div>
 
-          <div className="mt-1 text-[10px] leading-5 text-slate-500">
+          <div className="mt-1 text-[9px] leading-5 text-slate-500">
             {description}
           </div>
 
@@ -1762,7 +2074,7 @@ function ToggleSetting({
 
       </div>
 
-      <Switch
+      <ToggleSwitch
         enabled={enabled}
         onClick={onClick}
       />
@@ -1771,7 +2083,7 @@ function ToggleSetting({
   );
 }
 
-function Switch({
+function ToggleSwitch({
   enabled,
   onClick,
 }: {
@@ -1782,19 +2094,14 @@ function Switch({
     <button
       type="button"
       onClick={onClick}
-      aria-label={
-        enabled
-          ? "غیرفعال کردن"
-          : "فعال کردن"
-      }
       className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition ${
         enabled
-          ? "bg-cyan-400 shadow-[0_0_18px_rgba(34,211,238,0.2)]"
+          ? "bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.22)]"
           : "bg-slate-700"
       }`}
     >
       <span
-        className={`block h-5 w-5 rounded-full bg-white shadow-md transition ${
+        className={`block h-5 w-5 rounded-full bg-white shadow-lg transition ${
           enabled
             ? "translate-x-0"
             : "-translate-x-5"
@@ -1804,32 +2111,31 @@ function Switch({
   );
 }
 
-function MiniStat({
+function StatBox({
   label,
   value,
-  positive,
-  danger,
+  type,
 }: {
   label: string;
   value: string;
-  positive?: boolean;
-  danger?: boolean;
+  type: "green" | "red" | "blue";
 }) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-2.5">
+  const className =
+    type === "green"
+      ? "text-emerald-300"
+      : type === "red"
+      ? "text-red-300"
+      : "text-sky-300";
 
-      <div className="text-[9px] text-slate-600">
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+
+      <div className="text-[8px] text-slate-600">
         {label}
       </div>
 
       <div
-        className={`mt-1 text-xs font-black ${
-          positive
-            ? "text-emerald-400"
-            : danger
-            ? "text-red-400"
-            : "text-slate-300"
-        }`}
+        className={`mt-1 text-xs font-black ${className}`}
       >
         {value}
       </div>
@@ -1838,14 +2144,59 @@ function MiniStat({
   );
 }
 
-function InfoBar({
-  children,
+function NavItem({
+  icon,
+  text,
+  active = false,
 }: {
-  children: React.ReactNode;
+  icon: string;
+  text: string;
+  active?: boolean;
 }) {
   return (
-    <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 text-[10px] font-bold leading-6 text-emerald-300">
-      {children}
-    </div>
+    <button
+      type="button"
+      className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-right text-xs font-bold transition ${
+        active
+          ? "border border-cyan-400/20 bg-gradient-to-l from-cyan-400/15 to-transparent text-cyan-300 shadow-[0_0_25px_rgba(34,211,238,0.05)]"
+          : "text-slate-500 hover:bg-slate-900/60 hover:text-slate-300"
+      }`}
+    >
+      <span
+        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+          active
+            ? "bg-cyan-400/10 text-cyan-300"
+            : "bg-slate-900 text-slate-500"
+        }`}
+      >
+        {icon}
+      </span>
+
+      {text}
+    </button>
+  );
+}
+
+function MobileNavItem({
+  icon,
+  text,
+  active = false,
+}: {
+  icon: string;
+  text: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-right text-xs font-bold ${
+        active
+          ? "bg-cyan-400/10 text-cyan-300"
+          : "text-slate-400"
+      }`}
+    >
+      <span>{icon}</span>
+      {text}
+    </button>
   );
 }
