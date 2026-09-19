@@ -299,3 +299,273 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function PUT(request: Request) {
+  try {
+    const session = await getSession();
+
+    if (!session) {
+      return NextResponse.json(
+        {
+          error: "لطفاً ابتدا وارد حساب کاربری خود شوید.",
+        },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+
+    const botId =
+      typeof body.id === "string" && body.id.trim()
+        ? body.id.trim()
+        : null;
+
+    if (!botId) {
+      return NextResponse.json(
+        {
+          error: "شناسه ربات ارسال نشده است.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const existingBot = await prisma.tradingBot.findFirst({
+      where: {
+        id: botId,
+        userId: session.userId,
+      },
+    });
+
+    if (!existingBot) {
+      return NextResponse.json(
+        {
+          error: "ربات موردنظر پیدا نشد.",
+        },
+        { status: 404 }
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+
+    if (typeof body.name === "string" && body.name.trim()) {
+      updateData.name = body.name.trim();
+    }
+
+    if (typeof body.type === "string" && body.type.trim()) {
+      updateData.type = body.type.trim();
+    }
+
+    if (
+      typeof body.category === "string" &&
+      body.category.trim()
+    ) {
+      updateData.category = body.category.trim();
+    }
+
+    if (typeof body.description === "string") {
+      updateData.description = body.description.trim();
+    }
+
+    if (
+      typeof body.symbol === "string" &&
+      body.symbol.trim()
+    ) {
+      updateData.symbol = body.symbol.trim();
+    }
+
+    if (
+      typeof body.timeframe === "string" &&
+      body.timeframe.trim()
+    ) {
+      updateData.timeframe = body.timeframe.trim();
+    }
+
+    if (
+      typeof body.marketType === "string" &&
+      body.marketType.trim()
+    ) {
+      updateData.marketType = body.marketType.trim();
+    }
+
+    if (
+      body.lotMode === "FIXED" ||
+      body.lotMode === "RISK_PERCENT"
+    ) {
+      updateData.lotMode = body.lotMode;
+    }
+
+    if (
+      typeof body.lotSize === "number" &&
+      body.lotSize > 0
+    ) {
+      updateData.lotSize = body.lotSize;
+    }
+
+    if (
+      typeof body.riskPercent === "number" &&
+      body.riskPercent >= 0
+    ) {
+      updateData.riskPercent = body.riskPercent;
+    }
+
+    if (
+      typeof body.takeProfit === "number" &&
+      body.takeProfit >= 0
+    ) {
+      updateData.takeProfit = body.takeProfit;
+    }
+
+    if (
+      typeof body.stopLoss === "number" &&
+      body.stopLoss >= 0
+    ) {
+      updateData.stopLoss = body.stopLoss;
+    }
+
+    if (
+      typeof body.riskReward === "number" &&
+      body.riskReward > 0
+    ) {
+      updateData.riskReward = body.riskReward;
+    }
+
+    if (typeof body.trailingStop === "boolean") {
+      updateData.trailingStop = body.trailingStop;
+    }
+
+    if (
+      typeof body.trailingStopDistance === "number" &&
+      body.trailingStopDistance >= 0
+    ) {
+      updateData.trailingStopDistance =
+        body.trailingStopDistance;
+    }
+
+    if (typeof body.breakEven === "boolean") {
+      updateData.breakEven = body.breakEven;
+    }
+
+    if (
+      typeof body.breakEvenTrigger === "number" &&
+      body.breakEvenTrigger >= 0
+    ) {
+      updateData.breakEvenTrigger = body.breakEvenTrigger;
+    }
+
+    if (
+      typeof body.dailyProfitStop === "number" &&
+      body.dailyProfitStop >= 0
+    ) {
+      updateData.dailyProfitStop = body.dailyProfitStop;
+    }
+
+    if (
+      typeof body.dailyLossLimit === "number" &&
+      body.dailyLossLimit >= 0
+    ) {
+      updateData.dailyLossLimit = body.dailyLossLimit;
+    }
+
+    if (
+      typeof body.maxDailyStopLosses === "number" &&
+      body.maxDailyStopLosses >= 0
+    ) {
+      updateData.maxDailyStopLosses = Math.floor(
+        body.maxDailyStopLosses
+      );
+    }
+
+    if (
+      typeof body.maxOpenTrades === "number" &&
+      body.maxOpenTrades >= 1
+    ) {
+      updateData.maxOpenTrades = Math.floor(
+        body.maxOpenTrades
+      );
+    }
+
+    if (typeof body.buyEnabled === "boolean") {
+      updateData.buyEnabled = body.buyEnabled;
+    }
+
+    if (typeof body.sellEnabled === "boolean") {
+      updateData.sellEnabled = body.sellEnabled;
+    }
+
+    if (
+      typeof body.maxSpread === "number" &&
+      body.maxSpread >= 0
+    ) {
+      updateData.maxSpread = body.maxSpread;
+    }
+
+    if (
+      typeof body.cooldownMinutes === "number" &&
+      body.cooldownMinutes >= 0
+    ) {
+      updateData.cooldownMinutes = Math.floor(
+        body.cooldownMinutes
+      );
+    }
+
+    if (typeof body.sessionFilter === "boolean") {
+      updateData.sessionFilter = body.sessionFilter;
+    }
+
+    if (typeof body.newsFilter === "boolean") {
+      updateData.newsFilter = body.newsFilter;
+    }
+
+    if (
+      typeof body.signalThreshold === "number" &&
+      body.signalThreshold >= 0
+    ) {
+      updateData.signalThreshold = Math.min(
+        Math.floor(body.signalThreshold),
+        100
+      );
+    }
+
+    if (
+      typeof body.minConfirmations === "number" &&
+      body.minConfirmations >= 0
+    ) {
+      updateData.minConfirmations = Math.floor(
+        body.minConfirmations
+      );
+    }
+
+    if (typeof body.telegramEnabled === "boolean") {
+      updateData.telegramEnabled = body.telegramEnabled;
+    }
+
+    if (typeof body.isActive === "boolean") {
+      updateData.isActive = body.isActive;
+    }
+
+    if (body.analysisConfig !== undefined) {
+      updateData.analysisConfig = body.analysisConfig;
+    }
+
+    const bot = await prisma.tradingBot.update({
+      where: {
+        id: existingBot.id,
+      },
+      data: updateData,
+    });
+
+    return NextResponse.json({
+      success: true,
+      bot,
+    });
+  } catch (error) {
+    console.error("PUT /api/bots error:", error);
+
+    return NextResponse.json(
+      {
+        error: "خطا در ذخیره تنظیمات ربات.",
+      },
+      { status: 500 }
+    );
+  }
+}
