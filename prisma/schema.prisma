@@ -72,14 +72,66 @@ model TradingBot {
 
   isActive Boolean @default(false)
 
+  // =========================
+  // Trade Size / Risk
+  // =========================
+
+  lotMode     String @default("FIXED")
+  lotSize     Float  @default(0.01)
+  riskPercent Float  @default(1)
+
+  // =========================
+  // TP / SL
+  // =========================
+
   takeProfit Float?
   stopLoss   Float?
   riskReward Float?
 
-  signalThreshold Int @default(80)
+  trailingStop        Boolean @default(false)
+  trailingStopDistance Float?
+
+  breakEven        Boolean @default(false)
+  breakEvenTrigger Float?
+
+  // =========================
+  // Daily Risk Limits
+  // =========================
+
+  dailyProfitStop      Float?
+  dailyLossLimit       Float?
+  maxDailyStopLosses   Int @default(3)
+  maxOpenTrades        Int @default(1)
+
+  // =========================
+  // Execution Controls
+  // =========================
+
+  buyEnabled  Boolean @default(true)
+  sellEnabled Boolean @default(true)
+
+  maxSpread Float?
+  cooldownMinutes Int @default(5)
+
+  sessionFilter Boolean @default(true)
+  newsFilter    Boolean @default(true)
+
+  // =========================
+  // Analysis Controls
+  // =========================
+
+  signalThreshold  Int @default(80)
   minConfirmations Int @default(5)
 
+  // =========================
+  // Telegram
+  // =========================
+
   telegramEnabled Boolean @default(false)
+
+  // =========================
+  // Advanced Configuration
+  // =========================
 
   analysisConfig Json?
 
@@ -137,16 +189,16 @@ model TradingSignal {
   status String @default("WAITING")
   source String @default("ANALYSIS")
 
-  marketStructure          String?
-  supportResistance        String?
-  liquidity                String?
-  pullback                 String?
-  candlePattern            String?
-  volumeConfirmation       String?
+  marketStructure            String?
+  supportResistance          String?
+  liquidity                  String?
+  pullback                   String?
+  candlePattern              String?
+  volumeConfirmation         String?
   multiTimeframeConfirmation String?
-  sessionConfirmation      String?
-  volatilityConfirmation   String?
-  newsConfirmation         String?
+  sessionConfirmation        String?
+  volatilityConfirmation     String?
+  newsConfirmation           String?
 
   confirmations Json?
   reasons        Json?
@@ -198,7 +250,7 @@ model TelegramDelivery {
 }
 
 model AnalysisRun {
-  id     String @id @default(cuid())
+  id     String  @id @default(cuid())
   botId  String?
   symbol String
 
@@ -206,11 +258,11 @@ model AnalysisRun {
 
   status String @default("RUNNING")
 
-  startedAt   DateTime @default(now())
-  finishedAt  DateTime?
-  durationMs  Int?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  durationMs Int?
 
-  candlesAnalyzed Int @default(0)
+  candlesAnalyzed    Int @default(0)
   confirmationsFound Int @default(0)
 
   signalGenerated Boolean @default(false)
