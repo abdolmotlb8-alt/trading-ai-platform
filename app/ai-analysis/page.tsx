@@ -1,70 +1,143 @@
+"use client";
+
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/current-user";
+import { useEffect, useRef, useState } from "react";
 
-export default async function AIAnalysisPage() {
-  const user = await getCurrentUser();
+type Market = {
+  title: string;
+  symbol: string;
+  tradingViewSymbol: string;
+  icon: string;
+};
 
-  if (!user) {
-    return (
-      <main
-        dir="rtl"
-        style={{
-          minHeight: "100vh",
-          background:
-            "radial-gradient(circle at top right, rgba(34,211,238,.14), transparent 35%), #06101e",
-          color: "#f8fafc",
-          padding: "70px 20px",
-          fontFamily: "Arial, Tahoma, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "700px",
-            margin: "0 auto",
-            padding: "45px 30px",
-            textAlign: "center",
-            borderRadius: "28px",
-            background: "rgba(15,23,42,.75)",
-            border: "1px solid rgba(148,163,184,.14)",
-          }}
-        >
-          <div style={{ fontSize: "55px", marginBottom: "20px" }}>🔐</div>
+const markets: Market[] = [
+  {
+    title: "Gold",
+    symbol: "XAU/USD",
+    tradingViewSymbol: "OANDA:XAUUSD",
+    icon: "🥇",
+  },
+  {
+    title: "Bitcoin",
+    symbol: "BTC/USDT",
+    tradingViewSymbol: "BINANCE:BTCUSDT",
+    icon: "₿",
+  },
+  {
+    title: "Ethereum",
+    symbol: "ETH/USDT",
+    tradingViewSymbol: "BINANCE:ETHUSDT",
+    icon: "Ξ",
+  },
+  {
+    title: "Euro / Dollar",
+    symbol: "EUR/USD",
+    tradingViewSymbol: "OANDA:EURUSD",
+    icon: "€",
+  },
+];
 
-          <h1 style={{ fontSize: "32px", marginBottom: "15px" }}>
-            ورود به تحلیل هوشمند
-          </h1>
+function TradingViewChart({
+  symbol,
+}: {
+  symbol: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
 
-          <p
-            style={{
-              color: "#94a3b8",
-              lineHeight: 2,
-              marginBottom: "28px",
-            }}
-          >
-            برای استفاده از ابزارهای تحلیل هوشمند ابتدا وارد حساب کاربری خود
-            شوید.
-          </p>
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-          <Link
-            href="/login"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "14px 28px",
-              borderRadius: "14px",
-              background: "#22d3ee",
-              color: "#04121e",
-              fontWeight: 800,
-              textDecoration: "none",
-            }}
-          >
-            ورود به حساب
-          </Link>
-        </div>
-      </main>
-    );
-  }
+    containerRef.current.innerHTML = "";
+
+    const container = document.createElement("div");
+    container.className = "tradingview-widget-container";
+    container.style.width = "100%";
+    container.style.height = "100%";
+
+    const widget = document.createElement("div");
+    widget.className = "tradingview-widget-container__widget";
+    widget.style.width = "100%";
+    widget.style.height = "100%";
+
+    const script = document.createElement("script");
+    script.src =
+      "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.type = "text/javascript";
+    script.async = true;
+
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval: "15",
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      enable_publishing: false,
+      allow_symbol_change: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      hide_side_toolbar: false,
+      save_image: false,
+      withdateranges: true,
+      calendar: false,
+      support_host: "https://www.tradingview.com",
+      studies: [
+        "Volume@tv-basicstudies",
+        "RSI@tv-basicstudies",
+        "MACD@tv-basicstudies",
+      ],
+    });
+
+    container.appendChild(widget);
+    container.appendChild(script);
+    containerRef.current.appendChild(container);
+
+    return () => {
+      if (containerRef.current) {
+        containerRef.current.innerHTML = "";
+      }
+    };
+  }, [symbol]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        width: "100%",
+        height: "610px",
+        minHeight: "500px",
+      }}
+    />
+  );
+}
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+export default function AIAnalysisPage() {
+  const [selectedMarket, setSelectedMarket] = useState(markets[0]);
+  const [timeframe, setTimeframe] = useState("15");
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [analysisStatus, setAnalysisStatus] =
+    useState("در انتظار موتور تحلیل");
+
+  useEffect(() => {
+    setLastUpdate(new Date());
+  }, [selectedMarket, timeframe]);
+
+  const startAnalysis = () => {
+    setAnalysisStatus("در حال آماده‌سازی داده...");
+    
+    setTimeout(() => {
+      setAnalysisStatus("موتور تحلیل آماده اتصال به داده زنده");
+    }, 900);
+  };
 
   return (
     <main
@@ -72,14 +145,18 @@ export default async function AIAnalysisPage() {
       style={{
         minHeight: "100vh",
         background:
-          "radial-gradient(circle at top right, rgba(34,211,238,.12), transparent 30%), radial-gradient(circle at bottom left, rgba(37,99,235,.12), transparent 30%), #06101e",
+          "radial-gradient(circle at top right, rgba(34,211,238,.13), transparent 30%), radial-gradient(circle at bottom left, rgba(37,99,235,.12), transparent 30%), #06101e",
         color: "#f8fafc",
-        padding: "28px 16px 70px",
+        padding: "22px 16px 70px",
         fontFamily: "Arial, Tahoma, sans-serif",
       }}
     >
-      <div style={{ maxWidth: "1180px", margin: "0 auto" }}>
-
+      <div
+        style={{
+          maxWidth: "1380px",
+          margin: "0 auto",
+        }}
+      >
         {/* Header */}
         <section
           style={{
@@ -88,11 +165,11 @@ export default async function AIAnalysisPage() {
             alignItems: "center",
             gap: "20px",
             flexWrap: "wrap",
-            padding: "25px",
+            padding: "24px",
             borderRadius: "24px",
-            background: "rgba(15,23,42,.72)",
+            background: "rgba(15,23,42,.78)",
             border: "1px solid rgba(148,163,184,.13)",
-            marginBottom: "22px",
+            marginBottom: "18px",
           }}
         >
           <div>
@@ -105,16 +182,16 @@ export default async function AIAnalysisPage() {
                 border: "1px solid rgba(34,211,238,.18)",
                 color: "#67e8f9",
                 fontSize: "12px",
-                marginBottom: "12px",
+                marginBottom: "10px",
               }}
             >
-              ✦ AI MARKET INTELLIGENCE
+              ✦ LIVE AI MARKET INTELLIGENCE
             </div>
 
             <h1
               style={{
                 margin: 0,
-                fontSize: "clamp(30px, 5vw, 46px)",
+                fontSize: "clamp(28px, 5vw, 44px)",
                 lineHeight: 1.3,
               }}
             >
@@ -124,176 +201,253 @@ export default async function AIAnalysisPage() {
             <p
               style={{
                 color: "#94a3b8",
-                lineHeight: 1.9,
-                margin: "10px 0 0",
+                lineHeight: 1.8,
+                margin: "8px 0 0",
               }}
             >
-              بررسی وضعیت بازار با ابزارهای هوشمند Trading AI
+              نمودار زنده + زیرساخت موتور تحلیل Trading AI
             </p>
           </div>
 
           <div
             style={{
-              minWidth: "180px",
-              padding: "16px 18px",
-              borderRadius: "18px",
-              background: "rgba(6,182,212,.07)",
-              border: "1px solid rgba(34,211,238,.14)",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "12px 16px",
+              borderRadius: "15px",
+              background: "rgba(34,197,94,.07)",
+              border: "1px solid rgba(34,197,94,.14)",
             }}
           >
-            <div
+            <span
               style={{
-                color: "#64748b",
-                fontSize: "12px",
-                marginBottom: "7px",
+                width: "9px",
+                height: "9px",
+                borderRadius: "50%",
+                background: "#22c55e",
+                boxShadow: "0 0 14px rgba(34,197,94,.8)",
               }}
-            >
-              کاربر
-            </div>
+            />
 
-            <strong style={{ fontSize: "17px" }}>{user.name}</strong>
+            <div>
+              <div
+                style={{
+                  color: "#4ade80",
+                  fontWeight: 800,
+                  fontSize: "13px",
+                }}
+              >
+                چارت زنده
+              </div>
 
-            <div
-              style={{
-                color: "#22d3ee",
-                fontSize: "12px",
-                marginTop: "6px",
-              }}
-            >
-              پلن {user.plan}
+              <div
+                style={{
+                  color: "#64748b",
+                  fontSize: "11px",
+                  marginTop: "3px",
+                }}
+              >
+                TradingView
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Market overview */}
+        {/* Market selector */}
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-            gap: "14px",
-            marginBottom: "22px",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: "12px",
+            marginBottom: "18px",
           }}
         >
-          {[
-            {
-              title: "Gold",
-              symbol: "XAU/USD",
-              price: "$2,450.00",
-              change: "+0.82%",
-              icon: "🥇",
-            },
-            {
-              title: "Bitcoin",
-              symbol: "BTC/USDT",
-              price: "$62,000.00",
-              change: "+1.42%",
-              icon: "₿",
-            },
-            {
-              title: "Ethereum",
-              symbol: "ETH/USDT",
-              price: "$3,200.00",
-              change: "+0.91%",
-              icon: "Ξ",
-            },
-            {
-              title: "Euro / Dollar",
-              symbol: "EUR/USD",
-              price: "1.0850",
-              change: "-0.30%",
-              icon: "€",
-            },
-          ].map((market) => (
-            <div
-              key={market.symbol}
-              style={{
-                padding: "20px",
-                borderRadius: "20px",
-                background: "rgba(15,23,42,.72)",
-                border: "1px solid rgba(148,163,184,.12)",
-              }}
-            >
-              <div
+          {markets.map((market) => {
+            const active =
+              market.symbol === selectedMarket.symbol;
+
+            return (
+              <button
+                key={market.symbol}
+                type="button"
+                onClick={() => setSelectedMarket(market)}
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "18px",
+                  textAlign: "right",
+                  padding: "17px",
+                  borderRadius: "18px",
+                  background: active
+                    ? "linear-gradient(145deg, rgba(8,47,73,.9), rgba(15,23,42,.9))"
+                    : "rgba(15,23,42,.72)",
+                  border: active
+                    ? "1px solid rgba(34,211,238,.42)"
+                    : "1px solid rgba(148,163,184,.12)",
+                  color: "#f8fafc",
+                  cursor: "pointer",
+                  boxShadow: active
+                    ? "0 0 25px rgba(34,211,238,.07)"
+                    : "none",
                 }}
               >
-                <div>
-                  <strong style={{ fontSize: "17px" }}>
-                    {market.title}
-                  </strong>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <strong
+                      style={{
+                        fontSize: "17px",
+                      }}
+                    >
+                      {market.title}
+                    </strong>
+
+                    <div
+                      style={{
+                        color: "#64748b",
+                        fontSize: "12px",
+                        marginTop: "5px",
+                      }}
+                    >
+                      {market.symbol}
+                    </div>
+                  </div>
 
                   <div
                     style={{
-                      color: "#64748b",
-                      fontSize: "12px",
-                      marginTop: "5px",
+                      width: "42px",
+                      height: "42px",
+                      borderRadius: "13px",
+                      display: "grid",
+                      placeItems: "center",
+                      background: "rgba(34,211,238,.08)",
+                      fontSize: "20px",
                     }}
                   >
-                    {market.symbol}
+                    {market.icon}
                   </div>
                 </div>
-
-                <div
-                  style={{
-                    width: "42px",
-                    height: "42px",
-                    borderRadius: "13px",
-                    display: "grid",
-                    placeItems: "center",
-                    background: "rgba(34,211,238,.08)",
-                    fontSize: "20px",
-                  }}
-                >
-                  {market.icon}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: 800,
-                  marginBottom: "8px",
-                }}
-              >
-                {market.price}
-              </div>
-
-              <div
-                style={{
-                  color: market.change.startsWith("-")
-                    ? "#fb7185"
-                    : "#4ade80",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                }}
-              >
-                {market.change}
-              </div>
-            </div>
-          ))}
+              </button>
+            );
+          })}
         </section>
 
-        {/* Main analysis */}
+        {/* Main grid */}
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1.6fr) minmax(280px, .8fr)",
-            gap: "20px",
-            marginBottom: "22px",
+            gridTemplateColumns:
+              "minmax(0, 1.65fr) minmax(300px, .75fr)",
+            gap: "18px",
+            marginBottom: "18px",
           }}
         >
-          {/* Chart */}
+          {/* Real chart */}
           <div
             style={{
-              padding: "24px",
-              borderRadius: "26px",
-              background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
+              borderRadius: "24px",
+              background: "rgba(15,23,42,.78)",
+              border: "1px solid rgba(148,163,184,.13)",
               overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "20px 22px",
+                borderBottom:
+                  "1px solid rgba(148,163,184,.09)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "15px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "21px",
+                  }}
+                >
+                  {selectedMarket.symbol}
+                </h2>
+
+                <div
+                  style={{
+                    color: "#64748b",
+                    fontSize: "12px",
+                    marginTop: "5px",
+                  }}
+                >
+                  نمودار زنده بازار
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "7px",
+                  flexWrap: "wrap",
+                }}
+              >
+                {[
+                  ["1", "1m"],
+                  ["5", "5m"],
+                  ["15", "15m"],
+                  ["60", "1h"],
+                  ["240", "4h"],
+                  ["D", "1D"],
+                ].map(([value, label]) => {
+                  const active = timeframe === value;
+
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setTimeframe(value)}
+                      style={{
+                        border: active
+                          ? "1px solid rgba(34,211,238,.45)"
+                          : "1px solid rgba(148,163,184,.12)",
+                        background: active
+                          ? "rgba(34,211,238,.12)"
+                          : "rgba(2,8,23,.35)",
+                        color: active
+                          ? "#67e8f9"
+                          : "#94a3b8",
+                        padding: "7px 10px",
+                        borderRadius: "9px",
+                        cursor: "pointer",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <TradingViewChart
+              key={`${selectedMarket.tradingViewSymbol}-${timeframe}`}
+              symbol={selectedMarket.tradingViewSymbol}
+            />
+          </div>
+
+          {/* Analysis engine */}
+          <aside
+            style={{
+              borderRadius: "24px",
+              background:
+                "linear-gradient(145deg, rgba(8,47,73,.72), rgba(15,23,42,.9))",
+              border: "1px solid rgba(34,211,238,.17)",
+              padding: "22px",
             }}
           >
             <div
@@ -301,347 +455,435 @@ export default async function AIAnalysisPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                gap: "15px",
-                marginBottom: "22px",
-                flexWrap: "wrap",
+                gap: "10px",
+                marginBottom: "18px",
               }}
             >
               <div>
-                <h2 style={{ margin: 0, fontSize: "22px" }}>
-                  تحلیل XAU/USD
-                </h2>
-
-                <p
+                <h2
                   style={{
-                    margin: "7px 0 0",
-                    color: "#64748b",
-                    fontSize: "13px",
+                    margin: 0,
+                    fontSize: "21px",
                   }}
                 >
-                  تحلیل نمونه بازار — اتصال داده زنده در مرحله بعد
-                </p>
+                  🧠 موتور تحلیل
+                </h2>
+
+                <div
+                  style={{
+                    color: "#64748b",
+                    fontSize: "12px",
+                    marginTop: "5px",
+                  }}
+                >
+                  {selectedMarket.symbol}
+                </div>
               </div>
 
               <span
                 style={{
-                  padding: "8px 12px",
+                  padding: "7px 10px",
                   borderRadius: "10px",
-                  background: "rgba(34,197,94,.08)",
-                  color: "#4ade80",
-                  fontSize: "12px",
+                  background: "rgba(250,204,21,.08)",
+                  color: "#facc15",
+                  fontSize: "11px",
                 }}
               >
-                ● بازار فعال
+                در حال آماده‌سازی
               </span>
             </div>
 
             <div
               style={{
-                height: "310px",
-                borderRadius: "20px",
-                border: "1px solid rgba(148,163,184,.08)",
-                background:
-                  "linear-gradient(rgba(148,163,184,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.045) 1px, transparent 1px), #081523",
-                backgroundSize: "52px 52px",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              <svg
-                viewBox="0 0 900 310"
-                preserveAspectRatio="none"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                }}
-              >
-                <polyline
-                  points="0,235 70,210 130,225 190,175 250,195 315,130 380,155 445,105 510,145 575,88 640,115 705,70 770,92 835,42 900,65"
-                  fill="none"
-                  stroke="#22d3ee"
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-
-                <polyline
-                  points="0,250 70,225 130,240 190,190 250,210 315,145 380,170 445,120 510,160 575,103 640,130 705,85 770,107 835,57 900,80"
-                  fill="none"
-                  stroke="rgba(34,211,238,.16)"
-                  strokeWidth="18"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-
-              <div
-                style={{
-                  position: "absolute",
-                  top: "18px",
-                  right: "18px",
-                  padding: "9px 12px",
-                  borderRadius: "10px",
-                  background: "rgba(7,17,31,.82)",
-                  color: "#94a3b8",
-                  fontSize: "11px",
-                }}
-              >
-                نمودار نمایشی
-              </div>
-            </div>
-          </div>
-
-          {/* AI signal */}
-          <div
-            style={{
-              padding: "24px",
-              borderRadius: "26px",
-              background:
-                "linear-gradient(145deg, rgba(8,47,73,.72), rgba(15,23,42,.82))",
-              border: "1px solid rgba(34,211,238,.16)",
-            }}
-          >
-            <div
-              style={{
-                width: "52px",
-                height: "52px",
-                borderRadius: "16px",
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(34,211,238,.1)",
-                fontSize: "25px",
-                marginBottom: "18px",
-              }}
-            >
-              🧠
-            </div>
-
-            <h2 style={{ margin: "0 0 10px", fontSize: "22px" }}>
-              نتیجه تحلیل AI
-            </h2>
-
-            <p
-              style={{
-                color: "#94a3b8",
-                fontSize: "13px",
-                lineHeight: 1.9,
-              }}
-            >
-              این بخش برای نمایش نتیجه تحلیل الگوریتم هوشمند طراحی شده و در
-              مرحله اتصال موتور تحلیل، داده واقعی در آن نمایش داده خواهد شد.
-            </p>
-
-            <div
-              style={{
-                marginTop: "22px",
                 padding: "18px",
                 borderRadius: "18px",
-                background: "rgba(15,23,42,.65)",
+                background: "rgba(2,8,23,.35)",
+                border:
+                  "1px solid rgba(148,163,184,.08)",
+                marginBottom: "14px",
               }}
             >
               <div
                 style={{
                   color: "#64748b",
-                  fontSize: "12px",
+                  fontSize: "11px",
                   marginBottom: "8px",
                 }}
               >
-                وضعیت فعلی
+                وضعیت سیگنال
               </div>
 
               <strong
                 style={{
-                  fontSize: "23px",
-                  color: "#22d3ee",
+                  display: "block",
+                  fontSize: "25px",
+                  color: "#94a3b8",
                 }}
               >
-                آماده تحلیل
+                NO TRADE
               </strong>
+
+              <div
+                style={{
+                  color: "#64748b",
+                  fontSize: "11px",
+                  marginTop: "8px",
+                  lineHeight: 1.8,
+                }}
+              >
+                تا زمانی که موتور تحلیل داده واقعی و
+                تأییدیه‌های لازم را دریافت نکند، هیچ
+                سیگنال ساختگی نمایش داده نمی‌شود.
+              </div>
             </div>
+
+            {[
+              ["Market Structure", "در انتظار داده"],
+              ["Liquidity", "در انتظار داده"],
+              ["Candlestick", "در انتظار داده"],
+              ["Volume", "در انتظار داده"],
+              ["Multi-Timeframe", "در انتظار داده"],
+              ["News Filter", "در انتظار داده"],
+            ].map(([name, value]) => (
+              <div
+                key={name}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  padding: "11px 0",
+                  borderBottom:
+                    "1px solid rgba(148,163,184,.07)",
+                  fontSize: "12px",
+                }}
+              >
+                <span style={{ color: "#cbd5e1" }}>
+                  {name}
+                </span>
+
+                <span style={{ color: "#64748b" }}>
+                  {value}
+                </span>
+              </div>
+            ))}
 
             <button
               type="button"
+              onClick={startAnalysis}
               style={{
                 width: "100%",
-                marginTop: "15px",
+                marginTop: "18px",
                 minHeight: "48px",
-                border: 0,
+                border: "1px solid rgba(34,211,238,.3)",
                 borderRadius: "14px",
-                background: "#22d3ee",
-                color: "#04121e",
+                background: "rgba(34,211,238,.1)",
+                color: "#67e8f9",
                 fontWeight: 800,
                 cursor: "pointer",
               }}
             >
-              شروع تحلیل
+              {analysisStatus}
             </button>
-          </div>
+
+            {lastUpdate && (
+              <div
+                style={{
+                  textAlign: "center",
+                  color: "#475569",
+                  fontSize: "10px",
+                  marginTop: "10px",
+                }}
+              >
+                آخرین بارگذاری رابط:{" "}
+                {formatTime(lastUpdate)}
+              </div>
+            )}
+          </aside>
         </section>
 
-        {/* Indicators */}
+        {/* Analysis bots */}
         <section
           style={{
-            padding: "24px",
-            borderRadius: "26px",
-            background: "rgba(15,23,42,.72)",
-            border: "1px solid rgba(148,163,184,.12)",
-            marginBottom: "22px",
+            padding: "22px",
+            borderRadius: "24px",
+            background: "rgba(15,23,42,.78)",
+            border:
+              "1px solid rgba(148,163,184,.12)",
+            marginBottom: "18px",
           }}
         >
-          <div style={{ marginBottom: "20px" }}>
-            <h2 style={{ margin: 0, fontSize: "23px" }}>
-              شاخص‌های تحلیل
+          <div style={{ marginBottom: "18px" }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "22px",
+              }}
+            >
+              ربات‌های تحلیل‌گر
             </h2>
 
             <p
               style={{
-                margin: "8px 0 0",
                 color: "#64748b",
-                fontSize: "13px",
+                fontSize: "12px",
+                margin: "7px 0 0",
               }}
             >
-              ساختار آماده برای اتصال اندیکاتورها و موتور تحلیل
+              این ربات‌ها در مرحله بعد به موتور تحلیل
+              واقعی متصل می‌شوند.
             </p>
           </div>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "14px",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: "12px",
             }}
           >
             {[
-              ["RSI", "56.4", "متعادل", "#22d3ee"],
-              ["MACD", "+0.18", "مثبت", "#4ade80"],
-              ["Trend", "Bullish", "صعودی", "#4ade80"],
-              ["Volatility", "Medium", "متوسط", "#facc15"],
-            ].map(([name, value, status, color]) => (
+              [
+                "🕯️",
+                "تحلیل کندلی",
+                "Candlestick Analyzer",
+              ],
+              [
+                "🧠",
+                "تحلیل Dynamic",
+                "Dynamic Candlestick",
+              ],
+              [
+                "📊",
+                "Footprint / Order Flow",
+                "Order Flow Analyzer",
+              ],
+              [
+                "🔗",
+                "تأیید چندگانه",
+                "Confirmation Engine",
+              ],
+            ].map(([icon, title, subtitle]) => (
               <div
-                key={name}
+                key={title}
                 style={{
                   padding: "18px",
                   borderRadius: "18px",
                   background: "#0b1929",
-                  border: "1px solid rgba(148,163,184,.09)",
+                  border:
+                    "1px solid rgba(148,163,184,.09)",
                 }}
               >
                 <div
                   style={{
-                    color: "#64748b",
-                    fontSize: "12px",
-                    marginBottom: "10px",
+                    fontSize: "27px",
+                    marginBottom: "12px",
                   }}
                 >
-                  {name}
+                  {icon}
                 </div>
 
-                <strong style={{ fontSize: "21px" }}>{value}</strong>
+                <strong
+                  style={{
+                    display: "block",
+                    fontSize: "15px",
+                  }}
+                >
+                  {title}
+                </strong>
 
                 <div
                   style={{
-                    color,
-                    fontSize: "12px",
-                    marginTop: "8px",
+                    color: "#64748b",
+                    fontSize: "11px",
+                    marginTop: "6px",
                   }}
                 >
-                  {status}
+                  {subtitle}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "14px",
+                    display: "inline-flex",
+                    padding: "5px 9px",
+                    borderRadius: "8px",
+                    background: "rgba(250,204,21,.07)",
+                    color: "#facc15",
+                    fontSize: "10px",
+                  }}
+                >
+                  در انتظار اتصال داده
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* Tools */}
+        {/* Engine filters */}
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
-            gap: "16px",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(160px, 1fr))",
+            gap: "10px",
+            marginBottom: "18px",
+          }}
+        >
+          {[
+            ["ATR", "در انتظار"],
+            ["Volatility", "در انتظار"],
+            ["Trend", "در انتظار"],
+            ["Liquidity", "در انتظار"],
+            ["News Filter", "در انتظار"],
+            ["Multi-Timeframe", "در انتظار"],
+          ].map(([name, value]) => (
+            <div
+              key={name}
+              style={{
+                padding: "16px",
+                borderRadius: "16px",
+                background: "rgba(15,23,42,.72)",
+                border:
+                  "1px solid rgba(148,163,184,.1)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#64748b",
+                  fontSize: "10px",
+                  marginBottom: "7px",
+                }}
+              >
+                {name}
+              </div>
+
+              <strong
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "14px",
+                }}
+              >
+                {value}
+              </strong>
+            </div>
+          ))}
+        </section>
+
+        {/* Navigation */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "12px",
           }}
         >
           <Link
             href="/market"
             style={{
-              padding: "22px",
-              borderRadius: "22px",
+              padding: "20px",
+              borderRadius: "20px",
               background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
+              border:
+                "1px solid rgba(148,163,184,.12)",
               textDecoration: "none",
               color: "white",
             }}
           >
-            <div style={{ fontSize: "28px", marginBottom: "12px" }}>📊</div>
+            <div
+              style={{
+                fontSize: "25px",
+                marginBottom: "10px",
+              }}
+            >
+              📊
+            </div>
 
-            <h3 style={{ margin: "0 0 8px" }}>بازار و نمودار</h3>
+            <strong>بازار و نمودار</strong>
 
             <p
               style={{
                 color: "#64748b",
-                fontSize: "13px",
+                fontSize: "12px",
                 lineHeight: 1.8,
-                margin: 0,
+                margin: "7px 0 0",
               }}
             >
-              مشاهده بازارها و نمودارهای معاملاتی
+              مشاهده نمودارها و بازارهای زنده
             </p>
           </Link>
 
           <Link
             href="/bots"
             style={{
-              padding: "22px",
-              borderRadius: "22px",
+              padding: "20px",
+              borderRadius: "20px",
               background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
+              border:
+                "1px solid rgba(148,163,184,.12)",
               textDecoration: "none",
               color: "white",
             }}
           >
-            <div style={{ fontSize: "28px", marginBottom: "12px" }}>🤖</div>
+            <div
+              style={{
+                fontSize: "25px",
+                marginBottom: "10px",
+              }}
+            >
+              🤖
+            </div>
 
-            <h3 style={{ margin: "0 0 8px" }}>ربات‌های معاملاتی</h3>
+            <strong>ربات‌های تحلیل‌گر</strong>
 
             <p
               style={{
                 color: "#64748b",
-                fontSize: "13px",
+                fontSize: "12px",
                 lineHeight: 1.8,
-                margin: 0,
+                margin: "7px 0 0",
               }}
             >
-              مدیریت ربات‌ها و مشاهده عملکرد آن‌ها
+              مدیریت و مشاهده وضعیت ربات‌های تحلیل
             </p>
           </Link>
 
           <Link
-            href="/broker"
+            href="/dashboard"
             style={{
-              padding: "22px",
-              borderRadius: "22px",
+              padding: "20px",
+              borderRadius: "20px",
               background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
+              border:
+                "1px solid rgba(148,163,184,.12)",
               textDecoration: "none",
               color: "white",
             }}
           >
-            <div style={{ fontSize: "28px", marginBottom: "12px" }}>🔗</div>
+            <div
+              style={{
+                fontSize: "25px",
+                marginBottom: "10px",
+              }}
+            >
+              🏠
+            </div>
 
-            <h3 style={{ margin: "0 0 8px" }}>اتصال بروکر</h3>
+            <strong>داشبورد</strong>
 
             <p
               style={{
                 color: "#64748b",
-                fontSize: "13px",
+                fontSize: "12px",
                 lineHeight: 1.8,
-                margin: 0,
+                margin: "7px 0 0",
               }}
             >
-              آماده‌سازی اتصال حساب معاملاتی به پلتفرم
+              بازگشت به داشبورد اصلی Trading AI
             </p>
           </Link>
         </section>
-
       </div>
     </main>
   );
