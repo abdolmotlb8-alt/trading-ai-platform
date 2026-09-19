@@ -1,26 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Bot = {
+  id: string;
   name: string;
-  market: string;
-  strategy: string;
-  status: string;
+  symbol: string;
+  timeframe: string;
+  marketType: string;
+  type: string;
+  category: string;
+  isActive: boolean;
+
+  lotMode: string;
+  lotSize: number;
+  riskPercent: number;
+
+  takeProfit: number | null;
+  stopLoss: number | null;
+  riskReward: number | null;
+
+  trailingStop: boolean;
+  trailingStopDistance: number | null;
+
+  breakEven: boolean;
+  breakEvenTrigger: number | null;
+
+  dailyProfitStop: number | null;
+  dailyLossLimit: number | null;
+  maxDailyStopLosses: number;
+  maxOpenTrades: number;
+
+  buyEnabled: boolean;
+  sellEnabled: boolean;
+
+  maxSpread: number | null;
+  cooldownMinutes: number;
+
+  sessionFilter: boolean;
+  newsFilter: boolean;
+
+  signalThreshold: number;
+  minConfirmations: number;
+
+  telegramEnabled: boolean;
 };
 
 export default function BotBuilderPage() {
+  const [botId, setBotId] = useState("");
+
   const [botName, setBotName] = useState("Gold AI Bot");
   const [market, setMarket] = useState("XAU/USD");
   const [strategy, setStrategy] = useState("Trend Following");
+  const [timeframe, setTimeframe] = useState("15m");
 
-  const [lotMode, setLotMode] = useState("fixed");
+  const [lotMode, setLotMode] = useState("FIXED");
   const [lotSize, setLotSize] = useState("0.01");
   const [riskPercent, setRiskPercent] = useState("1");
 
   const [takeProfit, setTakeProfit] = useState("5");
   const [stopLoss, setStopLoss] = useState("4");
   const [riskReward, setRiskReward] = useState("1.25");
+
+  const [trailingStop, setTrailingStop] = useState(true);
+  const [trailingStopDistance, setTrailingStopDistance] =
+    useState("2");
+
+  const [breakEven, setBreakEven] = useState(true);
+  const [breakEvenTrigger, setBreakEvenTrigger] =
+    useState("2");
 
   const [dailyProfit, setDailyProfit] = useState("20");
   const [dailyLoss, setDailyLoss] = useState("12");
@@ -30,8 +78,6 @@ export default function BotBuilderPage() {
   const [maxSpread, setMaxSpread] = useState("30");
   const [cooldown, setCooldown] = useState("5");
 
-  const [trailingStop, setTrailingStop] = useState(true);
-  const [breakEven, setBreakEven] = useState(true);
   const [buyEnabled, setBuyEnabled] = useState(true);
   const [sellEnabled, setSellEnabled] = useState(true);
   const [sessionFilter, setSessionFilter] = useState(true);
@@ -39,30 +85,18 @@ export default function BotBuilderPage() {
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [botEnabled, setBotEnabled] = useState(false);
 
+  const [signalThreshold, setSignalThreshold] =
+    useState("80");
+
+  const [minConfirmations, setMinConfirmations] =
+    useState("5");
+
+  const [bots, setBots] = useState<Bot[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  const [bots] = useState<Bot[]>([
-    {
-      name: "Gold AI Bot",
-      market: "XAU/USD",
-      strategy: "Trend Following",
-      status: "فعال",
-    },
-    {
-      name: "Crypto AI Bot",
-      market: "BTC/USDT",
-      strategy: "Smart Trading",
-      status: "آماده",
-    },
-  ]);
-
-  const saveSettings = () => {
-    setSaved(true);
-
-    setTimeout(() => {
-      setSaved(false);
-    }, 2500);
-  };
+  const [error, setError] = useState("");
 
   const inputStyle = {
     width: "100%",
@@ -131,7 +165,6 @@ export default function BotBuilderPage() {
             ? "rgba(34,211,238,.35)"
             : "rgba(100,116,139,.25)",
           cursor: "pointer",
-          transition: "all .2s ease",
           flexShrink: 0,
         }}
       >
@@ -146,9 +179,6 @@ export default function BotBuilderPage() {
               ? "translateX(22px)"
               : "translateX(0)",
             transition: "all .2s ease",
-            boxShadow: enabled
-              ? "0 0 12px rgba(34,211,238,.6)"
-              : "none",
           }}
         />
       </button>
@@ -174,7 +204,8 @@ export default function BotBuilderPage() {
           justifyContent: "space-between",
           gap: "16px",
           padding: "15px 0",
-          borderBottom: "1px solid rgba(148,163,184,.08)",
+          borderBottom:
+            "1px solid rgba(148,163,184,.08)",
         }}
       >
         <div>
@@ -205,6 +236,265 @@ export default function BotBuilderPage() {
     );
   };
 
+  const fillFromBot = (bot: Bot) => {
+    setBotId(bot.id);
+    setBotName(bot.name);
+    setMarket(
+      bot.symbol === "BTCUSDT"
+        ? "BTC/USDT"
+        : bot.symbol === "ETHUSDT"
+        ? "ETH/USDT"
+        : bot.symbol === "EURUSD"
+        ? "EUR/USD"
+        : "XAU/USD"
+    );
+
+    setStrategy(
+      bot.type === "SCALPING"
+        ? "Scalping"
+        : bot.type === "AI"
+        ? "AI Strategy"
+        : bot.type === "SMART"
+        ? "Smart Trading"
+        : "Trend Following"
+    );
+
+    setTimeframe(bot.timeframe || "15m");
+
+    setLotMode(bot.lotMode || "FIXED");
+    setLotSize(String(bot.lotSize ?? 0.01));
+    setRiskPercent(String(bot.riskPercent ?? 1));
+
+    setTakeProfit(String(bot.takeProfit ?? 5));
+    setStopLoss(String(bot.stopLoss ?? 4));
+    setRiskReward(String(bot.riskReward ?? 1.25));
+
+    setTrailingStop(bot.trailingStop);
+    setTrailingStopDistance(
+      String(bot.trailingStopDistance ?? 2)
+    );
+
+    setBreakEven(bot.breakEven);
+    setBreakEvenTrigger(
+      String(bot.breakEvenTrigger ?? 2)
+    );
+
+    setDailyProfit(
+      String(bot.dailyProfitStop ?? 20)
+    );
+
+    setDailyLoss(
+      String(bot.dailyLossLimit ?? 12)
+    );
+
+    setMaxStopLosses(
+      String(bot.maxDailyStopLosses ?? 3)
+    );
+
+    setMaxOpenTrades(
+      String(bot.maxOpenTrades ?? 1)
+    );
+
+    setBuyEnabled(bot.buyEnabled);
+    setSellEnabled(bot.sellEnabled);
+
+    setMaxSpread(String(bot.maxSpread ?? 30));
+    setCooldown(String(bot.cooldownMinutes ?? 5));
+
+    setSessionFilter(bot.sessionFilter);
+    setNewsFilter(bot.newsFilter);
+    setTelegramEnabled(bot.telegramEnabled);
+    setBotEnabled(bot.isActive);
+
+    setSignalThreshold(
+      String(bot.signalThreshold ?? 80)
+    );
+
+    setMinConfirmations(
+      String(bot.minConfirmations ?? 5)
+    );
+  };
+
+  const loadBots = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch("/api/bots", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "خطا در دریافت ربات‌ها."
+        );
+      }
+
+      const loadedBots: Bot[] = data.bots || [];
+
+      setBots(loadedBots);
+
+      if (loadedBots.length > 0) {
+        fillFromBot(loadedBots[0]);
+      }
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "خطا در دریافت اطلاعات."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBots();
+  }, []);
+
+  const saveSettings = async () => {
+    try {
+      setSaving(true);
+      setSaved(false);
+      setError("");
+
+      const symbol =
+        market === "XAU/USD"
+          ? "XAUUSD"
+          : market === "BTC/USDT"
+          ? "BTCUSDT"
+          : market === "ETH/USDT"
+          ? "ETHUSDT"
+          : "EURUSD";
+
+      const type =
+        strategy === "Scalping"
+          ? "SCALPING"
+          : strategy === "AI Strategy"
+          ? "AI"
+          : strategy === "Smart Trading"
+          ? "SMART"
+          : "TREND";
+
+      const payload = {
+        id: botId || undefined,
+
+        name: botName,
+        symbol,
+        timeframe,
+
+        type,
+        category: "TRADING",
+        description:
+          "Trading AI automated trading bot",
+
+        marketType:
+          market.includes("BTC") ||
+          market.includes("ETH")
+            ? "CRYPTO"
+            : market === "XAU/USD"
+            ? "COMMODITY"
+            : "FOREX",
+
+        isActive: botEnabled,
+
+        lotMode,
+        lotSize: Number(lotSize),
+        riskPercent: Number(riskPercent),
+
+        takeProfit: Number(takeProfit),
+        stopLoss: Number(stopLoss),
+        riskReward: Number(riskReward),
+
+        trailingStop,
+        trailingStopDistance: Number(
+          trailingStopDistance
+        ),
+
+        breakEven,
+        breakEvenTrigger: Number(breakEvenTrigger),
+
+        dailyProfitStop: Number(dailyProfit),
+        dailyLossLimit: Number(dailyLoss),
+        maxDailyStopLosses: Number(maxStopLosses),
+        maxOpenTrades: Number(maxOpenTrades),
+
+        buyEnabled,
+        sellEnabled,
+
+        maxSpread: Number(maxSpread),
+        cooldownMinutes: Number(cooldown),
+
+        sessionFilter,
+        newsFilter,
+
+        signalThreshold: Number(signalThreshold),
+        minConfirmations: Number(
+          minConfirmations
+        ),
+
+        telegramEnabled,
+      };
+
+      const response = await fetch("/api/bots", {
+        method: botId ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "خطا در ذخیره تنظیمات."
+        );
+      }
+
+      const savedBot: Bot = data.bot;
+
+      setBotId(savedBot.id);
+
+      setBots((currentBots) => {
+        const exists = currentBots.some(
+          (bot) => bot.id === savedBot.id
+        );
+
+        if (exists) {
+          return currentBots.map((bot) =>
+            bot.id === savedBot.id
+              ? savedBot
+              : bot
+          );
+        }
+
+        return [savedBot, ...currentBots];
+      });
+
+      setSaved(true);
+
+      setTimeout(() => {
+        setSaved(false);
+      }, 3000);
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "ذخیره تنظیمات انجام نشد."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <main
       dir="rtl"
@@ -224,7 +514,6 @@ export default function BotBuilderPage() {
           margin: "0 auto",
         }}
       >
-        {/* Header */}
         <section
           style={{
             ...cardStyle,
@@ -251,7 +540,8 @@ export default function BotBuilderPage() {
                   padding: "6px 11px",
                   borderRadius: "999px",
                   background: "rgba(34,211,238,.08)",
-                  border: "1px solid rgba(34,211,238,.16)",
+                  border:
+                    "1px solid rgba(34,211,238,.16)",
                   color: "#67e8f9",
                   fontSize: "11px",
                   marginBottom: "10px",
@@ -277,7 +567,8 @@ export default function BotBuilderPage() {
                   fontSize: "13px",
                 }}
               >
-                ساخت، تنظیم و کنترل کامل ربات‌های معاملاتی Trading AI
+                تنظیمات ربات اکنون مستقیماً در دیتابیس
+                ذخیره می‌شود.
               </p>
             </div>
 
@@ -287,7 +578,8 @@ export default function BotBuilderPage() {
                 padding: "14px 16px",
                 borderRadius: "16px",
                 background: "rgba(2,8,23,.35)",
-                border: "1px solid rgba(148,163,184,.10)",
+                border:
+                  "1px solid rgba(148,163,184,.10)",
               }}
             >
               <div
@@ -315,9 +607,6 @@ export default function BotBuilderPage() {
                     background: botEnabled
                       ? "#22c55e"
                       : "#64748b",
-                    boxShadow: botEnabled
-                      ? "0 0 12px rgba(34,197,94,.7)"
-                      : "none",
                   }}
                 />
 
@@ -335,7 +624,41 @@ export default function BotBuilderPage() {
           </div>
         </section>
 
-        {/* Bot identity */}
+        {loading && (
+          <section style={{ ...cardStyle, marginBottom: "18px" }}>
+            <div
+              style={{
+                textAlign: "center",
+                color: "#94a3b8",
+                padding: "12px",
+              }}
+            >
+              در حال دریافت تنظیمات ربات...
+            </div>
+          </section>
+        )}
+
+        {error && (
+          <section
+            style={{
+              ...cardStyle,
+              marginBottom: "18px",
+              borderColor: "rgba(248,113,113,.25)",
+              background: "rgba(127,29,29,.18)",
+            }}
+          >
+            <div
+              style={{
+                color: "#fca5a5",
+                fontSize: "13px",
+                lineHeight: 1.8,
+              }}
+            >
+              ⚠️ {error}
+            </div>
+          </section>
+        )}
+
         <section style={{ ...cardStyle, marginBottom: "18px" }}>
           <div style={{ marginBottom: "18px" }}>
             <h2 style={sectionTitleStyle}>
@@ -360,7 +683,9 @@ export default function BotBuilderPage() {
 
               <input
                 value={botName}
-                onChange={(e) => setBotName(e.target.value)}
+                onChange={(e) =>
+                  setBotName(e.target.value)
+                }
                 style={inputStyle}
                 placeholder="مثلاً Gold AI Bot"
               />
@@ -371,14 +696,23 @@ export default function BotBuilderPage() {
 
               <select
                 value={market}
-                onChange={(e) => setMarket(e.target.value)}
+                onChange={(e) =>
+                  setMarket(e.target.value)
+                }
                 style={selectStyle}
               >
-                <option value="XAU/USD">Gold — XAU/USD</option>
-                <option value="BTC/USDT">Bitcoin — BTC/USDT</option>
+                <option value="XAU/USD">
+                  Gold — XAU/USD
+                </option>
+
+                <option value="BTC/USDT">
+                  Bitcoin — BTC/USDT
+                </option>
+
                 <option value="ETH/USDT">
                   Ethereum — ETH/USDT
                 </option>
+
                 <option value="EUR/USD">
                   Euro / Dollar — EUR/USD
                 </option>
@@ -386,11 +720,15 @@ export default function BotBuilderPage() {
             </div>
 
             <div>
-              <label style={labelStyle}>استراتژی</label>
+              <label style={labelStyle}>
+                استراتژی
+              </label>
 
               <select
                 value={strategy}
-                onChange={(e) => setStrategy(e.target.value)}
+                onChange={(e) =>
+                  setStrategy(e.target.value)
+                }
                 style={selectStyle}
               >
                 <option value="Trend Following">
@@ -410,10 +748,31 @@ export default function BotBuilderPage() {
                 </option>
               </select>
             </div>
+
+            <div>
+              <label style={labelStyle}>
+                تایم‌فریم
+              </label>
+
+              <select
+                value={timeframe}
+                onChange={(e) =>
+                  setTimeframe(e.target.value)
+                }
+                style={selectStyle}
+              >
+                <option value="1m">1 دقیقه</option>
+                <option value="5m">5 دقیقه</option>
+                <option value="15m">15 دقیقه</option>
+                <option value="30m">30 دقیقه</option>
+                <option value="1h">1 ساعت</option>
+                <option value="4h">4 ساعت</option>
+                <option value="1d">روزانه</option>
+              </select>
+            </div>
           </div>
         </section>
 
-        {/* Position sizing */}
         <section style={{ ...cardStyle, marginBottom: "18px" }}>
           <div style={{ marginBottom: "18px" }}>
             <h2 style={sectionTitleStyle}>
@@ -421,8 +780,7 @@ export default function BotBuilderPage() {
             </h2>
 
             <p style={sectionDescriptionStyle}>
-              حجم معامله را ثابت کنید یا اجازه دهید بر اساس درصد
-              ریسک محاسبه شود.
+              حجم ثابت یا حجم محاسبه‌شده بر اساس درصد ریسک.
             </p>
           </div>
 
@@ -435,32 +793,40 @@ export default function BotBuilderPage() {
             }}
           >
             <div>
-              <label style={labelStyle}>روش تعیین حجم</label>
+              <label style={labelStyle}>
+                روش تعیین حجم
+              </label>
 
               <select
                 value={lotMode}
-                onChange={(e) => setLotMode(e.target.value)}
+                onChange={(e) =>
+                  setLotMode(e.target.value)
+                }
                 style={selectStyle}
               >
-                <option value="fixed">
+                <option value="FIXED">
                   حجم ثابت (Fixed Lot)
                 </option>
 
-                <option value="risk">
+                <option value="RISK_PERCENT">
                   بر اساس درصد ریسک
                 </option>
               </select>
             </div>
 
             <div>
-              <label style={labelStyle}>Lot Size</label>
+              <label style={labelStyle}>
+                Lot Size
+              </label>
 
               <input
                 type="number"
                 min="0.01"
                 step="0.01"
                 value={lotSize}
-                onChange={(e) => setLotSize(e.target.value)}
+                onChange={(e) =>
+                  setLotSize(e.target.value)
+                }
                 style={inputStyle}
               />
             </div>
@@ -482,25 +848,8 @@ export default function BotBuilderPage() {
               />
             </div>
           </div>
-
-          <div
-            style={{
-              marginTop: "15px",
-              padding: "13px 15px",
-              borderRadius: "13px",
-              background: "rgba(250,204,21,.06)",
-              border: "1px solid rgba(250,204,21,.12)",
-              color: "#facc15",
-              fontSize: "11px",
-              lineHeight: 1.8,
-            }}
-          >
-            ⚠️ حجم Lot و درصد ریسک باید متناسب با موجودی حساب،
-            حد ضرر و قوانین بروکر انتخاب شود.
-          </div>
         </section>
 
-        {/* TP SL */}
         <section style={{ ...cardStyle, marginBottom: "18px" }}>
           <div style={{ marginBottom: "18px" }}>
             <h2 style={sectionTitleStyle}>
@@ -508,7 +857,7 @@ export default function BotBuilderPage() {
             </h2>
 
             <p style={sectionDescriptionStyle}>
-              مدیریت کامل TP، SL و نسبت ریسک به بازده.
+              کنترل TP، SL و نسبت ریسک به بازده.
             </p>
           </div>
 
@@ -534,17 +883,6 @@ export default function BotBuilderPage() {
                 }
                 style={inputStyle}
               />
-
-              <small
-                style={{
-                  display: "block",
-                  color: "#64748b",
-                  marginTop: "6px",
-                  fontSize: "10px",
-                }}
-              >
-                مقدار هدف سود هر معامله
-              </small>
             </div>
 
             <div>
@@ -561,17 +899,6 @@ export default function BotBuilderPage() {
                 }
                 style={inputStyle}
               />
-
-              <small
-                style={{
-                  display: "block",
-                  color: "#64748b",
-                  marginTop: "6px",
-                  fontSize: "10px",
-                }}
-              >
-                مقدار حداکثر ضرر هر معامله
-              </small>
             </div>
 
             <div>
@@ -589,22 +916,46 @@ export default function BotBuilderPage() {
                 }
                 style={inputStyle}
               />
+            </div>
 
-              <small
-                style={{
-                  display: "block",
-                  color: "#64748b",
-                  marginTop: "6px",
-                  fontSize: "10px",
-                }}
-              >
-                نسبت ریسک به بازده
-              </small>
+            <div>
+              <label style={labelStyle}>
+                Trailing Stop Distance
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={trailingStopDistance}
+                onChange={(e) =>
+                  setTrailingStopDistance(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Break Even Trigger
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={breakEvenTrigger}
+                onChange={(e) =>
+                  setBreakEvenTrigger(e.target.value)
+                }
+                style={inputStyle}
+              />
             </div>
           </div>
         </section>
 
-        {/* Daily limits */}
         <section style={{ ...cardStyle, marginBottom: "18px" }}>
           <div style={{ marginBottom: "18px" }}>
             <h2 style={sectionTitleStyle}>
@@ -612,8 +963,7 @@ export default function BotBuilderPage() {
             </h2>
 
             <p style={sectionDescriptionStyle}>
-              برای جلوگیری از ادامه معامله بعد از رسیدن به
-              محدودیت‌های تعیین‌شده.
+              توقف خودکار پس از رسیدن به حدود تعیین‌شده.
             </p>
           </div>
 
@@ -639,17 +989,6 @@ export default function BotBuilderPage() {
                 }
                 style={inputStyle}
               />
-
-              <small
-                style={{
-                  color: "#64748b",
-                  fontSize: "10px",
-                  display: "block",
-                  marginTop: "6px",
-                }}
-              >
-                مثال: 20 دلار
-              </small>
             </div>
 
             <div>
@@ -666,17 +1005,6 @@ export default function BotBuilderPage() {
                 }
                 style={inputStyle}
               />
-
-              <small
-                style={{
-                  color: "#64748b",
-                  fontSize: "10px",
-                  display: "block",
-                  marginTop: "6px",
-                }}
-              >
-                مثال: 12 دلار
-              </small>
             </div>
 
             <div>
@@ -713,7 +1041,64 @@ export default function BotBuilderPage() {
           </div>
         </section>
 
-        {/* Trade execution */}
+        <section style={{ ...cardStyle, marginBottom: "18px" }}>
+          <div style={{ marginBottom: "10px" }}>
+            <h2 style={sectionTitleStyle}>
+              🧠 کنترل تحلیل و سیگنال
+            </h2>
+
+            <p style={sectionDescriptionStyle}>
+              این تنظیمات فعلاً معیارهای مورد نیاز برای اجازه
+              ورود ربات را ذخیره می‌کنند.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "14px",
+              marginTop: "18px",
+            }}
+          >
+            <div>
+              <label style={labelStyle}>
+                حداقل امتیاز سیگنال
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={signalThreshold}
+                onChange={(e) =>
+                  setSignalThreshold(e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                حداقل تعداد تأییدها
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                value={minConfirmations}
+                onChange={(e) =>
+                  setMinConfirmations(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        </section>
+
         <section style={{ ...cardStyle, marginBottom: "18px" }}>
           <div style={{ marginBottom: "10px" }}>
             <h2 style={sectionTitleStyle}>
@@ -721,7 +1106,7 @@ export default function BotBuilderPage() {
             </h2>
 
             <p style={sectionDescriptionStyle}>
-              قوانین ورود و کنترل شرایط اجرای معامله.
+              قوانین اجرای ربات و فیلترهای حفاظتی.
             </p>
           </div>
 
@@ -741,14 +1126,14 @@ export default function BotBuilderPage() {
 
           <SettingRow
             title="Trailing Stop"
-            description="جابجایی خودکار حد ضرر همراه با حرکت قیمت"
+            description="جابجایی حد ضرر همراه با حرکت قیمت"
             enabled={trailingStop}
             onChange={setTrailingStop}
           />
 
           <SettingRow
             title="Break Even"
-            description="انتقال حد ضرر به نقطه ورود پس از شرایط تعیین‌شده"
+            description="انتقال حد ضرر به نقطه ورود"
             enabled={breakEven}
             onChange={setBreakEven}
           />
@@ -762,14 +1147,14 @@ export default function BotBuilderPage() {
 
           <SettingRow
             title="News Filter"
-            description="جلوگیری از معامله در شرایط خبری پرریسک"
+            description="فیلتر شرایط خبری پرریسک"
             enabled={newsFilter}
             onChange={setNewsFilter}
           />
 
           <SettingRow
             title="Telegram"
-            description="ارسال رویدادها و وضعیت ربات به Telegram"
+            description="ارسال وضعیت ربات به Telegram"
             enabled={telegramEnabled}
             onChange={setTelegramEnabled}
           />
@@ -826,7 +1211,6 @@ export default function BotBuilderPage() {
           </div>
         </section>
 
-        {/* Current bot */}
         <section
           style={{
             ...cardStyle,
@@ -871,7 +1255,7 @@ export default function BotBuilderPage() {
                   fontSize: "12px",
                 }}
               >
-                {market} • {strategy}
+                {market} • {strategy} • {timeframe}
               </div>
             </div>
 
@@ -882,11 +1266,7 @@ export default function BotBuilderPage() {
                 gap: "12px",
               }}
             >
-              <div
-                style={{
-                  textAlign: "left",
-                }}
-              >
+              <div style={{ textAlign: "left" }}>
                 <div
                   style={{
                     color: "#64748b",
@@ -920,7 +1300,6 @@ export default function BotBuilderPage() {
           </div>
         </section>
 
-        {/* Save */}
         <section
           style={{
             ...cardStyle,
@@ -930,39 +1309,36 @@ export default function BotBuilderPage() {
           <button
             type="button"
             onClick={saveSettings}
+            disabled={saving}
             style={{
               width: "100%",
               minHeight: "54px",
               borderRadius: "15px",
-              border: "1px solid rgba(34,211,238,.28)",
-              background:
-                "linear-gradient(135deg, rgba(8,145,178,.28), rgba(37,99,235,.20))",
-              color: "#67e8f9",
+              border:
+                "1px solid rgba(34,211,238,.28)",
+              background: saving
+                ? "rgba(71,85,105,.25)"
+                : "linear-gradient(135deg, rgba(8,145,178,.28), rgba(37,99,235,.20))",
+              color: saving
+                ? "#94a3b8"
+                : "#67e8f9",
               fontSize: "15px",
               fontWeight: 800,
-              cursor: "pointer",
+              cursor: saving
+                ? "not-allowed"
+                : "pointer",
             }}
           >
-            {saved
-              ? "✓ تنظیمات در این صفحه ذخیره شد"
-              : "💾 ذخیره تنظیمات ربات"}
+            {saving
+              ? "⏳ در حال ذخیره..."
+              : saved
+              ? "✓ تنظیمات در دیتابیس ذخیره شد"
+              : botId
+              ? "💾 ذخیره تغییرات ربات"
+              : "🤖 ساخت و ذخیره ربات"}
           </button>
-
-          <p
-            style={{
-              textAlign: "center",
-              color: "#475569",
-              fontSize: "10px",
-              lineHeight: 1.8,
-              margin: "10px 0 0",
-            }}
-          >
-            در مرحله بعد این تنظیمات را به دیتابیس متصل می‌کنیم
-            تا واقعاً برای هر ربات ذخیره شوند.
-          </p>
         </section>
 
-        {/* My bots */}
         <section style={{ ...cardStyle, marginBottom: "18px" }}>
           <div style={{ marginBottom: "18px" }}>
             <h2 style={sectionTitleStyle}>
@@ -970,110 +1346,148 @@ export default function BotBuilderPage() {
             </h2>
 
             <p style={sectionDescriptionStyle}>
-              ربات‌های ساخته‌شده و وضعیت فعلی آن‌ها.
+              ربات‌های واقعی ذخیره‌شده در دیتابیس.
             </p>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: "14px",
-            }}
-          >
-            {bots.map((bot) => (
-              <div
-                key={bot.name}
-                style={{
-                  padding: "18px",
-                  borderRadius: "18px",
-                  background: "#0b1929",
-                  border:
-                    "1px solid rgba(148,163,184,.09)",
-                }}
-              >
+          {bots.length === 0 ? (
+            <div
+              style={{
+                padding: "24px",
+                textAlign: "center",
+                color: "#64748b",
+                borderRadius: "16px",
+                background: "rgba(2,8,23,.25)",
+              }}
+            >
+              هنوز رباتی ساخته نشده است.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: "14px",
+              }}
+            >
+              {bots.map((bot) => (
                 <div
+                  key={bot.id}
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "10px",
-                  }}
-                >
-                  <strong
-                    style={{
-                      fontSize: "16px",
-                    }}
-                  >
-                    {bot.name}
-                  </strong>
-
-                  <span
-                    style={{
-                      padding: "5px 9px",
-                      borderRadius: "8px",
-                      background:
-                        bot.status === "فعال"
-                          ? "rgba(34,197,94,.08)"
-                          : "rgba(250,204,21,.08)",
-                      color:
-                        bot.status === "فعال"
-                          ? "#4ade80"
-                          : "#facc15",
-                      fontSize: "10px",
-                    }}
-                  >
-                    {bot.status}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: "14px",
-                    color: "#94a3b8",
-                    fontSize: "12px",
-                    lineHeight: 2,
-                  }}
-                >
-                  <div>
-                    بازار:{" "}
-                    <strong style={{ color: "#e2e8f0" }}>
-                      {bot.market}
-                    </strong>
-                  </div>
-
-                  <div>
-                    استراتژی:{" "}
-                    <strong style={{ color: "#e2e8f0" }}>
-                      {bot.strategy}
-                    </strong>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  style={{
-                    width: "100%",
-                    marginTop: "14px",
-                    minHeight: "40px",
-                    borderRadius: "11px",
+                    padding: "18px",
+                    borderRadius: "18px",
+                    background: "#0b1929",
                     border:
-                      "1px solid rgba(148,163,184,.12)",
-                    background: "rgba(2,8,23,.35)",
-                    color: "#cbd5e1",
-                    cursor: "pointer",
-                    fontWeight: 700,
+                      bot.id === botId
+                        ? "1px solid rgba(34,211,238,.35)"
+                        : "1px solid rgba(148,163,184,.09)",
                   }}
                 >
-                  مدیریت ربات
-                </button>
-              </div>
-            ))}
-          </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                    }}
+                  >
+                    <strong
+                      style={{
+                        fontSize: "16px",
+                      }}
+                    >
+                      {bot.name}
+                    </strong>
+
+                    <span
+                      style={{
+                        padding: "5px 9px",
+                        borderRadius: "8px",
+                        background: bot.isActive
+                          ? "rgba(34,197,94,.08)"
+                          : "rgba(100,116,139,.08)",
+                        color: bot.isActive
+                          ? "#4ade80"
+                          : "#94a3b8",
+                        fontSize: "10px",
+                      }}
+                    >
+                      {bot.isActive
+                        ? "فعال"
+                        : "خاموش"}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      color: "#94a3b8",
+                      fontSize: "12px",
+                      lineHeight: 2,
+                    }}
+                  >
+                    <div>
+                      بازار:{" "}
+                      <strong
+                        style={{
+                          color: "#e2e8f0",
+                        }}
+                      >
+                        {bot.symbol}
+                      </strong>
+                    </div>
+
+                    <div>
+                      تایم‌فریم:{" "}
+                      <strong
+                        style={{
+                          color: "#e2e8f0",
+                        }}
+                      >
+                        {bot.timeframe}
+                      </strong>
+                    </div>
+
+                    <div>
+                      Lot:{" "}
+                      <strong
+                        style={{
+                          color: "#e2e8f0",
+                        }}
+                      >
+                        {bot.lotSize}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      fillFromBot(bot)
+                    }
+                    style={{
+                      width: "100%",
+                      marginTop: "14px",
+                      minHeight: "40px",
+                      borderRadius: "11px",
+                      border:
+                        "1px solid rgba(148,163,184,.12)",
+                      background:
+                        "rgba(2,8,23,.35)",
+                      color: "#cbd5e1",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    مدیریت ربات
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
-        {/* Security */}
         <section style={{ ...cardStyle }}>
           <div style={{ marginBottom: "14px" }}>
             <h2 style={sectionTitleStyle}>
@@ -1081,8 +1495,8 @@ export default function BotBuilderPage() {
             </h2>
 
             <p style={sectionDescriptionStyle}>
-              لایه‌های حفاظتی برای جلوگیری از اجرای معاملات
-              خارج از قوانین تعیین‌شده.
+              محدودیت‌های ذخیره‌شده در ربات برای کنترل ریسک
+              استفاده خواهند شد.
             </p>
           </div>
 
@@ -1098,17 +1512,17 @@ export default function BotBuilderPage() {
               [
                 "✓",
                 "کنترل ریسک",
-                "بررسی حجم و حد ضرر قبل از معامله",
+                "بررسی حجم، TP و SL",
               ],
               [
                 "✓",
                 "Daily Stop",
-                "توقف خودکار پس از رسیدن به حد روزانه",
+                "توقف پس از رسیدن به حد روزانه",
               ],
               [
                 "✓",
                 "Trade Limit",
-                "محدود کردن تعداد معاملات باز",
+                "محدود کردن معاملات باز",
               ],
               [
                 "✓",
@@ -1121,7 +1535,8 @@ export default function BotBuilderPage() {
                 style={{
                   padding: "15px",
                   borderRadius: "15px",
-                  background: "rgba(2,8,23,.28)",
+                  background:
+                    "rgba(2,8,23,.28)",
                   border:
                     "1px solid rgba(148,163,184,.08)",
                 }}
