@@ -70,7 +70,35 @@ model TradingBot {
   timeframe  String?
   marketType String?
 
+  // =========================
+  // Main Bot State
+  // =========================
+
   isActive Boolean @default(false)
+
+  // MANUAL / AUTO
+  executionMode String @default("MANUAL")
+
+  // User must explicitly approve trading
+  tradingApproval Boolean @default(false)
+
+  // READY / ACTIVE / PAUSED / STOPPED
+  botStatus String @default("READY")
+
+  stoppedReason String?
+
+  lastStateChangeAt DateTime?
+
+  // =========================
+  // Automatic Stop Rules
+  // =========================
+
+  autoStopAfterWins   Int?
+  autoStopAfterLosses Int?
+  autoStopAfterTrades Int?
+
+  // Stop opening new trades before important news
+  stopBeforeNewsMinutes Int @default(15)
 
   // =========================
   // Trade Size / Risk
@@ -88,7 +116,7 @@ model TradingBot {
   stopLoss   Float?
   riskReward Float?
 
-  trailingStop        Boolean @default(false)
+  trailingStop         Boolean @default(false)
   trailingStopDistance Float?
 
   breakEven        Boolean @default(false)
@@ -98,10 +126,10 @@ model TradingBot {
   // Daily Risk Limits
   // =========================
 
-  dailyProfitStop      Float?
-  dailyLossLimit       Float?
-  maxDailyStopLosses   Int @default(3)
-  maxOpenTrades        Int @default(1)
+  dailyProfitStop    Float?
+  dailyLossLimit     Float?
+  maxDailyStopLosses Int @default(3)
+  maxOpenTrades      Int @default(1)
 
   // =========================
   // Execution Controls
@@ -110,7 +138,7 @@ model TradingBot {
   buyEnabled  Boolean @default(true)
   sellEnabled Boolean @default(true)
 
-  maxSpread Float?
+  maxSpread       Float?
   cooldownMinutes Int @default(5)
 
   sessionFilter Boolean @default(true)
@@ -135,6 +163,10 @@ model TradingBot {
 
   analysisConfig Json?
 
+  // =========================
+  // Relations
+  // =========================
+
   user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   signals TradingSignal[]
   trades  Trade[]
@@ -145,6 +177,8 @@ model TradingBot {
   @@index([userId])
   @@index([category])
   @@index([isActive])
+  @@index([botStatus])
+  @@index([executionMode])
 }
 
 model MarketCandle {
