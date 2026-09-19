@@ -1,51 +1,132 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-const markets = [
+type Market = {
+  id: string;
+  title: string;
+  name: string;
+  symbol: string;
+  tradingViewSymbol: string;
+};
+
+const markets: Market[] = [
   {
-    name: "XAU/USD",
-    title: "Gold",
-    icon: "🥇",
-    price: "$2,450.00",
-    change: "+0.82%",
-    positive: true,
+    id: "gold",
+    title: "XAU/USD",
+    name: "طلا",
+    symbol: "XAUUSD",
+    tradingViewSymbol: "OANDA:XAUUSD",
   },
   {
-    name: "BTC/USDT",
-    title: "Bitcoin",
-    icon: "₿",
-    price: "$62,000.00",
-    change: "+1.42%",
-    positive: true,
+    id: "btc",
+    title: "BTC/USDT",
+    name: "بیت‌کوین",
+    symbol: "BTCUSDT",
+    tradingViewSymbol: "BINANCE:BTCUSDT",
   },
   {
-    name: "ETH/USDT",
-    title: "Ethereum",
-    icon: "Ξ",
-    price: "$3,200.00",
-    change: "+0.91%",
-    positive: true,
+    id: "eth",
+    title: "ETH/USDT",
+    name: "اتریوم",
+    symbol: "ETHUSDT",
+    tradingViewSymbol: "BINANCE:ETHUSDT",
   },
   {
-    name: "EUR/USD",
-    title: "Euro / Dollar",
-    icon: "€",
-    price: "1.0850",
-    change: "-0.30%",
-    positive: false,
+    id: "eurusd",
+    title: "EUR/USD",
+    name: "یورو / دلار",
+    symbol: "EURUSD",
+    tradingViewSymbol: "OANDA:EURUSD",
   },
 ];
 
-export default function MarketPage() {
-  const [selectedMarket, setSelectedMarket] = useState("XAU/USD");
+const intervals = [
+  { label: "1د", value: "1" },
+  { label: "5د", value: "5" },
+  { label: "15د", value: "15" },
+  { label: "1س", value: "60" },
+  { label: "4س", value: "240" },
+  { label: "روزانه", value: "D" },
+];
 
-  const selected =
-    markets.find((market) => market.name === selectedMarket) || markets[0];
+function TradingViewChart({
+  symbol,
+  interval,
+}: {
+  symbol: string;
+  interval: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+
+    container.innerHTML = "";
+
+    const widgetContainer = document.createElement("div");
+    widgetContainer.className = "tradingview-widget-container__widget";
+    widgetContainer.style.width = "100%";
+    widgetContainer.style.height = "100%";
+
+    container.appendChild(widgetContainer);
+
+    const script = document.createElement("script");
+
+    script.src =
+      "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+
+    script.type = "text/javascript";
+    script.async = true;
+
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval,
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      enable_publishing: false,
+      allow_symbol_change: false,
+      hide_top_toolbar: true,
+      hide_legend: false,
+      hide_side_toolbar: false,
+      withdateranges: true,
+      save_image: false,
+      calendar: false,
+      support_host: "https://www.tradingview.com",
+      backgroundColor: "#07111f",
+    });
+
+    container.appendChild(script);
+
+    return () => {
+      container.innerHTML = "";
+    };
+  }, [symbol, interval]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="tradingview-widget-container"
+      style={{
+        width: "100%",
+        height: "520px",
+      }}
+    />
+  );
+}
+
+export default function MarketPage() {
+  const [selectedMarket, setSelectedMarket] = useState<Market>(markets[0]);
+  const [selectedInterval, setSelectedInterval] = useState("15");
 
   return (
     <main dir="rtl" className="market-page">
-      <style>{`
+      <style jsx>{`
         * {
           box-sizing: border-box;
         }
@@ -54,145 +135,147 @@ export default function MarketPage() {
           min-height: 100vh;
           background:
             radial-gradient(
-              circle at 90% 0%,
-              rgba(6, 182, 212, 0.13),
+              circle at top right,
+              rgba(14, 165, 233, 0.09),
               transparent 28%
             ),
             radial-gradient(
-              circle at 0% 100%,
-              rgba(37, 99, 235, 0.12),
+              circle at bottom left,
+              rgba(34, 211, 238, 0.06),
               transparent 30%
             ),
-            #07111f;
-          color: #f8fafc;
-          font-family: Arial, Tahoma, sans-serif;
+            #020817;
+          color: #e5eef8;
           padding: 28px;
         }
 
-        .market-container {
-          width: min(1450px, 100%);
+        .container {
+          width: 100%;
+          max-width: 1500px;
           margin: 0 auto;
         }
 
-        .market-header {
+        .top-header {
           display: flex;
-          align-items: center;
           justify-content: space-between;
+          align-items: center;
           gap: 20px;
-          margin-bottom: 25px;
+          margin-bottom: 26px;
         }
 
-        .header-title h1 {
+        .title-area h1 {
           margin: 0;
-          font-size: clamp(27px, 4vw, 40px);
-          font-weight: 900;
+          font-size: 30px;
+          font-weight: 800;
+          letter-spacing: -0.5px;
         }
 
-        .header-title p {
-          margin: 9px 0 0;
-          color: #64748b;
-          font-size: 13px;
-          line-height: 1.9;
+        .title-area p {
+          margin: 8px 0 0;
+          color: #94a3b8;
+          font-size: 14px;
         }
 
-        .live-badge {
+        .live-status {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 10px 14px;
-          border-radius: 14px;
-          background: rgba(34, 197, 94, 0.07);
-          border: 1px solid rgba(34, 197, 94, 0.14);
-          color: #86efac;
-          font-size: 11px;
-          font-weight: 700;
+          gap: 9px;
+          padding: 10px 15px;
+          border: 1px solid rgba(34, 211, 238, 0.2);
+          border-radius: 12px;
+          background: rgba(8, 47, 73, 0.25);
+          color: #67e8f9;
+          font-size: 13px;
+          white-space: nowrap;
         }
 
         .live-dot {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
+          background: #22d3ee;
+          box-shadow: 0 0 12px rgba(34, 211, 238, 0.8);
         }
 
-        .market-grid {
+        .layout {
           display: grid;
-          grid-template-columns: 330px minmax(0, 1fr);
+          grid-template-columns: 290px minmax(0, 1fr);
           gap: 20px;
-          direction: ltr;
+          align-items: start;
         }
 
         .watchlist,
-        .chart-panel {
-          direction: rtl;
-        }
-
-        .panel {
-          background: rgba(10, 20, 35, 0.86);
-          border: 1px solid rgba(148, 163, 184, 0.11);
-          border-radius: 24px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.16);
+        .chart-card,
+        .info-card,
+        .alert-card {
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          background: rgba(15, 23, 42, 0.78);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+          backdrop-filter: blur(14px);
         }
 
         .watchlist {
-          padding: 18px;
+          border-radius: 18px;
+          padding: 16px;
         }
 
-        .panel-heading {
+        .watchlist-header {
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 15px;
+          align-items: center;
+          margin-bottom: 14px;
         }
 
-        .panel-heading h2 {
+        .watchlist-header h2 {
           margin: 0;
-          font-size: 17px;
+          font-size: 16px;
+          font-weight: 800;
         }
 
-        .panel-heading span {
+        .watchlist-header span {
           color: #64748b;
-          font-size: 10px;
+          font-size: 12px;
         }
 
-        .market-list {
-          display: grid;
-          gap: 9px;
-        }
-
-        .market-card {
+        .market-item {
           width: 100%;
-          border: 1px solid rgba(148, 163, 184, 0.08);
-          background: rgba(255, 255, 255, 0.025);
-          border-radius: 17px;
+          border: 1px solid transparent;
+          border-radius: 14px;
+          background: transparent;
           padding: 14px;
-          color: white;
-          text-align: right;
+          margin-bottom: 8px;
+          color: inherit;
           cursor: pointer;
-          transition: 0.2s;
+          text-align: right;
+          transition:
+            transform 0.2s ease,
+            border-color 0.2s ease,
+            background 0.2s ease;
         }
 
-        .market-card:hover {
-          border-color: rgba(34, 211, 238, 0.25);
-          background: rgba(34, 211, 238, 0.045);
+        .market-item:last-child {
+          margin-bottom: 0;
+        }
+
+        .market-item:hover {
           transform: translateY(-1px);
+          background: rgba(30, 41, 59, 0.65);
+          border-color: rgba(148, 163, 184, 0.1);
         }
 
-        .market-card.selected {
-          border-color: rgba(34, 211, 238, 0.4);
+        .market-item.active {
           background: linear-gradient(
             135deg,
-            rgba(6, 182, 212, 0.1),
-            rgba(37, 99, 235, 0.06)
+            rgba(8, 145, 178, 0.18),
+            rgba(15, 23, 42, 0.9)
           );
+          border-color: rgba(34, 211, 238, 0.35);
         }
 
-        .market-top {
+        .market-row {
           display: flex;
-          align-items: center;
           justify-content: space-between;
+          align-items: center;
           gap: 10px;
         }
 
@@ -205,271 +288,238 @@ export default function MarketPage() {
         .market-icon {
           width: 38px;
           height: 38px;
-          display: grid;
-          place-items: center;
-          border-radius: 12px;
-          background: rgba(34, 211, 238, 0.08);
-          color: #22d3ee;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 11px;
+          background: rgba(30, 41, 59, 0.9);
+          color: #67e8f9;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .market-text strong {
+          display: block;
+          font-size: 14px;
+          font-weight: 800;
+        }
+
+        .market-text span {
+          display: block;
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .live-pill {
+          border: 1px solid rgba(34, 211, 238, 0.22);
+          background: rgba(8, 145, 178, 0.1);
+          color: #67e8f9;
+          padding: 4px 7px;
+          border-radius: 7px;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .chart-area {
+          min-width: 0;
+        }
+
+        .chart-card {
+          overflow: hidden;
+          border-radius: 18px;
+        }
+
+        .chart-header {
+          padding: 20px;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .selected-symbol {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 20px;
+        }
+
+        .symbol-title {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+        }
+
+        .symbol-icon {
+          width: 48px;
+          height: 48px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 14px;
+          background: rgba(8, 145, 178, 0.12);
+          border: 1px solid rgba(34, 211, 238, 0.15);
+          color: #67e8f9;
+          font-weight: 900;
+          font-size: 13px;
+        }
+
+        .symbol-title h2 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 850;
+        }
+
+        .symbol-title p {
+          margin: 5px 0 0;
+          color: #64748b;
+          font-size: 12px;
+        }
+
+        .live-price {
+          text-align: left;
+        }
+
+        .live-price strong {
+          display: block;
+          color: #67e8f9;
           font-size: 18px;
           font-weight: 900;
         }
 
-        .market-title {
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .market-symbol {
-          margin-top: 4px;
-          color: #64748b;
-          font-size: 9px;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .change {
-          padding: 6px 8px;
-          border-radius: 9px;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .positive {
-          color: #4ade80;
-          background: rgba(34, 197, 94, 0.08);
-        }
-
-        .negative {
-          color: #fb7185;
-          background: rgba(244, 63, 94, 0.08);
-        }
-
-        .market-price {
-          margin-top: 14px;
-          font-size: 17px;
-          font-weight: 900;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .chart-panel {
-          padding: 20px;
-          min-width: 0;
-        }
-
-        .chart-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          margin-bottom: 18px;
-        }
-
-        .selected-info {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .selected-icon {
-          width: 46px;
-          height: 46px;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          background: linear-gradient(
-            135deg,
-            rgba(6, 182, 212, 0.18),
-            rgba(37, 99, 235, 0.16)
-          );
-          color: #67e8f9;
-          font-size: 21px;
-          font-weight: 900;
-        }
-
-        .selected-title {
-          font-size: 19px;
-          font-weight: 900;
-        }
-
-        .selected-symbol {
-          margin-top: 4px;
-          color: #64748b;
-          font-size: 10px;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .selected-price {
-          text-align: left;
-          direction: ltr;
-        }
-
-        .selected-price strong {
-          display: block;
-          font-size: 22px;
-        }
-
-        .selected-price span {
+        .live-price span {
           display: block;
           margin-top: 5px;
-          color: #4ade80;
-          font-size: 10px;
-          font-weight: 700;
+          color: #64748b;
+          font-size: 11px;
         }
 
         .timeframes {
           display: flex;
           flex-wrap: wrap;
           gap: 7px;
-          margin-bottom: 14px;
+          margin-top: 18px;
         }
 
         .timeframe {
           border: 1px solid rgba(148, 163, 184, 0.1);
-          background: rgba(255, 255, 255, 0.025);
-          color: #64748b;
+          background: rgba(30, 41, 59, 0.6);
+          color: #94a3b8;
           border-radius: 9px;
-          padding: 7px 11px;
-          font-size: 9px;
+          padding: 8px 12px;
           cursor: pointer;
+          font-size: 11px;
+          transition: all 0.2s ease;
+        }
+
+        .timeframe:hover {
+          color: #e2e8f0;
+          border-color: rgba(34, 211, 238, 0.2);
         }
 
         .timeframe.active {
-          color: #22d3ee;
-          border-color: rgba(34, 211, 238, 0.25);
-          background: rgba(34, 211, 238, 0.08);
+          color: #67e8f9;
+          background: rgba(8, 145, 178, 0.14);
+          border-color: rgba(34, 211, 238, 0.3);
         }
 
-        .chart-placeholder {
-          position: relative;
-          min-height: 430px;
-          border-radius: 18px;
-          overflow: hidden;
-          border: 1px solid rgba(148, 163, 184, 0.08);
-          background:
-            linear-gradient(
-              rgba(255, 255, 255, 0.025) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(255, 255, 255, 0.025) 1px,
-              transparent 1px
-            ),
-            #081321;
-          background-size: 55px 55px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .chart-line {
-          position: absolute;
-          left: 5%;
-          right: 5%;
-          top: 50%;
-          height: 180px;
-          transform: translateY(-50%);
-        }
-
-        .chart-line svg {
+        .chart-wrapper {
           width: 100%;
-          height: 100%;
-          overflow: visible;
+          min-height: 520px;
+          background: #07111f;
         }
 
-        .chart-message {
-          position: relative;
-          z-index: 2;
-          padding: 18px 22px;
-          border-radius: 15px;
-          background: rgba(7, 17, 31, 0.86);
-          border: 1px solid rgba(34, 211, 238, 0.12);
-          text-align: center;
-          backdrop-filter: blur(10px);
-        }
-
-        .chart-message strong {
-          display: block;
-          font-size: 13px;
-        }
-
-        .chart-message span {
-          display: block;
-          margin-top: 7px;
+        .chart-note {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+          padding: 12px 18px;
+          border-top: 1px solid rgba(148, 163, 184, 0.08);
           color: #64748b;
-          font-size: 10px;
+          font-size: 11px;
+        }
+
+        .chart-note strong {
+          color: #94a3b8;
+        }
+
+        .bottom-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          margin-top: 20px;
+        }
+
+        .info-card,
+        .alert-card {
+          border-radius: 18px;
+          padding: 20px;
+        }
+
+        .card-title {
+          margin: 0 0 16px;
+          font-size: 16px;
+          font-weight: 800;
         }
 
         .info-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
-          margin-top: 15px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
         }
 
-        .info-box {
-          padding: 15px;
-          border-radius: 15px;
-          background: rgba(255, 255, 255, 0.025);
-          border: 1px solid rgba(148, 163, 184, 0.07);
+        .info-item {
+          padding: 14px;
+          border-radius: 12px;
+          background: rgba(30, 41, 59, 0.48);
+          border: 1px solid rgba(148, 163, 184, 0.06);
         }
 
-        .info-box span {
+        .info-item span {
           display: block;
           color: #64748b;
-          font-size: 9px;
+          font-size: 11px;
+          margin-bottom: 7px;
         }
 
-        .info-box strong {
+        .info-item strong {
           display: block;
-          margin-top: 7px;
-          font-size: 12px;
+          font-size: 13px;
+          color: #dbeafe;
         }
 
-        .alerts {
-          margin-top: 20px;
-          padding: 20px;
-        }
-
-        .alert-box {
-          margin-top: 13px;
+        .alert-content {
           padding: 16px;
-          border-radius: 15px;
-          background: rgba(255, 255, 255, 0.025);
-          border: 1px solid rgba(148, 163, 184, 0.07);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
+          border-radius: 13px;
+          background: rgba(30, 41, 59, 0.48);
+          border: 1px solid rgba(148, 163, 184, 0.06);
         }
 
-        .alert-box strong {
-          display: block;
-          font-size: 12px;
-        }
-
-        .alert-box p {
-          margin: 5px 0 0;
-          color: #64748b;
-          font-size: 10px;
-          line-height: 1.8;
+        .alert-content p {
+          margin: 0;
+          color: #94a3b8;
+          font-size: 13px;
+          line-height: 1.9;
         }
 
         .alert-button {
-          border: 0;
-          border-radius: 10px;
-          padding: 9px 13px;
-          background: rgba(34, 211, 238, 0.08);
-          color: #22d3ee;
-          font-size: 10px;
+          width: 100%;
+          margin-top: 14px;
+          border: 1px solid rgba(34, 211, 238, 0.18);
+          border-radius: 11px;
+          background: rgba(8, 145, 178, 0.1);
+          color: #67e8f9;
+          padding: 11px;
+          cursor: pointer;
+          font-size: 12px;
           font-weight: 700;
-          white-space: nowrap;
+        }
+
+        .alert-button:hover {
+          background: rgba(8, 145, 178, 0.16);
         }
 
         @media (max-width: 1050px) {
-          .market-grid {
+          .layout {
             grid-template-columns: 1fr;
           }
 
@@ -477,368 +527,209 @@ export default function MarketPage() {
             order: 2;
           }
 
-          .chart-panel {
+          .chart-area {
             order: 1;
-          }
-
-          .market-list {
-            grid-template-columns: repeat(2, 1fr);
           }
         }
 
         @media (max-width: 700px) {
           .market-page {
-            padding: 14px;
-          }
-
-          .market-header {
-            align-items: flex-start;
-          }
-
-          .live-badge {
-            display: none;
-          }
-
-          .chart-panel,
-          .watchlist,
-          .alerts {
             padding: 15px;
-            border-radius: 20px;
           }
 
-          .chart-header {
+          .top-header {
             align-items: flex-start;
+            flex-direction: column;
           }
 
-          .selected-price strong {
-            font-size: 17px;
+          .selected-symbol {
+            align-items: flex-start;
+            flex-direction: column;
           }
 
-          .chart-placeholder {
-            min-height: 330px;
-          }
-
-          .info-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-
-        @media (max-width: 480px) {
-          .market-list {
-            grid-template-columns: 1fr;
-          }
-
-          .market-header {
-            display: block;
-          }
-
-          .header-title h1 {
-            font-size: 27px;
-          }
-
-          .chart-header {
-            display: block;
-          }
-
-          .selected-price {
-            margin-top: 13px;
+          .live-price {
             text-align: right;
           }
 
+          .bottom-grid {
+            grid-template-columns: 1fr;
+          }
+
           .info-grid {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
           }
 
-          .alert-box {
-            display: block;
-          }
-
-          .alert-button {
-            margin-top: 10px;
+          .chart-wrapper {
+            min-height: 430px;
           }
         }
       `}</style>
 
-      <div className="market-container">
-
-        {/* Header */}
-        <header className="market-header">
-          <div className="header-title">
-            <h1>بازار و نمودار</h1>
+      <div className="container">
+        <header className="top-header">
+          <div className="title-area">
+            <h1>بازارهای مالی</h1>
             <p>
-              وضعیت بازارهای مالی، قیمت‌ها و ابزارهای تحلیل Trading AI
+              مشاهده نمودار بازارها با داده‌های ارائه‌شده توسط TradingView
             </p>
           </div>
 
-          <div className="live-badge">
+          <div className="live-status">
             <span className="live-dot" />
-            وضعیت بازار
+            اتصال نمودار فعال
           </div>
         </header>
 
-        {/* Main Market Area */}
-        <section className="market-grid">
-
-          {/* Watchlist */}
-          <aside className="panel watchlist">
-
-            <div className="panel-heading">
+        <div className="layout">
+          <aside className="watchlist">
+            <div className="watchlist-header">
               <h2>بازارها</h2>
-              <span>Watchlist</span>
+              <span>{markets.length} نماد</span>
             </div>
 
-            <div className="market-list">
-
-              {markets.map((market) => (
-                <button
-                  key={market.name}
-                  type="button"
-                  className={`market-card ${
-                    selectedMarket === market.name ? "selected" : ""
-                  }`}
-                  onClick={() => setSelectedMarket(market.name)}
-                >
-                  <div className="market-top">
-
-                    <div className="market-name">
-
-                      <div className="market-icon">
-                        {market.icon}
-                      </div>
-
-                      <div>
-                        <div className="market-title">
-                          {market.title}
-                        </div>
-
-                        <div className="market-symbol">
-                          {market.name}
-                        </div>
-                      </div>
-
+            {markets.map((market) => (
+              <button
+                key={market.id}
+                type="button"
+                className={`market-item ${
+                  selectedMarket.id === market.id ? "active" : ""
+                }`}
+                onClick={() => setSelectedMarket(market)}
+              >
+                <div className="market-row">
+                  <div className="market-name">
+                    <div className="market-icon">
+                      {market.id === "gold"
+                        ? "XAU"
+                        : market.id === "btc"
+                          ? "BTC"
+                          : market.id === "eth"
+                            ? "ETH"
+                            : "EUR"}
                     </div>
 
-                    <span
-                      className={`change ${
-                        market.positive ? "positive" : "negative"
-                      }`}
-                    >
-                      {market.change}
-                    </span>
-
+                    <div className="market-text">
+                      <strong>{market.title}</strong>
+                      <span>{market.name}</span>
+                    </div>
                   </div>
 
-                  <div className="market-price">
-                    {market.price}
-                  </div>
-
-                </button>
-              ))}
-
-            </div>
-
+                  <span className="live-pill">LIVE</span>
+                </div>
+              </button>
+            ))}
           </aside>
 
-          {/* Chart */}
-          <section className="panel chart-panel">
+          <section className="chart-area">
+            <div className="chart-card">
+              <div className="chart-header">
+                <div className="selected-symbol">
+                  <div className="symbol-title">
+                    <div className="symbol-icon">
+                      {selectedMarket.id === "gold"
+                        ? "XAU"
+                        : selectedMarket.id === "btc"
+                          ? "BTC"
+                          : selectedMarket.id === "eth"
+                            ? "ETH"
+                            : "EUR"}
+                    </div>
 
-            <div className="chart-header">
-
-              <div className="selected-info">
-
-                <div className="selected-icon">
-                  {selected.icon}
-                </div>
-
-                <div>
-                  <div className="selected-title">
-                    {selected.title}
+                    <div>
+                      <h2>{selectedMarket.title}</h2>
+                      <p>{selectedMarket.name}</p>
+                    </div>
                   </div>
 
-                  <div className="selected-symbol">
-                    {selected.name}
+                  <div className="live-price">
+                    <strong>LIVE</strong>
+                    <span>قیمت زنده داخل نمودار</span>
                   </div>
                 </div>
 
+                <div className="timeframes">
+                  {intervals.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className={`timeframe ${
+                        selectedInterval === item.value ? "active" : ""
+                      }`}
+                      onClick={() => setSelectedInterval(item.value)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="selected-price">
-                <strong>{selected.price}</strong>
-                <span>{selected.change} امروز</span>
+              <div className="chart-wrapper">
+                <TradingViewChart
+                  symbol={selectedMarket.tradingViewSymbol}
+                  interval={selectedInterval}
+                />
               </div>
 
-            </div>
-
-            {/* Timeframes */}
-            <div className="timeframes">
-
-              <button className="timeframe">
-                1m
-              </button>
-
-              <button className="timeframe active">
-                5m
-              </button>
-
-              <button className="timeframe">
-                15m
-              </button>
-
-              <button className="timeframe">
-                1H
-              </button>
-
-              <button className="timeframe">
-                4H
-              </button>
-
-              <button className="timeframe">
-                1D
-              </button>
-
-            </div>
-
-            {/* Chart Placeholder */}
-            <div className="chart-placeholder">
-
-              <div className="chart-line">
-
-                <svg
-                  viewBox="0 0 1000 300"
-                  preserveAspectRatio="none"
-                >
-                  <polyline
-                    points="
-                      0,220
-                      70,205
-                      130,225
-                      190,170
-                      245,185
-                      310,135
-                      370,155
-                      430,105
-                      500,125
-                      555,75
-                      620,115
-                      680,90
-                      735,135
-                      790,80
-                      850,100
-                      910,55
-                      1000,25
-                    "
-                    fill="none"
-                    stroke="#22d3ee"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  <polyline
-                    points="
-                      0,245
-                      70,230
-                      130,250
-                      190,195
-                      245,210
-                      310,160
-                      370,180
-                      430,130
-                      500,150
-                      555,100
-                      620,140
-                      680,115
-                      735,160
-                      790,105
-                      850,125
-                      910,80
-                      1000,50
-                    "
-                    fill="none"
-                    stroke="rgba(34,211,238,0.15)"
-                    strokeWidth="20"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-
-              </div>
-
-              <div className="chart-message">
-                <strong>نمودار بازار</strong>
+              <div className="chart-note">
                 <span>
-                  اتصال داده زنده در مرحله بعد فعال می‌شود
+                  منبع نمودار: <strong>TradingView</strong>
+                </span>
+
+                <span>
+                  نماد: <strong>{selectedMarket.symbol}</strong>
                 </span>
               </div>
-
             </div>
 
-            {/* Market Information */}
-            <div className="info-grid">
+            <div className="bottom-grid">
+              <div className="info-card">
+                <h3 className="card-title">اطلاعات بازار</h3>
 
-              <div className="info-box">
-                <span>قیمت</span>
-                <strong>{selected.price}</strong>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span>نماد انتخاب‌شده</span>
+                    <strong>{selectedMarket.title}</strong>
+                  </div>
+
+                  <div className="info-item">
+                    <span>منبع داده نمودار</span>
+                    <strong>TradingView</strong>
+                  </div>
+
+                  <div className="info-item">
+                    <span>بازه زمانی</span>
+                    <strong>
+                      {intervals.find(
+                        (item) => item.value === selectedInterval
+                      )?.label ?? "15د"}
+                    </strong>
+                  </div>
+
+                  <div className="info-item">
+                    <span>وضعیت</span>
+                    <strong>نمودار فعال</strong>
+                  </div>
+                </div>
               </div>
 
-              <div className="info-box">
-                <span>تغییر روزانه</span>
-                <strong
-                  className={
-                    selected.positive ? "positive" : "negative"
-                  }
-                >
-                  {selected.change}
-                </strong>
-              </div>
+              <div className="alert-card">
+                <h3 className="card-title">هشدار قیمت</h3>
 
-              <div className="info-box">
-                <span>وضعیت</span>
-                <strong className="positive">
-                  بازار فعال
-                </strong>
-              </div>
+                <div className="alert-content">
+                  <p>
+                    سیستم هشدار قیمت در حال آماده‌سازی است. در مرحله بعد
+                    می‌توانیم هشدارهای شخصی برای طلا، بیت‌کوین و سایر نمادها
+                    اضافه کنیم.
+                  </p>
 
-              <div className="info-box">
-                <span>نماد</span>
-                <strong>{selected.name}</strong>
+                  <button type="button" className="alert-button">
+                    افزودن هشدار — به‌زودی
+                  </button>
+                </div>
               </div>
-
             </div>
-
           </section>
-
-        </section>
-
-        {/* Price Alerts */}
-        <section className="panel alerts">
-
-          <div className="panel-heading">
-            <h2>🔔 هشدار قیمت</h2>
-            <span>Price Alerts</span>
-          </div>
-
-          <div className="alert-box">
-
-            <div>
-              <strong>
-                تنظیم هشدار برای بازار
-              </strong>
-
-              <p>
-                در مرحله بعد می‌توانید برای طلا، بیت‌کوین،
-                اتریوم و سایر نمادها هشدار قیمت تنظیم کنید.
-              </p>
-            </div>
-
-            <button className="alert-button" type="button">
-              به‌زودی فعال می‌شود
-            </button>
-
-          </div>
-
-        </section>
-
+        </div>
       </div>
     </main>
   );
