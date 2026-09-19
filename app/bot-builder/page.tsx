@@ -92,7 +92,7 @@ type FormState = {
 };
 
 const defaultForm: FormState = {
-  botName: "ربات طلای هوشمند",
+  botName: "Gold AI Bot",
   market: "XAU/USD",
   strategy: "تحلیل چندتأییدی",
 
@@ -109,7 +109,7 @@ const defaultForm: FormState = {
   maxStopLosses: "3",
   maxOpenTrades: "1",
 
-  maxSpread: "0",
+  maxSpread: "30",
   cooldown: "5",
 
   trailingStop: false,
@@ -169,21 +169,22 @@ const strategyOptions = [
 function numberOrDefault(
   value: string,
   fallback: number
-): number {
-  const parsed = Number(value);
+) {
+  const number = Number(value);
 
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(number)
+    ? number
+    : fallback;
 }
 
 function botToForm(bot: Bot): FormState {
   const market =
     marketOptions.find(
       (item) => item.symbol === bot.symbol
-    )?.value ??
-    bot.symbol;
+    )?.value ?? "XAU/USD";
 
   return {
-    botName: bot.name || "ربات جدید",
+    botName: bot.name || "Gold AI Bot",
     market,
     strategy:
       bot.category === "TRADING"
@@ -202,61 +203,98 @@ function botToForm(bot: Bot): FormState {
     stopLoss: String(bot.stopLoss ?? 4),
     riskReward: String(bot.riskReward ?? 1.25),
 
-    dailyProfit: String(bot.dailyProfitStop ?? 20),
-    dailyLoss: String(bot.dailyLossLimit ?? 12),
-    maxStopLosses: String(bot.maxDailyStopLosses ?? 3),
-    maxOpenTrades: String(bot.maxOpenTrades ?? 1),
+    dailyProfit: String(
+      bot.dailyProfitStop ?? 20
+    ),
 
-    maxSpread: String(bot.maxSpread ?? 0),
-    cooldown: String(bot.cooldownMinutes ?? 5),
+    dailyLoss: String(
+      bot.dailyLossLimit ?? 12
+    ),
 
-    trailingStop: bot.trailingStop ?? false,
+    maxStopLosses: String(
+      bot.maxDailyStopLosses ?? 3
+    ),
+
+    maxOpenTrades: String(
+      bot.maxOpenTrades ?? 1
+    ),
+
+    maxSpread: String(
+      bot.maxSpread ?? 30
+    ),
+
+    cooldown: String(
+      bot.cooldownMinutes ?? 5
+    ),
+
+    trailingStop:
+      bot.trailingStop ?? false,
+
     trailingStopDistance: String(
       bot.trailingStopDistance ?? 2
     ),
 
-    breakEven: bot.breakEven ?? false,
+    breakEven:
+      bot.breakEven ?? false,
+
     breakEvenTrigger: String(
       bot.breakEvenTrigger ?? 2
     ),
 
-    buyEnabled: bot.buyEnabled ?? true,
-    sellEnabled: bot.sellEnabled ?? true,
+    buyEnabled:
+      bot.buyEnabled ?? true,
 
-    sessionFilter: bot.sessionFilter ?? true,
-    newsFilter: bot.newsFilter ?? true,
-    telegramEnabled: bot.telegramEnabled ?? false,
+    sellEnabled:
+      bot.sellEnabled ?? true,
+
+    sessionFilter:
+      bot.sessionFilter ?? true,
+
+    newsFilter:
+      bot.newsFilter ?? true,
+
+    telegramEnabled:
+      bot.telegramEnabled ?? false,
 
     signalThreshold: String(
       bot.signalThreshold ?? 80
     ),
+
     minConfirmations: String(
       bot.minConfirmations ?? 5
     ),
 
-    botEnabled: bot.isActive ?? false,
+    botEnabled:
+      bot.isActive ?? false,
   };
 }
 
 export default function BotBuilderPage() {
-  const [form, setForm] = useState<FormState>(
-    defaultForm
-  );
+  const [form, setForm] =
+    useState<FormState>(defaultForm);
 
   const [bots, setBots] = useState<Bot[]>([]);
+
   const [selectedBotId, setSelectedBotId] =
     useState<string | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [saving, setSaving] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
 
   const selectedMarket = useMemo(() => {
     return (
       marketOptions.find(
-        (item) => item.value === form.market
+        (item) =>
+          item.value === form.market
       ) ?? marketOptions[0]
     );
   }, [form.market]);
@@ -274,48 +312,52 @@ export default function BotBuilderPage() {
     setError("");
   }
 
-  function resetForm() {
-    setForm(defaultForm);
-    setSelectedBotId(null);
-    setMessage("");
-    setError("");
-  }
-
   async function loadBots() {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch("/api/bots", {
-        method: "GET",
-        cache: "no-store",
-      });
+      const response = await fetch(
+        "/api/bots",
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data?.error || "خطا در دریافت ربات‌ها."
+          data?.error ||
+            "خطا در دریافت ربات‌ها."
         );
       }
 
-      const loadedBots: Bot[] = data?.bots ?? [];
+      const loadedBots: Bot[] =
+        data?.bots ?? [];
 
       setBots(loadedBots);
 
       if (loadedBots.length > 0) {
-        const firstBot = loadedBots[0];
+        const firstBot =
+          loadedBots[0];
 
-        setSelectedBotId(firstBot.id);
-        setForm(botToForm(firstBot));
+        setSelectedBotId(
+          firstBot.id
+        );
+
+        setForm(
+          botToForm(firstBot)
+        );
       }
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "خطا در دریافت اطلاعات ربات‌ها."
+        error instanceof Error
+          ? error.message
+          : "خطا در دریافت ربات‌ها."
       );
     } finally {
       setLoading(false);
@@ -336,6 +378,7 @@ export default function BotBuilderPage() {
 
   function createNewBot() {
     setSelectedBotId(null);
+
     setForm({
       ...defaultForm,
       botName: `ربات جدید ${bots.length + 1}`,
@@ -352,7 +395,10 @@ export default function BotBuilderPage() {
       setError("");
 
       if (!form.botName.trim()) {
-        setError("نام ربات را وارد کنید.");
+        setError(
+          "لطفاً نام ربات را وارد کنید."
+        );
+
         setSaving(false);
         return;
       }
@@ -364,45 +410,53 @@ export default function BotBuilderPage() {
         category: "TRADING",
 
         description:
-          "ربات معامله‌گر با تنظیمات مدیریت ریسک و فیلترهای معاملاتی.",
+          "ربات معامله‌گر با مدیریت ریسک و فیلترهای معاملاتی.",
 
         symbol: selectedMarket.symbol,
         timeframe: "15m",
-        marketType: selectedMarket.type,
+        marketType:
+          selectedMarket.type,
 
-        isActive: form.botEnabled,
+        isActive:
+          form.botEnabled,
 
         lotMode:
           form.lotMode === "risk"
             ? "RISK_PERCENT"
             : "FIXED",
 
-        lotSize: numberOrDefault(
-          form.lotSize,
-          0.01
-        ),
+        lotSize:
+          numberOrDefault(
+            form.lotSize,
+            0.01
+          ),
 
-        riskPercent: numberOrDefault(
-          form.riskPercent,
-          1
-        ),
+        riskPercent:
+          numberOrDefault(
+            form.riskPercent,
+            1
+          ),
 
-        takeProfit: numberOrDefault(
-          form.takeProfit,
-          5
-        ),
+        takeProfit:
+          numberOrDefault(
+            form.takeProfit,
+            5
+          ),
 
-        stopLoss: numberOrDefault(
-          form.stopLoss,
-          4
-        ),
+        stopLoss:
+          numberOrDefault(
+            form.stopLoss,
+            4
+          ),
 
-        riskReward: numberOrDefault(
-          form.riskReward,
-          1.25
-        ),
+        riskReward:
+          numberOrDefault(
+            form.riskReward,
+            1.25
+          ),
 
-        trailingStop: form.trailingStop,
+        trailingStop:
+          form.trailingStop,
 
         trailingStopDistance:
           numberOrDefault(
@@ -410,7 +464,8 @@ export default function BotBuilderPage() {
             2
           ),
 
-        breakEven: form.breakEven,
+        breakEven:
+          form.breakEven,
 
         breakEvenTrigger:
           numberOrDefault(
@@ -452,13 +507,16 @@ export default function BotBuilderPage() {
             )
           ),
 
-        buyEnabled: form.buyEnabled,
-        sellEnabled: form.sellEnabled,
+        buyEnabled:
+          form.buyEnabled,
+
+        sellEnabled:
+          form.sellEnabled,
 
         maxSpread:
           numberOrDefault(
             form.maxSpread,
-            0
+            30
           ),
 
         cooldownMinutes:
@@ -472,8 +530,11 @@ export default function BotBuilderPage() {
             )
           ),
 
-        sessionFilter: form.sessionFilter,
-        newsFilter: form.newsFilter,
+        sessionFilter:
+          form.sessionFilter,
+
+        newsFilter:
+          form.newsFilter,
 
         signalThreshold:
           Math.min(
@@ -504,13 +565,13 @@ export default function BotBuilderPage() {
           form.telegramEnabled,
       };
 
-      const isEditing =
+      const editing =
         selectedBotId !== null;
 
       const response = await fetch(
         "/api/bots",
         {
-          method: isEditing
+          method: editing
             ? "PUT"
             : "POST",
 
@@ -520,7 +581,7 @@ export default function BotBuilderPage() {
           },
 
           body: JSON.stringify(
-            isEditing
+            editing
               ? {
                   id: selectedBotId,
                   ...payload,
@@ -530,12 +591,13 @@ export default function BotBuilderPage() {
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
           data?.error ||
-            "ذخیره تنظیمات انجام نشد."
+            "ذخیره انجام نشد."
         );
       }
 
@@ -544,37 +606,49 @@ export default function BotBuilderPage() {
 
       if (savedBot) {
         setBots((current) => {
-          const exists = current.some(
-            (bot) =>
-              bot.id === savedBot.id
-          );
+          const exists =
+            current.some(
+              (bot) =>
+                bot.id ===
+                savedBot.id
+            );
 
           if (exists) {
-            return current.map((bot) =>
-              bot.id === savedBot.id
-                ? savedBot
-                : bot
+            return current.map(
+              (bot) =>
+                bot.id ===
+                savedBot.id
+                  ? savedBot
+                  : bot
             );
           }
 
-          return [savedBot, ...current];
+          return [
+            savedBot,
+            ...current,
+          ];
         });
 
-        setSelectedBotId(savedBot.id);
-        setForm(botToForm(savedBot));
+        setSelectedBotId(
+          savedBot.id
+        );
+
+        setForm(
+          botToForm(savedBot)
+        );
       }
 
       setMessage(
-        isEditing
+        editing
           ? "تنظیمات ربات با موفقیت ذخیره شد."
           : "ربات جدید با موفقیت ساخته شد."
       );
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
 
       setError(
-        err instanceof Error
-          ? err.message
+        error instanceof Error
+          ? error.message
           : "خطا در ذخیره تنظیمات."
       );
     } finally {
@@ -585,108 +659,180 @@ export default function BotBuilderPage() {
   return (
     <main
       dir="rtl"
-      className="min-h-screen bg-slate-950 text-white"
+      className="min-h-screen bg-[#020817] text-white"
     >
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Header */}
-        <section className="mb-6 overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-5 shadow-2xl sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto max-w-[1450px] px-3 py-4 sm:px-5 lg:px-8 lg:py-7">
+
+        {/* TOP HEADER */}
+        <header className="mb-6 flex flex-col gap-4 rounded-[26px] border border-cyan-500/20 bg-[#061426]/95 p-4 shadow-[0_0_40px_rgba(0,180,255,0.06)] sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+
+          <div className="flex items-center gap-4">
+
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-2xl shadow-[0_0_25px_rgba(34,211,238,0.12)]">
+              🤖
+            </div>
+
             <div>
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300">
-                <span className="h-2 w-2 rounded-full bg-cyan-400" />
-                مدیریت ربات معامله‌گر
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-black tracking-tight sm:text-2xl">
+                  Trading AI
+                </h1>
+
+                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
+                  آنلاین
+                </span>
               </div>
 
-              <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-                ساخت و تنظیم ربات
-              </h1>
-
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-400">
-                تنظیمات ربات را کنترل کن، ذخیره کن و
-                بعداً همان تنظیمات را بدون از دست رفتن
-                اطلاعات ادامه بده.
+              <p className="mt-1 text-xs text-slate-500">
+                Smart Trading • Better Results
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={createNewBot}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-bold text-slate-200 transition hover:border-cyan-500/40 hover:bg-slate-700"
-              >
-                + ربات جدید
-              </button>
-
-              <button
-                type="button"
-                onClick={saveSettings}
-                disabled={saving}
-                className="rounded-xl bg-cyan-500 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving
-                  ? "در حال ذخیره..."
-                  : "ذخیره تنظیمات"}
-              </button>
-            </div>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+              سیستم آماده است
+            </div>
+
+            <button
+              type="button"
+              onClick={createNewBot}
+              className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-black text-slate-300 transition hover:border-cyan-500/40 hover:text-cyan-300"
+            >
+              + ربات جدید
+            </button>
+
+            <button
+              type="button"
+              onClick={saveSettings}
+              disabled={saving}
+              className="rounded-xl bg-gradient-to-r from-cyan-400 to-cyan-500 px-5 py-2.5 text-xs font-black text-slate-950 shadow-[0_0_25px_rgba(34,211,238,0.18)] transition hover:brightness-110 disabled:opacity-50"
+            >
+              {saving
+                ? "در حال ذخیره..."
+                : "ذخیره تنظیمات"}
+            </button>
+
+          </div>
+        </header>
+
+        {/* TITLE */}
+        <section className="mb-6">
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-cyan-400">
+                <span className="text-xl">
+                  ⚙️
+                </span>
+
+                <span className="text-xs font-black">
+                  BOT MANAGEMENT
+                </span>
+              </div>
+
+              <h2 className="text-3xl font-black tracking-tight sm:text-4xl">
+                تنظیمات و ساخت ربات
+              </h2>
+
+              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">
+                ربات معاملاتی خود را با تنظیمات دقیق،
+                مدیریت ریسک و کنترل‌های حرفه‌ای مدیریت کنید.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+              <div className="text-[10px] text-slate-500">
+                وضعیت فعلی
+              </div>
+
+              <div className="mt-1 flex items-center gap-2 text-sm font-black">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    form.botEnabled
+                      ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"
+                      : "bg-slate-600"
+                  }`}
+                />
+
+                {form.botEnabled
+                  ? "ربات فعال"
+                  : "ربات خاموش"}
+              </div>
+            </div>
+
+          </div>
+
         </section>
 
-        {/* Messages */}
+        {/* MESSAGE */}
         {message && (
-          <div className="mb-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-300">
+          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm font-bold text-emerald-300">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15">
+              ✓
+            </span>
+
             {message}
           </div>
         )}
 
         {error && (
-          <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-bold leading-7 text-red-300">
+          <div className="mb-5 rounded-2xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm font-bold leading-7 text-red-300">
             {error}
           </div>
         )}
 
-        {/* Bots */}
-        <section className="mb-6 rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl sm:p-5">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {/* MY BOTS */}
+        <section className="mb-6 rounded-[26px] border border-slate-800 bg-[#061426]/90 p-4 shadow-[0_15px_50px_rgba(0,0,0,0.2)] sm:p-5">
+
+          <div className="mb-4 flex items-center justify-between gap-3">
+
             <div>
-              <h2 className="text-lg font-black">
+              <h3 className="text-base font-black">
                 ربات‌های من
-              </h2>
+              </h3>
 
               <p className="mt-1 text-xs text-slate-500">
-                برای ویرایش، یکی از ربات‌ها را انتخاب
-                کن.
+                ربات موردنظر را برای ویرایش انتخاب کنید.
               </p>
             </div>
 
-            <div className="text-xs text-slate-500">
+            <div className="rounded-full border border-slate-800 bg-slate-950 px-3 py-1.5 text-[10px] text-slate-500">
               {loading
                 ? "در حال دریافت..."
                 : `${bots.length} ربات`}
             </div>
+
           </div>
 
           {loading ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 text-center text-sm text-slate-500">
-              در حال دریافت ربات‌ها از دیتابیس...
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 text-center text-xs text-slate-500">
+              در حال دریافت اطلاعات...
             </div>
           ) : bots.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/50 p-6 text-center">
-              <div className="text-3xl">🤖</div>
+            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-7 text-center">
+              <div className="text-3xl">
+                🤖
+              </div>
 
-              <p className="mt-3 font-bold text-slate-300">
+              <p className="mt-3 text-sm font-black text-slate-300">
                 هنوز رباتی ساخته نشده است.
               </p>
 
               <p className="mt-1 text-xs text-slate-500">
-                تنظیمات را وارد کن و روی ذخیره تنظیمات
-                بزن.
+                تنظیمات را وارد کنید و ربات را ذخیره کنید.
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {bots.map((bot) => {
                 const selected =
-                  bot.id === selectedBotId;
+                  bot.id ===
+                  selectedBotId;
 
                 return (
                   <button
@@ -695,773 +841,694 @@ export default function BotBuilderPage() {
                     onClick={() =>
                       selectBot(bot)
                     }
-                    className={`text-right rounded-2xl border p-4 transition ${
+                    className={`rounded-2xl border p-4 text-right transition ${
                       selected
-                        ? "border-cyan-500/50 bg-cyan-500/10"
-                        : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
+                        ? "border-cyan-400/50 bg-cyan-400/[0.07] shadow-[0_0_25px_rgba(34,211,238,0.07)]"
+                        : "border-slate-800 bg-slate-950/50 hover:border-slate-700"
                     }`}
                   >
+
                     <div className="flex items-start justify-between gap-3">
+
                       <div>
-                        <div className="font-black text-slate-100">
+                        <div className="text-sm font-black text-slate-100">
                           {bot.name}
                         </div>
 
-                        <div className="mt-1 text-xs text-slate-500">
-                          {bot.symbol} ·{" "}
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          {bot.symbol} •{" "}
                           {bot.timeframe}
                         </div>
                       </div>
 
                       <span
-                        className={`rounded-full px-2 py-1 text-[10px] font-black ${
+                        className={`rounded-full px-2 py-1 text-[9px] font-black ${
                           bot.isActive
-                            ? "bg-emerald-500/10 text-emerald-300"
-                            : "bg-slate-800 text-slate-500"
+                            ? "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                            : "border border-slate-700 bg-slate-800 text-slate-500"
                         }`}
                       >
                         {bot.isActive
                           ? "فعال"
                           : "خاموش"}
                       </span>
+
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-xl bg-slate-900 p-2">
-                        <div className="text-slate-500">
-                          TP
-                        </div>
-                        <div className="mt-1 font-bold text-emerald-300">
-                          ${bot.takeProfit ?? 0}
-                        </div>
-                      </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
 
-                      <div className="rounded-xl bg-slate-900 p-2">
-                        <div className="text-slate-500">
-                          SL
-                        </div>
-                        <div className="mt-1 font-bold text-red-300">
-                          ${bot.stopLoss ?? 0}
-                        </div>
-                      </div>
+                      <MiniStat
+                        label="TP"
+                        value={`$${bot.takeProfit ?? 0}`}
+                        positive
+                      />
+
+                      <MiniStat
+                        label="SL"
+                        value={`$${bot.stopLoss ?? 0}`}
+                        danger
+                      />
+
                     </div>
+
                   </button>
                 );
               })}
             </div>
           )}
+
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-          {/* Main settings */}
-          <div className="space-y-6">
-            {/* Basic */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="اطلاعات اصلی"
-                description="نام، بازار و استراتژی اصلی ربات."
+        {/* MAIN CONTENT */}
+        <div className="space-y-6">
+
+          {/* 01 BASIC */}
+          <SettingsCard
+            number="01"
+            icon="⚙️"
+            title="مشخصات اصلی ربات"
+            description="نام، بازار و استراتژی معاملاتی ربات را مشخص کنید."
+          >
+
+            <div className="grid gap-4 md:grid-cols-3">
+
+              <InputField
+                label="نام ربات"
+                value={form.botName}
+                onChange={(value) =>
+                  updateField(
+                    "botName",
+                    value
+                  )
+                }
+                placeholder="Gold AI Bot"
               />
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="نام ربات">
-                  <input
-                    value={form.botName}
-                    onChange={(event) =>
-                      updateField(
-                        "botName",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                    placeholder="مثلاً Gold AI Bot"
-                  />
-                </Field>
-
-                <Field label="بازار">
-                  <select
-                    value={form.market}
-                    onChange={(event) =>
-                      updateField(
-                        "market",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  >
-                    {marketOptions.map(
-                      (market) => (
-                        <option
-                          key={market.value}
-                          value={market.value}
-                        >
-                          {market.label}
-                        </option>
-                      )
-                    )}
-                  </select>
-                </Field>
-
-                <Field label="استراتژی">
-                  <select
-                    value={form.strategy}
-                    onChange={(event) =>
-                      updateField(
-                        "strategy",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  >
-                    {strategyOptions.map(
-                      (strategy) => (
-                        <option
-                          key={strategy}
-                          value={strategy}
-                        >
-                          {strategy}
-                        </option>
-                      )
-                    )}
-                  </select>
-                </Field>
-
-                <Field label="تایم‌فریم">
-                  <div className="input flex items-center justify-between">
-                    <span>15 دقیقه</span>
-                    <span className="text-xs text-cyan-400">
-                      15m
-                    </span>
-                  </div>
-                </Field>
-              </div>
-            </section>
-
-            {/* Risk */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="مدیریت حجم و ریسک"
-                description="حجم معامله و درصد ریسک هر معامله."
+              <SelectField
+                label="بازار"
+                value={form.market}
+                onChange={(value) =>
+                  updateField(
+                    "market",
+                    value
+                  )
+                }
+                options={marketOptions.map(
+                  (item) => ({
+                    label: item.label,
+                    value: item.value,
+                  })
+                )}
               />
 
-              <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-950 p-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateField(
-                      "lotMode",
+              <SelectField
+                label="استراتژی"
+                value={form.strategy}
+                onChange={(value) =>
+                  updateField(
+                    "strategy",
+                    value
+                  )
+                }
+                options={strategyOptions.map(
+                  (item) => ({
+                    label: item,
+                    value: item,
+                  })
+                )}
+              />
+
+            </div>
+
+          </SettingsCard>
+
+          {/* 02 RISK */}
+          <SettingsCard
+            number="02"
+            icon="🛡️"
+            title="حجم معامله و مدیریت ریسک"
+            description="حجم معاملات و میزان ریسک را کنترل کنید."
+          >
+
+            <div className="grid gap-4 lg:grid-cols-3">
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+
+                <div className="mb-3 text-xs font-bold text-slate-400">
+                  روش تعیین حجم
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-900 p-1.5">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateField(
+                        "lotMode",
+                        "fixed"
+                      )
+                    }
+                    className={`rounded-lg px-3 py-2.5 text-xs font-black transition ${
+                      form.lotMode ===
                       "fixed"
-                    )
-                  }
-                  className={`rounded-xl px-4 py-3 text-sm font-black transition ${
-                    form.lotMode === "fixed"
-                      ? "bg-cyan-500 text-slate-950"
-                      : "text-slate-500 hover:bg-slate-900"
-                  }`}
-                >
-                  حجم ثابت
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateField(
-                      "lotMode",
-                      "risk"
-                    )
-                  }
-                  className={`rounded-xl px-4 py-3 text-sm font-black transition ${
-                    form.lotMode === "risk"
-                      ? "bg-cyan-500 text-slate-950"
-                      : "text-slate-500 hover:bg-slate-900"
-                  }`}
-                >
-                  درصد ریسک
-                </button>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Lot Size">
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={form.lotSize}
-                    onChange={(event) =>
-                      updateField(
-                        "lotSize",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="درصد ریسک">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.riskPercent}
-                    onChange={(event) =>
-                      updateField(
-                        "riskPercent",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-              </div>
-            </section>
-
-            {/* TP SL */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="حد سود و حد ضرر"
-                description="مقادیر مدیریت معامله برای هر پوزیشن."
-              />
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Take Profit">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.takeProfit}
-                    onChange={(event) =>
-                      updateField(
-                        "takeProfit",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="Stop Loss">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.stopLoss}
-                    onChange={(event) =>
-                      updateField(
-                        "stopLoss",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="Risk / Reward">
-                  <input
-                    type="number"
-                    min="0.1"
-                    step="0.05"
-                    value={form.riskReward}
-                    onChange={(event) =>
-                      updateField(
-                        "riskReward",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-              </div>
-            </section>
-
-            {/* Daily limits */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="محدودیت‌های روزانه"
-                description="برای جلوگیری از ادامه معامله در شرایط نامناسب."
-              />
-
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="توقف سود روزانه">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.dailyProfit}
-                    onChange={(event) =>
-                      updateField(
-                        "dailyProfit",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="حد ضرر روزانه">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.dailyLoss}
-                    onChange={(event) =>
-                      updateField(
-                        "dailyLoss",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="حداکثر استاپ روزانه">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.maxStopLosses}
-                    onChange={(event) =>
-                      updateField(
-                        "maxStopLosses",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="حداکثر معاملات باز">
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={form.maxOpenTrades}
-                    onChange={(event) =>
-                      updateField(
-                        "maxOpenTrades",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-              </div>
-            </section>
-
-            {/* Trade direction */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="جهت معاملات"
-                description="مشخص کن ربات اجازه چه نوع معاملاتی داشته باشد."
-              />
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <ToggleCard
-                  title="Buy"
-                  description="اجازه معاملات خرید"
-                  enabled={form.buyEnabled}
-                  onClick={() =>
-                    updateField(
-                      "buyEnabled",
-                      !form.buyEnabled
-                    )
-                  }
-                />
-
-                <ToggleCard
-                  title="Sell"
-                  description="اجازه معاملات فروش"
-                  enabled={form.sellEnabled}
-                  onClick={() =>
-                    updateField(
-                      "sellEnabled",
-                      !form.sellEnabled
-                    )
-                  }
-                />
-              </div>
-            </section>
-
-            {/* Advanced */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="تنظیمات پیشرفته"
-                description="فیلترها و کنترل‌های تکمیلی."
-              />
-
-              <div className="grid gap-3">
-                <ToggleCard
-                  title="Trailing Stop"
-                  description="جابجایی حد ضرر در جهت معامله"
-                  enabled={form.trailingStop}
-                  onClick={() =>
-                    updateField(
-                      "trailingStop",
-                      !form.trailingStop
-                    )
-                  }
-                />
-
-                {form.trailingStop && (
-                  <Field label="فاصله Trailing Stop">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={
-                        form.trailingStopDistance
-                      }
-                      onChange={(event) =>
-                        updateField(
-                          "trailingStopDistance",
-                          event.target.value
-                        )
-                      }
-                      className="input"
-                    />
-                  </Field>
-                )}
-
-                <ToggleCard
-                  title="Break Even"
-                  description="انتقال حد ضرر به نقطه ورود"
-                  enabled={form.breakEven}
-                  onClick={() =>
-                    updateField(
-                      "breakEven",
-                      !form.breakEven
-                    )
-                  }
-                />
-
-                {form.breakEven && (
-                  <Field label="تریگر Break Even">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={
-                        form.breakEvenTrigger
-                      }
-                      onChange={(event) =>
-                        updateField(
-                          "breakEvenTrigger",
-                          event.target.value
-                        )
-                      }
-                      className="input"
-                    />
-                  </Field>
-                )}
-
-                <ToggleCard
-                  title="Session Filter"
-                  description="فیلتر ساعات معاملاتی"
-                  enabled={form.sessionFilter}
-                  onClick={() =>
-                    updateField(
-                      "sessionFilter",
-                      !form.sessionFilter
-                    )
-                  }
-                />
-
-                <ToggleCard
-                  title="News Filter"
-                  description="فیلتر اخبار مهم بازار"
-                  enabled={form.newsFilter}
-                  onClick={() =>
-                    updateField(
-                      "newsFilter",
-                      !form.newsFilter
-                    )
-                  }
-                />
-
-                <ToggleCard
-                  title="Telegram"
-                  description="ارسال رویدادهای ربات به تلگرام"
-                  enabled={form.telegramEnabled}
-                  onClick={() =>
-                    updateField(
-                      "telegramEnabled",
-                      !form.telegramEnabled
-                    )
-                  }
-                />
-              </div>
-            </section>
-
-            {/* Filters */}
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
-              <SectionTitle
-                title="فیلترهای ورود"
-                description="حداقل امتیاز و تعداد تأییدیه‌های لازم."
-              />
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="حداقل امتیاز سیگنال">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={
-                      form.signalThreshold
-                    }
-                    onChange={(event) =>
-                      updateField(
-                        "signalThreshold",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="حداقل تعداد تأییدیه">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={
-                      form.minConfirmations
-                    }
-                    onChange={(event) =>
-                      updateField(
-                        "minConfirmations",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="حداکثر Spread">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.maxSpread}
-                    onChange={(event) =>
-                      updateField(
-                        "maxSpread",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-
-                <Field label="Cooldown بعد از معامله">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.cooldown}
-                    onChange={(event) =>
-                      updateField(
-                        "cooldown",
-                        event.target.value
-                      )
-                    }
-                    className="input"
-                  />
-                </Field>
-              </div>
-            </section>
-
-            {/* Save */}
-            <section className="rounded-3xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-slate-900 to-slate-950 p-5 shadow-xl sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-black">
-                    آماده ذخیره تنظیمات؟
-                  </h2>
-
-                  <p className="mt-1 text-xs leading-6 text-slate-400">
-                    تنظیمات فعلی در دیتابیس ذخیره می‌شوند
-                    و بعد از Refresh باقی خواهند ماند.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={saveSettings}
-                  disabled={saving}
-                  className="rounded-2xl bg-cyan-500 px-6 py-3 font-black text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {saving
-                    ? "در حال ذخیره..."
-                    : selectedBotId
-                    ? "ذخیره تغییرات"
-                    : "ساخت و ذخیره ربات"}
-                </button>
-              </div>
-            </section>
-          </div>
-
-          {/* Sidebar */}
-          <aside className="space-y-6">
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl">
-              <h2 className="font-black">
-                خلاصه تنظیمات
-              </h2>
-
-              <div className="mt-4 space-y-3">
-                <SummaryRow
-                  label="بازار"
-                  value={
-                    selectedMarket.symbol
-                  }
-                />
-
-                <SummaryRow
-                  label="Lot"
-                  value={`${form.lotSize}`}
-                />
-
-                <SummaryRow
-                  label="TP"
-                  value={`$${form.takeProfit}`}
-                  valueClass="text-emerald-300"
-                />
-
-                <SummaryRow
-                  label="SL"
-                  value={`$${form.stopLoss}`}
-                  valueClass="text-red-300"
-                />
-
-                <SummaryRow
-                  label="حد سود روزانه"
-                  value={`$${form.dailyProfit}`}
-                  valueClass="text-emerald-300"
-                />
-
-                <SummaryRow
-                  label="حد ضرر روزانه"
-                  value={`$${form.dailyLoss}`}
-                  valueClass="text-red-300"
-                />
-
-                <SummaryRow
-                  label="حداکثر استاپ"
-                  value={
-                    form.maxStopLosses
-                  }
-                />
-
-                <SummaryRow
-                  label="تأییدیه"
-                  value={`${form.minConfirmations}`}
-                />
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-black">
-                    وضعیت ربات
-                  </h2>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    فعال‌سازی ربات معامله‌گر
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateField(
-                      "botEnabled",
-                      !form.botEnabled
-                    )
-                  }
-                  className={`relative h-7 w-12 rounded-full transition ${
-                    form.botEnabled
-                      ? "bg-emerald-500"
-                      : "bg-slate-700"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${
-                      form.botEnabled
-                        ? "right-1"
-                        : "right-6"
+                        ? "bg-cyan-400 text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+                        : "text-slate-500 hover:text-slate-300"
                     }`}
-                  />
-                </button>
+                  >
+                    حجم ثابت
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateField(
+                        "lotMode",
+                        "risk"
+                      )
+                    }
+                    className={`rounded-lg px-3 py-2.5 text-xs font-black transition ${
+                      form.lotMode ===
+                      "risk"
+                        ? "bg-cyan-400 text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    بر اساس ریسک
+                  </button>
+
+                </div>
+
               </div>
 
-              <div
-                className={`mt-5 rounded-2xl border p-4 text-center ${
-                  form.botEnabled
-                    ? "border-emerald-500/20 bg-emerald-500/10"
-                    : "border-slate-800 bg-slate-950/50"
-                }`}
-              >
-                <div
-                  className={`text-sm font-black ${
-                    form.botEnabled
-                      ? "text-emerald-300"
-                      : "text-slate-500"
-                  }`}
-                >
+              <NumberField
+                label="Lot Size"
+                value={form.lotSize}
+                onChange={(value) =>
+                  updateField(
+                    "lotSize",
+                    value
+                  )
+                }
+                step="0.01"
+                suffix="LOT"
+              />
+
+              <NumberField
+                label="درصد ریسک هر معامله"
+                value={
+                  form.riskPercent
+                }
+                onChange={(value) =>
+                  updateField(
+                    "riskPercent",
+                    value
+                  )
+                }
+                step="0.1"
+                suffix="%"
+              />
+
+            </div>
+
+            <InfoBar>
+              ⚠️ حجم و درصد ریسک باید متناسب با موجودی حساب،
+              حد ضرر و قوانین بروکر انتخاب شود.
+            </InfoBar>
+
+          </SettingsCard>
+
+          {/* 03 TP SL */}
+          <SettingsCard
+            number="03"
+            icon="🎯"
+            title="حد سود و حد ضرر"
+            description="مقادیر TP، SL و نسبت ریسک به بازده را مشخص کنید."
+          >
+
+            <div className="grid gap-4 md:grid-cols-3">
+
+              <NumberField
+                label="Take Profit"
+                value={form.takeProfit}
+                onChange={(value) =>
+                  updateField(
+                    "takeProfit",
+                    value
+                  )
+                }
+                step="0.1"
+                suffix="$"
+                positive
+              />
+
+              <NumberField
+                label="Stop Loss"
+                value={form.stopLoss}
+                onChange={(value) =>
+                  updateField(
+                    "stopLoss",
+                    value
+                  )
+                }
+                step="0.1"
+                suffix="$"
+                danger
+              />
+
+              <NumberField
+                label="Risk / Reward"
+                value={form.riskReward}
+                onChange={(value) =>
+                  updateField(
+                    "riskReward",
+                    value
+                  )
+                }
+                step="0.05"
+                suffix="R"
+              />
+
+            </div>
+
+          </SettingsCard>
+
+          {/* 04 DAILY */}
+          <SettingsCard
+            number="04"
+            icon="📅"
+            title="محدودیت‌های روزانه"
+            description="پس از رسیدن به این محدودیت‌ها، سیستم می‌تواند معاملات جدید را متوقف کند."
+          >
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+              <NumberField
+                label="توقف سود روزانه"
+                value={
+                  form.dailyProfit
+                }
+                onChange={(value) =>
+                  updateField(
+                    "dailyProfit",
+                    value
+                  )
+                }
+                step="1"
+                suffix="$"
+                positive
+              />
+
+              <NumberField
+                label="حداکثر ضرر روزانه"
+                value={form.dailyLoss}
+                onChange={(value) =>
+                  updateField(
+                    "dailyLoss",
+                    value
+                  )
+                }
+                step="1"
+                suffix="$"
+                danger
+              />
+
+              <NumberField
+                label="حداکثر Stop Loss روزانه"
+                value={
+                  form.maxStopLosses
+                }
+                onChange={(value) =>
+                  updateField(
+                    "maxStopLosses",
+                    value
+                  )
+                }
+                step="1"
+                suffix="بار"
+              />
+
+              <NumberField
+                label="حداکثر معاملات باز"
+                value={
+                  form.maxOpenTrades
+                }
+                onChange={(value) =>
+                  updateField(
+                    "maxOpenTrades",
+                    value
+                  )
+                }
+                step="1"
+                suffix="معامله"
+              />
+
+            </div>
+
+          </SettingsCard>
+
+          {/* 05 EXECUTION */}
+          <SettingsCard
+            number="05"
+            icon="⚡"
+            title="تنظیمات اجرای معامله"
+            description="شرایط و فیلترهای ورود به معاملات را کنترل کنید."
+          >
+
+            <div className="grid gap-3 md:grid-cols-2">
+
+              <ToggleSetting
+                icon="🟢"
+                title="معاملات BUY"
+                description="اجازه ارسال معاملات خرید"
+                enabled={
+                  form.buyEnabled
+                }
+                onClick={() =>
+                  updateField(
+                    "buyEnabled",
+                    !form.buyEnabled
+                  )
+                }
+              />
+
+              <ToggleSetting
+                icon="🔴"
+                title="معاملات SELL"
+                description="اجازه ارسال معاملات فروش"
+                enabled={
+                  form.sellEnabled
+                }
+                onClick={() =>
+                  updateField(
+                    "sellEnabled",
+                    !form.sellEnabled
+                  )
+                }
+              />
+
+              <ToggleSetting
+                icon="🎯"
+                title="Trailing Stop"
+                description="حرکت حد ضرر همراه با معامله"
+                enabled={
+                  form.trailingStop
+                }
+                onClick={() =>
+                  updateField(
+                    "trailingStop",
+                    !form.trailingStop
+                  )
+                }
+              />
+
+              <ToggleSetting
+                icon="⚖️"
+                title="Break Even"
+                description="انتقال حد ضرر به نقطه ورود"
+                enabled={
+                  form.breakEven
+                }
+                onClick={() =>
+                  updateField(
+                    "breakEven",
+                    !form.breakEven
+                  )
+                }
+              />
+
+              <ToggleSetting
+                icon="🕐"
+                title="Session Filter"
+                description="معامله فقط در ساعات مجاز"
+                enabled={
+                  form.sessionFilter
+                }
+                onClick={() =>
+                  updateField(
+                    "sessionFilter",
+                    !form.sessionFilter
+                  )
+                }
+              />
+
+              <ToggleSetting
+                icon="📰"
+                title="News Filter"
+                description="فیلتر شرایط خبری بازار"
+                enabled={
+                  form.newsFilter
+                }
+                onClick={() =>
+                  updateField(
+                    "newsFilter",
+                    !form.newsFilter
+                  )
+                }
+              />
+
+              <ToggleSetting
+                icon="✈️"
+                title="Telegram"
+                description="ارسال وضعیت ربات به تلگرام"
+                enabled={
+                  form.telegramEnabled
+                }
+                onClick={() =>
+                  updateField(
+                    "telegramEnabled",
+                    !form.telegramEnabled
+                  )
+                }
+              />
+
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+
+              {form.trailingStop && (
+                <NumberField
+                  label="فاصله Trailing Stop"
+                  value={
+                    form.trailingStopDistance
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "trailingStopDistance",
+                      value
+                    )
+                  }
+                  step="0.1"
+                  suffix="$"
+                />
+              )}
+
+              {form.breakEven && (
+                <NumberField
+                  label="تریگر Break Even"
+                  value={
+                    form.breakEvenTrigger
+                  }
+                  onChange={(value) =>
+                    updateField(
+                      "breakEvenTrigger",
+                      value
+                    )
+                  }
+                  step="0.1"
+                  suffix="$"
+                />
+              )}
+
+              <NumberField
+                label="حداکثر Spread"
+                value={
+                  form.maxSpread
+                }
+                onChange={(value) =>
+                  updateField(
+                    "maxSpread",
+                    value
+                  )
+                }
+                step="0.1"
+                suffix="pip"
+              />
+
+              <NumberField
+                label="Cooldown بین معاملات"
+                value={
+                  form.cooldown
+                }
+                onChange={(value) =>
+                  updateField(
+                    "cooldown",
+                    value
+                  )
+                }
+                step="1"
+                suffix="دقیقه"
+              />
+
+            </div>
+
+          </SettingsCard>
+
+          {/* 06 SIGNAL */}
+          <SettingsCard
+            number="06"
+            icon="🧠"
+            title="فیلتر و قدرت سیگنال"
+            description="حداقل کیفیت لازم برای اجازه ورود به معامله."
+          >
+
+            <div className="grid gap-4 md:grid-cols-2">
+
+              <NumberField
+                label="حداقل امتیاز سیگنال"
+                value={
+                  form.signalThreshold
+                }
+                onChange={(value) =>
+                  updateField(
+                    "signalThreshold",
+                    value
+                  )
+                }
+                step="1"
+                suffix="/100"
+              />
+
+              <NumberField
+                label="حداقل تأییدیه‌ها"
+                value={
+                  form.minConfirmations
+                }
+                onChange={(value) =>
+                  updateField(
+                    "minConfirmations",
+                    value
+                  )
+                }
+                step="1"
+                suffix="تأیید"
+              />
+
+            </div>
+
+          </SettingsCard>
+
+          {/* 07 BOT STATUS */}
+          <SettingsCard
+            number="07"
+            icon="🤖"
+            title="وضعیت ربات"
+            description="فعال یا غیرفعال بودن ربات را مشخص کنید."
+          >
+
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+
+              <div>
+                <div className="text-sm font-black">
                   {form.botEnabled
                     ? "ربات فعال است"
                     : "ربات خاموش است"}
                 </div>
-              </div>
-            </section>
 
-            <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-5">
-              <div className="flex gap-3">
-                <div className="text-xl">
-                  ⚠️
+                <p className="mt-1 text-xs leading-6 text-slate-500">
+                  تغییر این گزینه فقط وضعیت ذخیره‌شده ربات را
+                  تغییر می‌دهد.
+                </p>
+              </div>
+
+              <Switch
+                enabled={
+                  form.botEnabled
+                }
+                onClick={() =>
+                  updateField(
+                    "botEnabled",
+                    !form.botEnabled
+                  )
+                }
+              />
+
+            </div>
+
+          </SettingsCard>
+
+          {/* SAVE AREA */}
+          <section className="rounded-[26px] border border-cyan-400/20 bg-gradient-to-r from-cyan-500/[0.08] via-[#061426] to-[#061426] p-4 shadow-[0_0_40px_rgba(34,211,238,0.05)] sm:p-5">
+
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+              <div className="flex items-center gap-3">
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
+                  ✓
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-black text-amber-300">
-                    توجه
-                  </h3>
+                  <div className="text-sm font-black">
+                    تنظیمات آماده ذخیره‌سازی است
+                  </div>
 
-                  <p className="mt-2 text-xs leading-6 text-slate-400">
-                    ذخیره شدن تنظیمات به معنی تضمین سودآوری
-                    معاملات نیست. عملکرد واقعی ربات به
-                    استراتژی، بازار، اجرای سفارش و مدیریت
-                    ریسک وابسته است.
-                  </p>
+                  <div className="mt-1 text-xs text-slate-500">
+                    اطلاعات پس از ذخیره در دیتابیس باقی می‌ماند.
+                  </div>
                 </div>
+
               </div>
-            </section>
-          </aside>
+
+              <button
+                type="button"
+                onClick={saveSettings}
+                disabled={saving}
+                className="rounded-2xl bg-gradient-to-r from-cyan-400 to-cyan-500 px-7 py-3.5 text-sm font-black text-slate-950 shadow-[0_0_30px_rgba(34,211,238,0.2)] transition hover:scale-[1.01] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving
+                  ? "در حال ذخیره..."
+                  : selectedBotId
+                  ? "ذخیره تغییرات ربات"
+                  : "ساخت و ذخیره ربات"}
+              </button>
+
+            </div>
+
+          </section>
+
         </div>
       </div>
 
       <style jsx>{`
-        .input {
+        .number-input {
           width: 100%;
-          border-radius: 0.875rem;
-          border: 1px solid rgb(30 41 59);
-          background: rgb(2 6 23 / 0.75);
-          padding: 0.8rem 0.9rem;
+          border: 1px solid rgba(51, 65, 85, 0.8);
+          background: rgba(2, 8, 23, 0.75);
           color: white;
+          border-radius: 14px;
+          padding: 13px 14px;
           outline: none;
           transition: 0.2s;
         }
 
-        .input:focus {
-          border-color: rgb(34 211 238 / 0.6);
-          box-shadow: 0 0 0 3px
-            rgb(34 211 238 / 0.08);
+        .number-input:focus {
+          border-color: rgba(34, 211, 238, 0.55);
+          box-shadow:
+            0 0 0 3px rgba(34, 211, 238, 0.06),
+            0 0 25px rgba(34, 211, 238, 0.04);
         }
 
-        select.input {
-          cursor: pointer;
+        .number-input::-webkit-inner-spin-button,
+        .number-input::-webkit-outer-spin-button {
+          opacity: 0.5;
         }
 
-        option {
-          background: rgb(15 23 42);
+        select {
+          color-scheme: dark;
+        }
+
+        select option {
+          background: #0f172a;
           color: white;
         }
       `}</style>
@@ -1469,52 +1536,245 @@ export default function BotBuilderPage() {
   );
 }
 
-function SectionTitle({
+function SettingsCard({
+  number,
+  icon,
   title,
   description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="mb-5">
-      <h2 className="text-lg font-black">
-        {title}
-      </h2>
-
-      <p className="mt-1 text-xs leading-6 text-slate-500">
-        {description}
-      </p>
-    </div>
-  );
-}
-
-function Field({
-  label,
   children,
 }: {
-  label: string;
+  number: string;
+  icon: string;
+  title: string;
+  description: string;
   children: React.ReactNode;
 }) {
   return (
+    <section className="overflow-hidden rounded-[26px] border border-slate-800 bg-[#061426]/90 p-4 shadow-[0_15px_50px_rgba(0,0,0,0.18)] sm:p-6">
+
+      <div className="mb-5 flex items-start gap-3 border-b border-slate-800/80 pb-5">
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.07] text-lg">
+          {icon}
+        </div>
+
+        <div className="min-w-0 flex-1">
+
+          <div className="flex flex-wrap items-center gap-2">
+
+            <span className="rounded-lg bg-slate-900 px-2 py-1 text-[9px] font-black text-slate-600">
+              {number}
+            </span>
+
+            <h2 className="text-base font-black sm:text-lg">
+              {title}
+            </h2>
+
+          </div>
+
+          <p className="mt-1 text-xs leading-6 text-slate-500">
+            {description}
+          </p>
+
+        </div>
+
+      </div>
+
+      {children}
+
+    </section>
+  );
+}
+
+function InputField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
     <label className="block">
-      <span className="mb-2 block text-xs font-bold text-slate-400">
+
+      <span className="mb-2 block text-[11px] font-bold text-slate-400">
         {label}
       </span>
 
-      {children}
+      <input
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        placeholder={placeholder}
+        className="number-input"
+      />
+
     </label>
   );
 }
 
-function ToggleCard({
+function NumberField({
+  label,
+  value,
+  onChange,
+  step,
+  suffix,
+  positive,
+  danger,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  step?: string;
+  suffix?: string;
+  positive?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <label className="block">
+
+      <span className="mb-2 block text-[11px] font-bold text-slate-400">
+        {label}
+      </span>
+
+      <div className="relative">
+
+        <input
+          type="number"
+          min="0"
+          step={step}
+          value={value}
+          onChange={(event) =>
+            onChange(event.target.value)
+          }
+          className={`number-input ${
+            suffix
+              ? "pl-16"
+              : ""
+          }`}
+        />
+
+        {suffix && (
+          <span
+            className={`absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black ${
+              positive
+                ? "text-emerald-400"
+                : danger
+                ? "text-red-400"
+                : "text-slate-500"
+            }`}
+          >
+            {suffix}
+          </span>
+        )}
+
+      </div>
+
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: {
+    label: string;
+    value: string;
+  }[];
+}) {
+  return (
+    <label className="block">
+
+      <span className="mb-2 block text-[11px] font-bold text-slate-400">
+        {label}
+      </span>
+
+      <select
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="number-input cursor-pointer"
+      >
+        {options.map((option) => (
+          <option
+            key={option.value}
+            value={option.value}
+          >
+            {option.label}
+          </option>
+        ))}
+      </select>
+
+    </label>
+  );
+}
+
+function ToggleSetting({
+  icon,
   title,
   description,
   enabled,
   onClick,
 }: {
+  icon: string;
   title: string;
   description: string;
+  enabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 transition hover:border-slate-700">
+
+      <div className="flex min-w-0 items-center gap-3">
+
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm ${
+            enabled
+              ? "bg-cyan-400/10 text-cyan-300"
+              : "bg-slate-900 text-slate-600"
+          }`}
+        >
+          {icon}
+        </div>
+
+        <div className="min-w-0">
+
+          <div className="text-sm font-black text-slate-200">
+            {title}
+          </div>
+
+          <div className="mt-1 text-[10px] leading-5 text-slate-500">
+            {description}
+          </div>
+
+        </div>
+
+      </div>
+
+      <Switch
+        enabled={enabled}
+        onClick={onClick}
+      />
+
+    </div>
+  );
+}
+
+function Switch({
+  enabled,
+  onClick,
+}: {
   enabled: boolean;
   onClick: () => void;
 }) {
@@ -1522,61 +1782,70 @@ function ToggleCard({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-right transition ${
+      aria-label={
         enabled
-          ? "border-cyan-500/30 bg-cyan-500/5"
-          : "border-slate-800 bg-slate-950/50"
+          ? "غیرفعال کردن"
+          : "فعال کردن"
+      }
+      className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition ${
+        enabled
+          ? "bg-cyan-400 shadow-[0_0_18px_rgba(34,211,238,0.2)]"
+          : "bg-slate-700"
       }`}
     >
-      <div>
-        <div className="text-sm font-black text-slate-200">
-          {title}
-        </div>
-
-        <div className="mt-1 text-xs leading-5 text-slate-500">
-          {description}
-        </div>
-      </div>
-
       <span
-        className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+        className={`block h-5 w-5 rounded-full bg-white shadow-md transition ${
           enabled
-            ? "bg-cyan-500"
-            : "bg-slate-700"
+            ? "translate-x-0"
+            : "-translate-x-5"
         }`}
-      >
-        <span
-          className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${
-            enabled
-              ? "right-1"
-              : "right-6"
-          }`}
-        />
-      </span>
+      />
     </button>
   );
 }
 
-function SummaryRow({
+function MiniStat({
   label,
   value,
-  valueClass = "text-slate-200",
+  positive,
+  danger,
 }: {
   label: string;
   value: string;
-  valueClass?: string;
+  positive?: boolean;
+  danger?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-950/60 px-3 py-3">
-      <span className="text-xs text-slate-500">
-        {label}
-      </span>
+    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-2.5">
 
-      <span
-        className={`text-sm font-black ${valueClass}`}
+      <div className="text-[9px] text-slate-600">
+        {label}
+      </div>
+
+      <div
+        className={`mt-1 text-xs font-black ${
+          positive
+            ? "text-emerald-400"
+            : danger
+            ? "text-red-400"
+            : "text-slate-300"
+        }`}
       >
         {value}
-      </span>
+      </div>
+
+    </div>
+  );
+}
+
+function InfoBar({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 text-[10px] font-bold leading-6 text-emerald-300">
+      {children}
     </div>
   );
 }
