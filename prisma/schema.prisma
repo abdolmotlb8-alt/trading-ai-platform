@@ -59,18 +59,29 @@ model SupportMessage {
 }
 
 model TradingBot {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   userId      String
   name        String
   type        String
+  category    String  @default("ANALYSIS")
   description String?
-  symbol      String?
-  timeframe   String?
-  isActive    Boolean  @default(false)
 
-  takeProfit  Float?
-  stopLoss    Float?
-  riskReward  Float?
+  symbol     String?
+  timeframe  String?
+  marketType String?
+
+  isActive Boolean @default(false)
+
+  takeProfit Float?
+  stopLoss   Float?
+  riskReward Float?
+
+  signalThreshold Int @default(80)
+  minConfirmations Int @default(5)
+
+  telegramEnabled Boolean @default(false)
+
+  analysisConfig Json?
 
   user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   signals TradingSignal[]
@@ -78,52 +89,174 @@ model TradingBot {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([category])
+  @@index([isActive])
+}
+
+model MarketCandle {
+  id        String   @id @default(cuid())
+  symbol    String
+  timeframe String
+
+  openTime DateTime
+
+  open   Float
+  high   Float
+  low    Float
+  close  Float
+  volume Float?
+
+  source String @default("MARKET_DATA")
+
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, timeframe, openTime])
+  @@index([symbol, timeframe])
+  @@index([openTime])
 }
 
 model TradingSignal {
-  id         String   @id @default(cuid())
-  userId     String
-  botId      String
+  id     String @id @default(cuid())
+  userId String
+  botId  String
 
-  symbol     String
-  timeframe  String?
-  direction  String
+  symbol    String
+  timeframe String?
+  direction String
+
   entry      Float?
   takeProfit Float?
   stopLoss   Float?
   riskReward Float?
 
+  score      Float?
   confidence Float?
-  status     String   @default("WAITING")
+
+  status String @default("WAITING")
+  source String @default("ANALYSIS")
+
+  marketStructure          String?
+  supportResistance        String?
+  liquidity                String?
+  pullback                 String?
+  candlePattern            String?
+  volumeConfirmation       String?
+  multiTimeframeConfirmation String?
+  sessionConfirmation      String?
+  volatilityConfirmation   String?
+  newsConfirmation         String?
+
+  confirmations Json?
+  reasons        Json?
+  metadata       Json?
+
+  telegramSent      Boolean  @default(false)
+  telegramMessageId String?
+  telegramSentAt    DateTime?
+
+  expiresAt DateTime?
+  closedAt  DateTime?
 
   createdAt DateTime @default(now())
-
-  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bot  TradingBot  @relation(fields: [botId], references: [id], onDelete: Cascade)
-}
-
-model Trade {
-  id          String   @id @default(cuid())
-  userId      String
-  botId       String
-
-  symbol      String
-  direction   String
-
-  entryPrice  Float?
-  exitPrice   Float?
-  takeProfit  Float?
-  stopLoss    Float?
-
-  quantity    Float?
-  profitLoss  Float?
-
-  status      String   @default("OPEN")
-  source      String   @default("SIMULATION")
-
-  openedAt    DateTime @default(now())
-  closedAt    DateTime?
+  updatedAt DateTime @updatedAt
 
   user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   bot  TradingBot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  deliveries TelegramDelivery[]
+
+  @@index([userId])
+  @@index([botId])
+  @@index([symbol])
+  @@index([timeframe])
+  @@index([status])
+  @@index([direction])
+  @@index([createdAt])
+}
+
+model TelegramDelivery {
+  id       String @id @default(cuid())
+  signalId String
+
+  channelId String
+  messageId String?
+
+  status String @default("PENDING")
+
+  errorMessage String?
+
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+
+  signal TradingSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+
+  @@index([signalId])
+  @@index([channelId])
+  @@index([status])
+}
+
+model AnalysisRun {
+  id     String @id @default(cuid())
+  botId  String?
+  symbol String
+
+  timeframe String?
+
+  status String @default("RUNNING")
+
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+
+  candlesAnalyzed Int @default(0)
+  confirmationsFound Int @default(0)
+
+  signalGenerated Boolean @default(false)
+
+  errorMessage String?
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([botId])
+  @@index([symbol])
+  @@index([timeframe])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Trade {
+  id     String @id @default(cuid())
+  userId String
+  botId  String
+
+  symbol    String
+  direction String
+
+  entryPrice Float?
+  exitPrice  Float?
+
+  takeProfit Float?
+  stopLoss   Float?
+
+  quantity   Float?
+  profitLoss Float?
+
+  status String @default("OPEN")
+  source String @default("SIMULATION")
+
+  openedAt DateTime @default(now())
+  closedAt DateTime?
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot  TradingBot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([botId])
+  @@index([symbol])
+  @@index([status])
+  @@index([openedAt])
 }
