@@ -67,9 +67,13 @@ function TradingViewChart({
     container.innerHTML = "";
 
     const widgetContainer = document.createElement("div");
-    widgetContainer.className = "tradingview-widget-container__widget";
+
+    widgetContainer.className =
+      "tradingview-widget-container__widget";
+
     widgetContainer.style.width = "100%";
     widgetContainer.style.height = "100%";
+    widgetContainer.style.minHeight = "100%";
 
     container.appendChild(widgetContainer);
 
@@ -114,7 +118,8 @@ function TradingViewChart({
       className="tradingview-widget-container"
       style={{
         width: "100%",
-        height: "520px",
+        height: "100%",
+        minHeight: "100%",
       }}
     />
   );
@@ -123,6 +128,41 @@ function TradingViewChart({
 export default function MarketPage() {
   const [selectedMarket, setSelectedMarket] = useState<Market>(markets[0]);
   const [selectedInterval, setSelectedInterval] = useState("15");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const chartCardRef = useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await chartCardRef.current?.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch {
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener(
+      "fullscreenchange",
+      handleFullscreenChange
+    );
+
+    return () => {
+      document.removeEventListener(
+        "fullscreenchange",
+        handleFullscreenChange
+      );
+    };
+  }, []);
 
   return (
     <main dir="rtl" className="market-page">
@@ -330,6 +370,28 @@ export default function MarketPage() {
           border-radius: 18px;
         }
 
+        .chart-card:fullscreen {
+          width: 100vw;
+          height: 100vh;
+          border-radius: 0;
+          background: #020817;
+          padding: 0;
+        }
+
+        .chart-card:fullscreen .chart-header {
+          padding: 16px 20px;
+        }
+
+        .chart-card:fullscreen .chart-wrapper {
+          height: calc(100vh - 150px);
+          min-height: calc(100vh - 150px);
+        }
+
+        .chart-card:fullscreen .tradingview-widget-container {
+          height: 100% !important;
+          min-height: 100% !important;
+        }
+
         .chart-header {
           padding: 20px;
           border-bottom: 1px solid rgba(148, 163, 184, 0.08);
@@ -374,6 +436,12 @@ export default function MarketPage() {
           font-size: 12px;
         }
 
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
         .live-price {
           text-align: left;
         }
@@ -388,349 +456,4 @@ export default function MarketPage() {
         .live-price span {
           display: block;
           margin-top: 5px;
-          color: #64748b;
-          font-size: 11px;
-        }
-
-        .timeframes {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 7px;
-          margin-top: 18px;
-        }
-
-        .timeframe {
-          border: 1px solid rgba(148, 163, 184, 0.1);
-          background: rgba(30, 41, 59, 0.6);
-          color: #94a3b8;
-          border-radius: 9px;
-          padding: 8px 12px;
-          cursor: pointer;
-          font-size: 11px;
-          transition: all 0.2s ease;
-        }
-
-        .timeframe:hover {
-          color: #e2e8f0;
-          border-color: rgba(34, 211, 238, 0.2);
-        }
-
-        .timeframe.active {
-          color: #67e8f9;
-          background: rgba(8, 145, 178, 0.14);
-          border-color: rgba(34, 211, 238, 0.3);
-        }
-
-        .chart-wrapper {
-          width: 100%;
-          min-height: 520px;
-          background: #07111f;
-        }
-
-        .chart-note {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 15px;
-          padding: 12px 18px;
-          border-top: 1px solid rgba(148, 163, 184, 0.08);
-          color: #64748b;
-          font-size: 11px;
-        }
-
-        .chart-note strong {
-          color: #94a3b8;
-        }
-
-        .bottom-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-          margin-top: 20px;
-        }
-
-        .info-card,
-        .alert-card {
-          border-radius: 18px;
-          padding: 20px;
-        }
-
-        .card-title {
-          margin: 0 0 16px;
-          font-size: 16px;
-          font-weight: 800;
-        }
-
-        .info-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
-        }
-
-        .info-item {
-          padding: 14px;
-          border-radius: 12px;
-          background: rgba(30, 41, 59, 0.48);
-          border: 1px solid rgba(148, 163, 184, 0.06);
-        }
-
-        .info-item span {
-          display: block;
-          color: #64748b;
-          font-size: 11px;
-          margin-bottom: 7px;
-        }
-
-        .info-item strong {
-          display: block;
-          font-size: 13px;
-          color: #dbeafe;
-        }
-
-        .alert-content {
-          padding: 16px;
-          border-radius: 13px;
-          background: rgba(30, 41, 59, 0.48);
-          border: 1px solid rgba(148, 163, 184, 0.06);
-        }
-
-        .alert-content p {
-          margin: 0;
-          color: #94a3b8;
-          font-size: 13px;
-          line-height: 1.9;
-        }
-
-        .alert-button {
-          width: 100%;
-          margin-top: 14px;
-          border: 1px solid rgba(34, 211, 238, 0.18);
-          border-radius: 11px;
-          background: rgba(8, 145, 178, 0.1);
-          color: #67e8f9;
-          padding: 11px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        .alert-button:hover {
-          background: rgba(8, 145, 178, 0.16);
-        }
-
-        @media (max-width: 1050px) {
-          .layout {
-            grid-template-columns: 1fr;
-          }
-
-          .watchlist {
-            order: 2;
-          }
-
-          .chart-area {
-            order: 1;
-          }
-        }
-
-        @media (max-width: 700px) {
-          .market-page {
-            padding: 15px;
-          }
-
-          .top-header {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .selected-symbol {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .live-price {
-            text-align: right;
-          }
-
-          .bottom-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .info-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .chart-wrapper {
-            min-height: 430px;
-          }
-        }
-      `}</style>
-
-      <div className="container">
-        <header className="top-header">
-          <div className="title-area">
-            <h1>بازارهای مالی</h1>
-            <p>
-              مشاهده نمودار بازارها با داده‌های ارائه‌شده توسط TradingView
-            </p>
-          </div>
-
-          <div className="live-status">
-            <span className="live-dot" />
-            اتصال نمودار فعال
-          </div>
-        </header>
-
-        <div className="layout">
-          <aside className="watchlist">
-            <div className="watchlist-header">
-              <h2>بازارها</h2>
-              <span>{markets.length} نماد</span>
-            </div>
-
-            {markets.map((market) => (
-              <button
-                key={market.id}
-                type="button"
-                className={`market-item ${
-                  selectedMarket.id === market.id ? "active" : ""
-                }`}
-                onClick={() => setSelectedMarket(market)}
-              >
-                <div className="market-row">
-                  <div className="market-name">
-                    <div className="market-icon">
-                      {market.id === "gold"
-                        ? "XAU"
-                        : market.id === "btc"
-                          ? "BTC"
-                          : market.id === "eth"
-                            ? "ETH"
-                            : "EUR"}
-                    </div>
-
-                    <div className="market-text">
-                      <strong>{market.title}</strong>
-                      <span>{market.name}</span>
-                    </div>
-                  </div>
-
-                  <span className="live-pill">LIVE</span>
-                </div>
-              </button>
-            ))}
-          </aside>
-
-          <section className="chart-area">
-            <div className="chart-card">
-              <div className="chart-header">
-                <div className="selected-symbol">
-                  <div className="symbol-title">
-                    <div className="symbol-icon">
-                      {selectedMarket.id === "gold"
-                        ? "XAU"
-                        : selectedMarket.id === "btc"
-                          ? "BTC"
-                          : selectedMarket.id === "eth"
-                            ? "ETH"
-                            : "EUR"}
-                    </div>
-
-                    <div>
-                      <h2>{selectedMarket.title}</h2>
-                      <p>{selectedMarket.name}</p>
-                    </div>
-                  </div>
-
-                  <div className="live-price">
-                    <strong>LIVE</strong>
-                    <span>قیمت زنده داخل نمودار</span>
-                  </div>
-                </div>
-
-                <div className="timeframes">
-                  {intervals.map((item) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      className={`timeframe ${
-                        selectedInterval === item.value ? "active" : ""
-                      }`}
-                      onClick={() => setSelectedInterval(item.value)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="chart-wrapper">
-                <TradingViewChart
-                  symbol={selectedMarket.tradingViewSymbol}
-                  interval={selectedInterval}
-                />
-              </div>
-
-              <div className="chart-note">
-                <span>
-                  منبع نمودار: <strong>TradingView</strong>
-                </span>
-
-                <span>
-                  نماد: <strong>{selectedMarket.symbol}</strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="bottom-grid">
-              <div className="info-card">
-                <h3 className="card-title">اطلاعات بازار</h3>
-
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span>نماد انتخاب‌شده</span>
-                    <strong>{selectedMarket.title}</strong>
-                  </div>
-
-                  <div className="info-item">
-                    <span>منبع داده نمودار</span>
-                    <strong>TradingView</strong>
-                  </div>
-
-                  <div className="info-item">
-                    <span>بازه زمانی</span>
-                    <strong>
-                      {intervals.find(
-                        (item) => item.value === selectedInterval
-                      )?.label ?? "15د"}
-                    </strong>
-                  </div>
-
-                  <div className="info-item">
-                    <span>وضعیت</span>
-                    <strong>نمودار فعال</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div className="alert-card">
-                <h3 className="card-title">هشدار قیمت</h3>
-
-                <div className="alert-content">
-                  <p>
-                    سیستم هشدار قیمت در حال آماده‌سازی است. در مرحله بعد
-                    می‌توانیم هشدارهای شخصی برای طلا، بیت‌کوین و سایر نمادها
-                    اضافه کنیم.
-                  </p>
-
-                  <button type="button" className="alert-button">
-                    افزودن هشدار — به‌زودی
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </main>
-  );
-}
+          color:
