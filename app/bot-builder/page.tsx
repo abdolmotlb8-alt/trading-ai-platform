@@ -3,55 +3,66 @@
 import { useEffect, useMemo, useState } from "react";
 
 /* =========================================================
-   Types
-========================================================= */
+   Trading AI - Professional Bot Builder
+   ========================================================= */
 
 type Bot = {
   id: string;
   name: string;
-  type?: string | null;
-  category?: string | null;
+  type?: string;
+  category?: string;
 
-  symbol: string;
-  timeframe: string;
-  marketType?: string | null;
+  symbol?: string;
+  timeframe?: string;
+  marketType?: string;
 
-  lotMode: string;
-  lotSize: number;
-  riskPercent: number;
+  lotMode?: string;
+  lotSize?: number;
+  riskPercent?: number;
 
-  takeProfit: number | null;
-  stopLoss: number | null;
-  riskReward: number | null;
+  takeProfit?: number | null;
+  stopLoss?: number | null;
+  riskReward?: number | null;
 
-  trailingStop: boolean;
-  trailingStopDistance: number | null;
+  trailingStop?: boolean;
+  trailingStopDistance?: number | null;
 
-  breakEven: boolean;
-  breakEvenTrigger: number | null;
+  breakEven?: boolean;
+  breakEvenTrigger?: number | null;
 
-  dailyProfitStop: number | null;
-  dailyLossLimit: number | null;
-  maxDailyStopLosses: number;
-  maxOpenTrades: number;
+  dailyProfitStop?: number | null;
+  dailyLossLimit?: number | null;
+  maxDailyStopLosses?: number;
+  maxOpenTrades?: number;
 
-  buyEnabled: boolean;
-  sellEnabled: boolean;
+  buyEnabled?: boolean;
+  sellEnabled?: boolean;
 
-  maxSpread: number | null;
-  cooldownMinutes: number;
+  maxSpread?: number | null;
+  cooldownMinutes?: number;
 
-  sessionFilter: boolean;
-  newsFilter: boolean;
+  sessionFilter?: boolean;
+  newsFilter?: boolean;
 
-  signalThreshold: number;
-  minConfirmations: number;
+  signalThreshold?: number;
+  minConfirmations?: number;
 
-  telegramEnabled: boolean;
-  isActive: boolean;
+  telegramEnabled?: boolean;
+
+  isActive?: boolean;
+
+  analysisConfig?: Record<string, unknown> | null;
 
   createdAt?: string;
   updatedAt?: string;
+};
+
+type AutoConfig = {
+  executionMode: "MANUAL" | "AUTO_CONFIRM";
+  stopAfterWins: number;
+  stopAfterLosses: number;
+  confirmationRequired: boolean;
+  maxConsecutiveLosses: number;
 };
 
 type FormState = {
@@ -66,7 +77,6 @@ type FormState = {
 
   takeProfit: string;
   stopLoss: string;
-  riskReward: string;
 
   trailingStop: boolean;
   trailingStopDistance: string;
@@ -92,15 +102,14 @@ type FormState = {
   minConfirmations: string;
 
   telegramEnabled: boolean;
+
   isActive: boolean;
+
+  auto: AutoConfig;
 };
 
-/* =========================================================
-   Helpers
-========================================================= */
-
-const emptyForm: FormState = {
-  name: "",
+const DEFAULT_FORM: FormState = {
+  name: "ربات طلایی من",
   symbol: "XAUUSD",
   timeframe: "15m",
   marketType: "FOREX",
@@ -111,13 +120,12 @@ const emptyForm: FormState = {
 
   takeProfit: "5",
   stopLoss: "4",
-  riskReward: "1.25",
 
   trailingStop: false,
   trailingStopDistance: "2",
 
   breakEven: false,
-  breakEvenTrigger: "2",
+  breakEvenTrigger: "3",
 
   dailyProfitStop: "20",
   dailyLossLimit: "12",
@@ -137,148 +145,25 @@ const emptyForm: FormState = {
   minConfirmations: "5",
 
   telegramEnabled: false,
+
   isActive: false,
+
+  auto: {
+    executionMode: "MANUAL",
+    stopAfterWins: 0,
+    stopAfterLosses: 3,
+    confirmationRequired: true,
+    maxConsecutiveLosses: 3,
+  },
 };
 
-function numberOrNull(value: string) {
-  if (value.trim() === "") return null;
-
-  const number = Number(value);
-
-  if (!Number.isFinite(number)) {
-    return null;
-  }
-
-  return number;
-}
-
-function botToForm(bot: Bot): FormState {
-  return {
-    name: bot.name ?? "",
-    symbol: bot.symbol ?? "XAUUSD",
-    timeframe: bot.timeframe ?? "15m",
-    marketType: bot.marketType ?? "FOREX",
-
-    lotMode: bot.lotMode ?? "FIXED",
-    lotSize: String(bot.lotSize ?? 0.01),
-    riskPercent: String(bot.riskPercent ?? 1),
-
-    takeProfit:
-      bot.takeProfit === null || bot.takeProfit === undefined
-        ? ""
-        : String(bot.takeProfit),
-
-    stopLoss:
-      bot.stopLoss === null || bot.stopLoss === undefined
-        ? ""
-        : String(bot.stopLoss),
-
-    riskReward:
-      bot.riskReward === null || bot.riskReward === undefined
-        ? ""
-        : String(bot.riskReward),
-
-    trailingStop: Boolean(bot.trailingStop),
-    trailingStopDistance:
-      bot.trailingStopDistance === null ||
-      bot.trailingStopDistance === undefined
-        ? ""
-        : String(bot.trailingStopDistance),
-
-    breakEven: Boolean(bot.breakEven),
-    breakEvenTrigger:
-      bot.breakEvenTrigger === null || bot.breakEvenTrigger === undefined
-        ? ""
-        : String(bot.breakEvenTrigger),
-
-    dailyProfitStop:
-      bot.dailyProfitStop === null ||
-      bot.dailyProfitStop === undefined
-        ? ""
-        : String(bot.dailyProfitStop),
-
-    dailyLossLimit:
-      bot.dailyLossLimit === null || bot.dailyLossLimit === undefined
-        ? ""
-        : String(bot.dailyLossLimit),
-
-    maxDailyStopLosses: String(bot.maxDailyStopLosses ?? 3),
-    maxOpenTrades: String(bot.maxOpenTrades ?? 1),
-
-    buyEnabled: Boolean(bot.buyEnabled),
-    sellEnabled: Boolean(bot.sellEnabled),
-
-    maxSpread:
-      bot.maxSpread === null || bot.maxSpread === undefined
-        ? ""
-        : String(bot.maxSpread),
-
-    cooldownMinutes: String(bot.cooldownMinutes ?? 5),
-
-    sessionFilter: Boolean(bot.sessionFilter),
-    newsFilter: Boolean(bot.newsFilter),
-
-    signalThreshold: String(bot.signalThreshold ?? 80),
-    minConfirmations: String(bot.minConfirmations ?? 5),
-
-    telegramEnabled: Boolean(bot.telegramEnabled),
-    isActive: Boolean(bot.isActive),
-  };
-}
-
-function formToPayload(form: FormState) {
-  return {
-    name: form.name.trim(),
-    type: "TRADING",
-    category: "TRADING",
-
-    symbol: form.symbol,
-    timeframe: form.timeframe,
-    marketType: form.marketType,
-
-    lotMode: form.lotMode,
-    lotSize: Number(form.lotSize) || 0.01,
-    riskPercent: Number(form.riskPercent) || 1,
-
-    takeProfit: numberOrNull(form.takeProfit),
-    stopLoss: numberOrNull(form.stopLoss),
-    riskReward: numberOrNull(form.riskReward),
-
-    trailingStop: form.trailingStop,
-    trailingStopDistance: numberOrNull(form.trailingStopDistance),
-
-    breakEven: form.breakEven,
-    breakEvenTrigger: numberOrNull(form.breakEvenTrigger),
-
-    dailyProfitStop: numberOrNull(form.dailyProfitStop),
-    dailyLossLimit: numberOrNull(form.dailyLossLimit),
-    maxDailyStopLosses: Number(form.maxDailyStopLosses) || 3,
-    maxOpenTrades: Number(form.maxOpenTrades) || 1,
-
-    buyEnabled: form.buyEnabled,
-    sellEnabled: form.sellEnabled,
-
-    maxSpread: numberOrNull(form.maxSpread),
-    cooldownMinutes: Number(form.cooldownMinutes) || 5,
-
-    sessionFilter: form.sessionFilter,
-    newsFilter: form.newsFilter,
-
-    signalThreshold: Number(form.signalThreshold) || 80,
-    minConfirmations: Number(form.minConfirmations) || 5,
-
-    telegramEnabled: form.telegramEnabled,
-    isActive: form.isActive,
-  };
-}
-
 /* =========================================================
-   SVG Icons
-========================================================= */
+   SVG ICONS
+   ========================================================= */
 
 function Icon({
   name,
-  size = 20,
+  size = 22,
 }: {
   name: string;
   size?: number;
@@ -294,322 +179,352 @@ function Icon({
     strokeLinejoin: "round" as const,
   };
 
-  switch (name) {
-    case "bot":
-      return (
-        <svg {...common}>
-          <rect x="4" y="7" width="16" height="13" rx="3" />
-          <path d="M12 3v4" />
-          <path d="M8 12h.01" />
-          <path d="M16 12h.01" />
-          <path d="M8 16h8" />
-        </svg>
-      );
-
-    case "chart":
-      return (
-        <svg {...common}>
-          <path d="M4 19V5" />
-          <path d="M4 19h16" />
-          <path d="m7 15 3-4 3 2 5-7" />
-        </svg>
-      );
-
-    case "profit":
-      return (
-        <svg {...common}>
-          <path d="M12 3v18" />
-          <path d="M17 7c0-2-2.2-3-5-3s-5 1-5 3 2 3 5 4 5 2 5 4-2.2 3-5 3-5-1-5-3" />
-        </svg>
-      );
-
-    case "loss":
-      return (
-        <svg {...common}>
-          <path d="M12 3v18" />
-          <path d="m7 8 5-5 5 5" />
-          <path d="M7 16h10" />
-        </svg>
-      );
-
-    case "risk":
-      return (
-        <svg {...common}>
-          <path d="M12 3 4 6v5c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-3Z" />
-          <path d="M12 8v5" />
-          <path d="M12 16h.01" />
-        </svg>
-      );
-
-    case "settings":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 1.7-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20h-2.4v-.2a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-1.7-1.7.06-.06A1.7 1.7 0 0 0 8.46 15a1.7 1.7 0 0 0-1.56-1.03H6v-2.4h.9A1.7 1.7 0 0 0 8.46 10a1.7 1.7 0 0 0-.34-1.88l-.06-.06 1.7-1.7.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.73 5.2V4h2.4v1.2a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.7 1.7-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.56 1.03H22v2.4h-1.04A1.7 1.7 0 0 0 19.4 15Z" />
-        </svg>
-      );
-
-    case "shield":
-      return (
-        <svg {...common}>
-          <path d="M12 3 4.5 6v5.5c0 4.4 3 7.8 7.5 9.5 4.5-1.7 7.5-5.1 7.5-9.5V6L12 3Z" />
-          <path d="m9 12 2 2 4-4" />
-        </svg>
-      );
-
-    case "clock":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-      );
-
-    case "filter":
-      return (
-        <svg {...common}>
-          <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
-        </svg>
-      );
-
-    case "telegram":
-      return (
-        <svg {...common}>
-          <path d="m21 4-3 16-6-5-3 3 .5-5.5L21 4Z" />
-          <path d="m9.5 12.5 8-5" />
-        </svg>
-      );
-
-    case "save":
-      return (
-        <svg {...common}>
-          <path d="M5 4h11l3 3v13H5V4Z" />
-          <path d="M8 4v6h8V4" />
-          <path d="M8 20v-6h8v6" />
-        </svg>
-      );
-
-    case "plus":
-      return (
-        <svg {...common}>
-          <path d="M12 5v14" />
-          <path d="M5 12h14" />
-        </svg>
-      );
-
-    case "refresh":
-      return (
-        <svg {...common}>
-          <path d="M20 11a8 8 0 0 0-14.8-4L3 10" />
-          <path d="M3 5v5h5" />
-          <path d="M4 13a8 8 0 0 0 14.8 4L21 14" />
-          <path d="M21 19v-5h-5" />
-        </svg>
-      );
-
-    case "chevron":
-      return (
-        <svg {...common}>
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      );
-
-    default:
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" />
-        </svg>
-      );
+  if (name === "bot") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="7" width="16" height="13" rx="3" />
+        <path d="M12 3v4" />
+        <circle cx="9" cy="13" r="1" />
+        <circle cx="15" cy="13" r="1" />
+        <path d="M8 17h8" />
+      </svg>
+    );
   }
+
+  if (name === "market") {
+    return (
+      <svg {...common}>
+        <path d="M4 19V5" />
+        <path d="M4 19h16" />
+        <path d="m7 15 3-4 3 2 5-7" />
+      </svg>
+    );
+  }
+
+  if (name === "money") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <circle cx="12" cy="12" r="3" />
+        <path d="M7 9h.01M17 15h.01" />
+      </svg>
+    );
+  }
+
+  if (name === "profit") {
+    return (
+      <svg {...common}>
+        <path d="M4 18 10 12l4 3 6-8" />
+        <path d="M15 7h5v5" />
+      </svg>
+    );
+  }
+
+  if (name === "loss") {
+    return (
+      <svg {...common}>
+        <path d="M4 6 10 12l4-3 6 8" />
+        <path d="M15 17h5v-5" />
+      </svg>
+    );
+  }
+
+  if (name === "shield") {
+    return (
+      <svg {...common}>
+        <path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3Z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    );
+  }
+
+  if (name === "settings") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.6V20a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1A1.7 1.7 0 0 0 8 15a1.7 1.7 0 0 0-1.6-1H6v-2.6h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.6v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2V14h-.2a1.7 1.7 0 0 0-1.6 1Z" />
+      </svg>
+    );
+  }
+
+  if (name === "clock") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  }
+
+  if (name === "filter") {
+    return (
+      <svg {...common}>
+        <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
+      </svg>
+    );
+  }
+
+  if (name === "telegram") {
+    return (
+      <svg {...common}>
+        <path d="m21 4-3 17-6-6-4 3 1-5 12-9Z" />
+        <path d="m12 15 3-5" />
+      </svg>
+    );
+  }
+
+  if (name === "save") {
+    return (
+      <svg {...common}>
+        <path d="M5 4h12l2 2v14H5V4Z" />
+        <path d="M8 4v5h8V4" />
+        <path d="M8 20v-6h8v6" />
+      </svg>
+    );
+  }
+
+  if (name === "refresh") {
+    return (
+      <svg {...common}>
+        <path d="M20 11a8 8 0 0 0-14-4L4 9" />
+        <path d="M4 5v4h4" />
+        <path d="M4 13a8 8 0 0 0 14 4l2-2" />
+        <path d="M20 19v-4h-4" />
+      </svg>
+    );
+  }
+
+  if (name === "plus") {
+    return (
+      <svg {...common}>
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    );
+  }
+
+  if (name === "trash") {
+    return (
+      <svg {...common}>
+        <path d="M4 7h16" />
+        <path d="M10 11v6M14 11v6" />
+        <path d="M6 7l1 13h10l1-13" />
+        <path d="M9 7V4h6v3" />
+      </svg>
+    );
+  }
+
+  if (name === "check") {
+    return (
+      <svg {...common}>
+        <path d="m5 12 4 4L19 6" />
+      </svg>
+    );
+  }
+
+  if (name === "warning") {
+    return (
+      <svg {...common}>
+        <path d="m12 3 9 17H3L12 3Z" />
+        <path d="M12 9v4" />
+        <path d="M12 16h.01" />
+      </svg>
+    );
+  }
+
+  if (name === "zap") {
+    return (
+      <svg {...common}>
+        <path d="m13 2-9 12h7l-1 8 9-12h-7l1-8Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
 }
 
 /* =========================================================
-   Small UI Components
-========================================================= */
+   HELPERS
+   ========================================================= */
+
+function numberValue(value: string, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatMoney(value: number) {
+  if (!Number.isFinite(value)) return "$0";
+  return `$${Number(value).toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function botToForm(bot: Bot): FormState {
+  const config =
+    bot.analysisConfig &&
+    typeof bot.analysisConfig === "object"
+      ? bot.analysisConfig
+      : {};
+
+  const auto =
+    config &&
+    typeof config.autoControl === "object" &&
+    config.autoControl !== null
+      ? (config.autoControl as Partial<AutoConfig>)
+      : {};
+
+  return {
+    name: bot.name || "ربات جدید",
+    symbol: bot.symbol || "XAUUSD",
+    timeframe: bot.timeframe || "15m",
+    marketType: bot.marketType || "FOREX",
+
+    lotMode: bot.lotMode || "FIXED",
+    lotSize: String(bot.lotSize ?? 0.01),
+    riskPercent: String(bot.riskPercent ?? 1),
+
+    takeProfit: String(bot.takeProfit ?? 5),
+    stopLoss: String(bot.stopLoss ?? 4),
+
+    trailingStop: Boolean(bot.trailingStop),
+    trailingStopDistance: String(bot.trailingStopDistance ?? 2),
+
+    breakEven: Boolean(bot.breakEven),
+    breakEvenTrigger: String(bot.breakEvenTrigger ?? 3),
+
+    dailyProfitStop: String(bot.dailyProfitStop ?? 20),
+    dailyLossLimit: String(bot.dailyLossLimit ?? 12),
+    maxDailyStopLosses: String(bot.maxDailyStopLosses ?? 3),
+    maxOpenTrades: String(bot.maxOpenTrades ?? 1),
+
+    buyEnabled: bot.buyEnabled !== false,
+    sellEnabled: bot.sellEnabled !== false,
+
+    maxSpread: String(bot.maxSpread ?? 30),
+    cooldownMinutes: String(bot.cooldownMinutes ?? 5),
+
+    sessionFilter: bot.sessionFilter !== false,
+    newsFilter: bot.newsFilter !== false,
+
+    signalThreshold: String(bot.signalThreshold ?? 80),
+    minConfirmations: String(bot.minConfirmations ?? 5),
+
+    telegramEnabled: Boolean(bot.telegramEnabled),
+
+    isActive: Boolean(bot.isActive),
+
+    auto: {
+      executionMode:
+        auto.executionMode === "AUTO_CONFIRM"
+          ? "AUTO_CONFIRM"
+          : "MANUAL",
+      stopAfterWins: Number(auto.stopAfterWins ?? 0),
+      stopAfterLosses: Number(
+        auto.stopAfterLosses ?? bot.maxDailyStopLosses ?? 3
+      ),
+      confirmationRequired:
+        auto.confirmationRequired !== false,
+      maxConsecutiveLosses: Number(
+        auto.maxConsecutiveLosses ?? bot.maxDailyStopLosses ?? 3
+      ),
+    },
+  };
+}
+
+/* =========================================================
+   SMALL COMPONENTS
+   ========================================================= */
 
 function SectionCard({
   icon,
   title,
   description,
   children,
-  accent = "cyan",
-  defaultOpen = true,
 }: {
   icon: string;
   title: string;
-  description: string;
+  description?: string;
   children: React.ReactNode;
-  accent?: "cyan" | "green" | "red" | "gold" | "purple";
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
   return (
-    <section className={`section-card accent-${accent}`}>
-      <button
-        type="button"
-        className="section-header"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <div className="section-title-wrap">
-          <div className="section-icon">
-            <Icon name={icon} size={21} />
-          </div>
-
-          <div>
-            <h2>{title}</h2>
-            <p>{description}</p>
-          </div>
+    <section className="section-card">
+      <div className="section-header">
+        <div className="section-icon">
+          <Icon name={icon} size={21} />
         </div>
 
-        <div className={`chevron ${open ? "open" : ""}`}>
-          <Icon name="chevron" size={18} />
+        <div>
+          <h2>{title}</h2>
+          {description && <p>{description}</p>}
         </div>
-      </button>
+      </div>
 
-      {open && <div className="section-body">{children}</div>}
+      <div className="section-content">{children}</div>
     </section>
   );
 }
 
 function Field({
   label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-  suffix,
-  min,
-  max,
-  step,
-  disabled,
+  hint,
+  children,
 }: {
   label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  placeholder?: string;
-  suffix?: string;
-  min?: string;
-  max?: string;
-  step?: string;
-  disabled?: boolean;
+  hint?: string;
+  children: React.ReactNode;
 }) {
   return (
     <label className="field">
-      <span className="field-label">{label}</span>
-
-      <div className="input-wrap">
-        <input
-          type={type}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          min={min}
-          max={max}
-          step={step}
-          disabled={disabled}
-        />
-
-        {suffix && <span className="input-suffix">{suffix}</span>}
+      <div className="field-top">
+        <span>{label}</span>
+        {hint && <small>{hint}</small>}
       </div>
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {children}
     </label>
   );
 }
 
 function Toggle({
-  label,
-  description,
   checked,
   onChange,
-  color = "cyan",
+  label,
+  description,
 }: {
-  label: string;
-  description: string;
   checked: boolean;
   onChange: (value: boolean) => void;
-  color?: "cyan" | "green" | "red" | "gold";
+  label: string;
+  description?: string;
 }) {
   return (
     <button
       type="button"
-      className={`toggle-card ${checked ? "checked" : ""} toggle-${color}`}
+      className={`toggle-row ${checked ? "active" : ""}`}
       onClick={() => onChange(!checked)}
     >
-      <div className="toggle-copy">
-        <strong>{label}</strong>
-        <span>{description}</span>
-      </div>
-
-      <span className="toggle-switch">
+      <span className={`switch ${checked ? "on" : ""}`}>
         <span />
+      </span>
+
+      <span className="toggle-text">
+        <strong>{label}</strong>
+        {description && <small>{description}</small>}
       </span>
     </button>
   );
 }
 
-function Metric({
-  icon,
-  title,
-  value,
-  color,
-}: {
-  icon: string;
-  title: string;
-  value: string;
-  color: "green" | "red" | "cyan" | "gold";
-}) {
-  return (
-    <div className={`metric metric-${color}`}>
-      <div className="metric-icon">
-        <Icon name={icon} size={20} />
-      </div>
-      <div>
-        <span>{title}</span>
-        <strong>{value}</strong>
-      </div>
-    </div>
-  );
-}
-
 /* =========================================================
-   Main Page
-========================================================= */
+   PAGE
+   ========================================================= */
 
 export default function BotBuilderPage() {
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -623,21 +538,23 @@ export default function BotBuilderPage() {
     [bots, selectedId]
   );
 
-  const updateForm = <K extends keyof FormState>(
-    key: K,
-    value: FormState[K]
-  ) => {
-    setForm((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  };
+  const tp = numberValue(form.takeProfit);
+  const sl = numberValue(form.stopLoss);
+
+  const riskReward =
+    sl > 0 ? tp / sl : 0;
+
+  const calculatedProfit =
+    tp > 0 ? tp : 0;
+
+  const calculatedLoss =
+    sl > 0 ? sl : 0;
 
   /* -------------------------------------------------------
-     Load bots
-  ------------------------------------------------------- */
+     LOAD
+     ------------------------------------------------------- */
 
-  async function loadBots(selectFirst = true) {
+  async function loadBots() {
     try {
       setLoading(true);
       setError("");
@@ -647,62 +564,94 @@ export default function BotBuilderPage() {
         cache: "no-store",
       });
 
+      if (!response.ok) {
+        throw new Error("خطا در دریافت ربات‌ها");
+      }
+
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data?.error || "خطا در دریافت ربات‌ها");
-      }
-
-      const loadedBots: Bot[] = Array.isArray(data)
+      const list: Bot[] = Array.isArray(data)
         ? data
         : Array.isArray(data?.bots)
-          ? data.bots
-          : [];
+        ? data.bots
+        : [];
 
-      setBots(loadedBots);
+      setBots(list);
 
-      if (loadedBots.length > 0 && selectFirst) {
-        const firstBot = loadedBots[0];
-
-        setSelectedId(firstBot.id);
-        setForm(botToForm(firstBot));
+      if (list.length > 0) {
+        const first = list[0];
+        setSelectedId(first.id);
+        setForm(botToForm(first));
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "خطا در ارتباط با سرور"
-      );
+      console.error(err);
+      setError("دریافت اطلاعات ربات‌ها انجام نشد.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadBots(true);
+    loadBots();
   }, []);
 
   /* -------------------------------------------------------
-     Select bot
-  ------------------------------------------------------- */
+     FORM UPDATE
+     ------------------------------------------------------- */
+
+  function update<K extends keyof FormState>(
+    key: K,
+    value: FormState[K]
+  ) {
+    setForm((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+
+    setMessage("");
+    setError("");
+  }
+
+  function updateAuto<K extends keyof AutoConfig>(
+    key: K,
+    value: AutoConfig[K]
+  ) {
+    setForm((previous) => ({
+      ...previous,
+      auto: {
+        ...previous.auto,
+        [key]: value,
+      },
+    }));
+
+    setMessage("");
+    setError("");
+  }
+
+  /* -------------------------------------------------------
+     SELECT BOT
+     ------------------------------------------------------- */
 
   function selectBot(bot: Bot) {
     setSelectedId(bot.id);
     setForm(botToForm(bot));
     setMessage("");
     setError("");
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   /* -------------------------------------------------------
-     New bot
-  ------------------------------------------------------- */
+     NEW BOT
+     ------------------------------------------------------- */
 
-  function startNewBot() {
+  function newBot() {
     setSelectedId(null);
-
     setForm({
-      ...emptyForm,
-      name: `Trading AI Bot ${bots.length + 1}`,
+      ...DEFAULT_FORM,
+      name: `ربات جدید ${bots.length + 1}`,
     });
 
     setMessage("");
@@ -715,70 +664,228 @@ export default function BotBuilderPage() {
   }
 
   /* -------------------------------------------------------
-     Create
-  ------------------------------------------------------- */
+     SAVE
+     ------------------------------------------------------- */
 
-  async function createBot() {
+  async function saveBot() {
     if (!form.name.trim()) {
-      setError("لطفاً نام ربات را وارد کنید.");
+      setError("نام ربات را وارد کنید.");
+      return;
+    }
+
+    if (!form.buyEnabled && !form.sellEnabled) {
+      setError("حداقل یکی از Buy یا Sell باید فعال باشد.");
+      return;
+    }
+
+    if (tp <= 0 || sl <= 0) {
+      setError("حد سود و حد ضرر باید بیشتر از صفر باشند.");
       return;
     }
 
     try {
-      setCreating(true);
+      setSaving(true);
       setError("");
       setMessage("");
 
+      const payload = {
+        id: selectedId || undefined,
+
+        name: form.name.trim(),
+
+        type: "TRADING",
+        category: "TRADING",
+
+        symbol: form.symbol,
+        timeframe: form.timeframe,
+        marketType: form.marketType,
+
+        lotMode: form.lotMode,
+        lotSize: numberValue(form.lotSize, 0.01),
+        riskPercent: numberValue(form.riskPercent, 1),
+
+        takeProfit: tp,
+        stopLoss: sl,
+        riskReward,
+
+        trailingStop: form.trailingStop,
+        trailingStopDistance: numberValue(
+          form.trailingStopDistance,
+          2
+        ),
+
+        breakEven: form.breakEven,
+        breakEvenTrigger: numberValue(
+          form.breakEvenTrigger,
+          3
+        ),
+
+        dailyProfitStop: numberValue(
+          form.dailyProfitStop,
+          20
+        ),
+
+        dailyLossLimit: numberValue(
+          form.dailyLossLimit,
+          12
+        ),
+
+        maxDailyStopLosses: Math.max(
+          1,
+          Math.floor(
+            numberValue(form.maxDailyStopLosses, 3)
+          )
+        ),
+
+        maxOpenTrades: Math.max(
+          1,
+          Math.floor(
+            numberValue(form.maxOpenTrades, 1)
+          )
+        ),
+
+        buyEnabled: form.buyEnabled,
+        sellEnabled: form.sellEnabled,
+
+        maxSpread: numberValue(
+          form.maxSpread,
+          30
+        ),
+
+        cooldownMinutes: Math.max(
+          0,
+          Math.floor(
+            numberValue(form.cooldownMinutes, 5)
+          )
+        ),
+
+        sessionFilter: form.sessionFilter,
+        newsFilter: form.newsFilter,
+
+        signalThreshold: Math.min(
+          100,
+          Math.max(
+            0,
+            Math.floor(
+              numberValue(
+                form.signalThreshold,
+                80
+              )
+            )
+          )
+        ),
+
+        minConfirmations: Math.max(
+          1,
+          Math.floor(
+            numberValue(
+              form.minConfirmations,
+              5
+            )
+          )
+        ),
+
+        telegramEnabled: form.telegramEnabled,
+
+        isActive: form.isActive,
+
+        analysisConfig: {
+          autoControl: {
+            executionMode:
+              form.auto.executionMode,
+            stopAfterWins:
+              Math.max(
+                0,
+                Math.floor(form.auto.stopAfterWins)
+              ),
+            stopAfterLosses:
+              Math.max(
+                0,
+                Math.floor(form.auto.stopAfterLosses)
+              ),
+            confirmationRequired:
+              form.auto.confirmationRequired,
+            maxConsecutiveLosses:
+              Math.max(
+                0,
+                Math.floor(
+                  form.auto.maxConsecutiveLosses
+                )
+              ),
+          },
+        },
+      };
+
       const response = await fetch("/api/bots", {
-        method: "POST",
+        method: selectedId ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formToPayload(form)),
+        body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "ساخت ربات انجام نشد.");
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "ذخیره ربات انجام نشد."
+        );
       }
 
-      const createdBot: Bot = data?.bot ?? data;
+      const savedBot: Bot =
+        data?.bot ||
+        data?.data ||
+        data;
 
-      if (!createdBot?.id) {
-        await loadBots(true);
-      } else {
-        setBots((current) => [createdBot, ...current]);
-        setSelectedId(createdBot.id);
-        setForm(botToForm(createdBot));
+      if (savedBot?.id) {
+        setSelectedId(savedBot.id);
       }
 
-      setMessage("ربات با موفقیت ساخته شد.");
+      await loadBots();
+
+      setMessage(
+        selectedId
+          ? "تنظیمات ربات با موفقیت بروزرسانی شد."
+          : "ربات جدید با موفقیت ساخته شد."
+      );
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
     } catch (err) {
+      console.error(err);
+
       setError(
         err instanceof Error
           ? err.message
-          : "خطا هنگام ساخت ربات"
+          : "خطا در ذخیره تنظیمات."
       );
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   }
 
   /* -------------------------------------------------------
-     Save
-  ------------------------------------------------------- */
+     ACTIVE TOGGLE
+     ------------------------------------------------------- */
 
-  async function saveBot() {
+  async function toggleBotActive() {
     if (!selectedId) {
-      await createBot();
+      setError(
+        "ابتدا ربات را ذخیره کنید، سپس آن را روشن کنید."
+      );
       return;
     }
 
-    if (!form.name.trim()) {
-      setError("لطفاً نام ربات را وارد کنید.");
-      return;
-    }
+    const nextValue = !form.isActive;
+
+    setForm((previous) => ({
+      ...previous,
+      isActive: nextValue,
+    }));
 
     try {
       setSaving(true);
@@ -792,38 +899,38 @@ export default function BotBuilderPage() {
         },
         body: JSON.stringify({
           id: selectedId,
-          ...formToPayload(form),
+          isActive: nextValue,
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "ذخیره تنظیمات انجام نشد.");
-      }
-
-      const updatedBot: Bot = data?.bot ?? data;
-
-      if (updatedBot?.id) {
-        setBots((current) =>
-          current.map((bot) =>
-            bot.id === updatedBot.id
-              ? updatedBot
-              : bot
-          )
+        throw new Error(
+          data?.error ||
+            "تغییر وضعیت ربات انجام نشد."
         );
-
-        setForm(botToForm(updatedBot));
-      } else {
-        await loadBots(false);
       }
 
-      setMessage("تمام تنظیمات با موفقیت ذخیره شد.");
+      await loadBots();
+
+      setMessage(
+        nextValue
+          ? "ربات فعال شد."
+          : "ربات خاموش شد."
+      );
     } catch (err) {
+      console.error(err);
+
+      setForm((previous) => ({
+        ...previous,
+        isActive: !nextValue,
+      }));
+
       setError(
         err instanceof Error
           ? err.message
-          : "خطا هنگام ذخیره تنظیمات"
+          : "تغییر وضعیت انجام نشد."
       );
     } finally {
       setSaving(false);
@@ -831,2806 +938,1978 @@ export default function BotBuilderPage() {
   }
 
   /* -------------------------------------------------------
-     Quick active toggle
+     DELETE
+     -------------------------------------------------------
+     The current API does not expose DELETE in the known
+     contract, so we intentionally do not fake a delete button.
   ------------------------------------------------------- */
-
-  async function toggleBotActive() {
-    if (!selectedId) {
-      setForm((current) => ({
-        ...current,
-        isActive: !current.isActive,
-      }));
-
-      return;
-    }
-
-    const nextValue = !form.isActive;
-
-    setForm((current) => ({
-      ...current,
-      isActive: nextValue,
-    }));
-
-    try {
-      setError("");
-
-      const response = await fetch("/api/bots", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: selectedId,
-          isActive: nextValue,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.error || "تغییر وضعیت ربات انجام نشد.");
-      }
-
-      const updatedBot: Bot = data?.bot ?? data;
-
-      if (updatedBot?.id) {
-        setBots((current) =>
-          current.map((bot) =>
-            bot.id === updatedBot.id
-              ? updatedBot
-              : bot
-          )
-        );
-
-        setForm(botToForm(updatedBot));
-      }
-
-      setMessage(
-        nextValue
-          ? "ربات فعال شد."
-          : "ربات متوقف شد."
-      );
-    } catch (err) {
-      setForm((current) => ({
-        ...current,
-        isActive: !nextValue,
-      }));
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "خطا در تغییر وضعیت ربات"
-      );
-    }
-  }
-
-  /* -------------------------------------------------------
-     Derived values
-  ------------------------------------------------------- */
-
-  const rrCalculated =
-    Number(form.stopLoss) > 0 &&
-    Number(form.takeProfit) > 0
-      ? (Number(form.takeProfit) / Number(form.stopLoss)).toFixed(2)
-      : "—";
-
-  const dailyRisk =
-    Number(form.dailyLossLimit) > 0
-      ? Number(form.dailyLossLimit).toFixed(2)
-      : "—";
-
-  const activeBots = bots.filter((bot) => bot.isActive).length;
-
-  /* =======================================================
-     Render
-  ======================================================= */
 
   return (
     <main className="bot-page" dir="rtl">
-      <div className="page-shell">
-
-        {/* =================================================
-            TOP HEADER
-        ================================================= */}
-
-        <header className="hero">
-
-          <div className="hero-brand">
-            <div className="hero-logo">
-              <Icon name="bot" size={30} />
-            </div>
-
-            <div>
-              <div className="eyebrow">
-                TRADING AI • BOT MANAGEMENT
-              </div>
-
-              <h1>ساخت و مدیریت ربات معاملاتی</h1>
-
-              <p>
-                تنظیمات ربات را حرفه‌ای، دقیق و مستقیم روی
-                حساب کاربری خود مدیریت کنید.
-              </p>
-            </div>
-          </div>
-
-          <div className="hero-actions">
-
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => loadBots(false)}
-              disabled={loading}
-            >
-              <Icon name="refresh" size={18} />
-              بروزرسانی
-            </button>
-
-            <button
-              type="button"
-              className="primary-button"
-              onClick={startNewBot}
-            >
-              <Icon name="plus" size={19} />
-              ربات جدید
-            </button>
-
-          </div>
-        </header>
-
-        {/* =================================================
-            ALERTS
-        ================================================= */}
-
-        {error && (
-          <div className="alert alert-error">
-            <span className="alert-icon">
-              <Icon name="risk" size={21} />
-            </span>
-
-            <div>
-              <strong>خطا</strong>
-              <p>{error}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setError("")}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {message && (
-          <div className="alert alert-success">
-            <span className="alert-icon">
-              <Icon name="shield" size={21} />
-            </span>
-
-            <div>
-              <strong>انجام شد</strong>
-              <p>{message}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setMessage("")}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {/* =================================================
-            BOT OVERVIEW
-        ================================================= */}
-
-        <div className="overview-grid">
-
-          <Metric
-            icon="bot"
-            title="تعداد ربات‌ها"
-            value={String(bots.length)}
-            color="cyan"
-          />
-
-          <Metric
-            icon="chart"
-            title="ربات‌های فعال"
-            value={String(activeBots)}
-            color="green"
-          />
-
-          <Metric
-            icon="profit"
-            title="حد سود فعلی"
-            value={`$${form.takeProfit || "0"}`}
-            color="green"
-          />
-
-          <Metric
-            icon="loss"
-            title="حد ضرر فعلی"
-            value={`$${form.stopLoss || "0"}`}
-            color="red"
-          />
-        </div>
-
-        {/* =================================================
-            BOT SELECTOR
-        ================================================= */}
-
-        <section className="bot-selector-card">
-
-          <div className="selector-heading">
-            <div>
-              <span className="small-label">
-                ربات‌های حساب شما
-              </span>
-
-              <h2>
-                {selectedBot
-                  ? selectedBot.name
-                  : "ایجاد یک ربات جدید"}
-              </h2>
-            </div>
-
-            <button
-              type="button"
-              className="new-bot-button"
-              onClick={startNewBot}
-            >
-              <Icon name="plus" size={17} />
-              ربات جدید
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="loading-box">
-              <div className="spinner" />
-              <span>در حال دریافت ربات‌ها...</span>
-            </div>
-          ) : bots.length === 0 ? (
-            <div className="empty-box">
-              <div className="empty-icon">
-                <Icon name="bot" size={30} />
-              </div>
-
-              <strong>
-                هنوز رباتی ساخته نشده است
-              </strong>
-
-              <span>
-                از دکمه «ربات جدید» برای ساخت اولین ربات
-                استفاده کنید.
-              </span>
-            </div>
-          ) : (
-            <div className="bot-list">
-              {bots.map((bot) => (
-                <button
-                  type="button"
-                  key={bot.id}
-                  className={`bot-chip ${
-                    selectedId === bot.id
-                      ? "selected"
-                      : ""
-                  }`}
-                  onClick={() => selectBot(bot)}
-                >
-                  <span className="bot-chip-icon">
-                    <Icon name="bot" size={18} />
-                  </span>
-
-                  <span className="bot-chip-content">
-                    <strong>{bot.name}</strong>
-
-                    <small>
-                      {bot.symbol} • {bot.timeframe}
-                    </small>
-                  </span>
-
-                  <span
-                    className={`status-dot ${
-                      bot.isActive ? "active" : ""
-                    }`}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* =================================================
-            ACTIVE STATUS
-        ================================================= */}
-
-        <section
-          className={`status-panel ${
-            form.isActive ? "status-active" : "status-off"
-          }`}
-        >
-          <div className="status-main">
-
-            <div className="status-icon">
-              <Icon
-                name={form.isActive ? "chart" : "bot"}
-                size={25}
-              />
-            </div>
-
-            <div>
-              <span>وضعیت اجرای ربات</span>
-
-              <strong>
-                {form.isActive
-                  ? "ربات فعال است"
-                  : "ربات متوقف است"}
-              </strong>
-
-              <small>
-                {form.isActive
-                  ? "ربات اجازه اجرای قوانین معاملاتی تنظیم‌شده را دارد."
-                  : "ربات فعلاً هیچ اجرای فعالی ندارد."}
-              </small>
-            </div>
-
-          </div>
-
-          <button
-            type="button"
-            className={`big-toggle ${
-              form.isActive ? "on" : ""
-            }`}
-            onClick={toggleBotActive}
-          >
-            <span />
-            {form.isActive ? "فعال" : "غیرفعال"}
-          </button>
-        </section>
-
-        {/* =================================================
-            FORM
-        ================================================= */}
-
-        <div className="settings-layout">
-
-          <div className="settings-main">
-
-            {/* BOT INFO */}
-
-            <SectionCard
-              icon="bot"
-              title="اطلاعات اصلی ربات"
-              description="نام، بازار و تایم‌فریم ربات را مشخص کنید."
-              accent="cyan"
-            >
-              <div className="form-grid three">
-
-                <Field
-                  label="نام ربات"
-                  value={form.name}
-                  onChange={(value) =>
-                    updateForm("name", value)
-                  }
-                  placeholder="مثلاً Gold AI Pro"
-                />
-
-                <SelectField
-                  label="نماد معاملاتی"
-                  value={form.symbol}
-                  onChange={(value) =>
-                    updateForm("symbol", value)
-                  }
-                  options={[
-                    {
-                      value: "XAUUSD",
-                      label: "XAUUSD • طلا",
-                    },
-                    {
-                      value: "EURUSD",
-                      label: "EURUSD",
-                    },
-                    {
-                      value: "GBPUSD",
-                      label: "GBPUSD",
-                    },
-                    {
-                      value: "USDJPY",
-                      label: "USDJPY",
-                    },
-                    {
-                      value: "BTCUSDT",
-                      label: "BTCUSDT • بیت‌کوین",
-                    },
-                    {
-                      value: "ETHUSDT",
-                      label: "ETHUSDT • اتریوم",
-                    },
-                  ]}
-                />
-
-                <SelectField
-                  label="تایم‌فریم"
-                  value={form.timeframe}
-                  onChange={(value) =>
-                    updateForm("timeframe", value)
-                  }
-                  options={[
-                    { value: "1m", label: "1 دقیقه" },
-                    { value: "5m", label: "5 دقیقه" },
-                    { value: "15m", label: "15 دقیقه" },
-                    { value: "30m", label: "30 دقیقه" },
-                    { value: "1h", label: "1 ساعت" },
-                    { value: "4h", label: "4 ساعت" },
-                    { value: "1d", label: "روزانه" },
-                  ]}
-                />
-
-              </div>
-
-              <div className="form-grid two">
-
-                <SelectField
-                  label="نوع بازار"
-                  value={form.marketType}
-                  onChange={(value) =>
-                    updateForm("marketType", value)
-                  }
-                  options={[
-                    {
-                      value: "FOREX",
-                      label: "Forex",
-                    },
-                    {
-                      value: "CRYPTO",
-                      label: "Crypto",
-                    },
-                    {
-                      value: "METALS",
-                      label: "Metals",
-                    },
-                    {
-                      value: "INDEX",
-                      label: "Indices",
-                    },
-                  ]}
-                />
-
-                <div className="info-box">
-                  <span>بازار انتخاب‌شده</span>
-                  <strong>
-                    {form.symbol}
-                  </strong>
-                  <small>
-                    {form.marketType} • {form.timeframe}
-                  </small>
-                </div>
-
-              </div>
-            </SectionCard>
-
-            {/* VOLUME / RISK */}
-
-            <SectionCard
-              icon="risk"
-              title="حجم معامله و مدیریت ریسک"
-              description="مشخص کنید ربات با حجم ثابت کار کند یا درصد ریسک."
-              accent="gold"
-            >
-              <div className="mode-selector">
-
-                <button
-                  type="button"
-                  className={
-                    form.lotMode === "FIXED"
-                      ? "mode active"
-                      : "mode"
-                  }
-                  onClick={() =>
-                    updateForm("lotMode", "FIXED")
-                  }
-                >
-                  <strong>حجم ثابت</strong>
-                  <span>
-                    Lot ثابت برای هر معامله
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  className={
-                    form.lotMode === "RISK_PERCENT"
-                      ? "mode active"
-                      : "mode"
-                  }
-                  onClick={() =>
-                    updateForm(
-                      "lotMode",
-                      "RISK_PERCENT"
-                    )
-                  }
-                >
-                  <strong>درصد ریسک</strong>
-                  <span>
-                    محاسبه حجم بر اساس ریسک
-                  </span>
-                </button>
-
-              </div>
-
-              <div className="form-grid two">
-
-                <Field
-                  label="Lot Size"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={form.lotSize}
-                  onChange={(value) =>
-                    updateForm("lotSize", value)
-                  }
-                  suffix="LOT"
-                  disabled={
-                    form.lotMode !== "FIXED"
-                  }
-                />
-
-                <Field
-                  label="درصد ریسک"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={form.riskPercent}
-                  onChange={(value) =>
-                    updateForm(
-                      "riskPercent",
-                      value
-                    )
-                  }
-                  suffix="%"
-                  disabled={
-                    form.lotMode !== "RISK_PERCENT"
-                  }
-                />
-
-              </div>
-
-              <div className="warning-box">
-                <Icon name="shield" size={19} />
-
-                <div>
-                  <strong>
-                    کنترل ریسک فعال است
-                  </strong>
-
-                  <span>
-                    حد ضرر روزانه و تعداد Stop Loss
-                    در بخش محدودیت‌های روزانه قابل تنظیم است.
-                  </span>
-                </div>
-              </div>
-            </SectionCard>
-
-            {/* TP SL */}
-
-            <SectionCard
-              icon="profit"
-              title="حد سود و حد ضرر"
-              description="مقادیر واقعی مدیریت معامله را تعیین کنید."
-              accent="green"
-            >
-              <div className="form-grid three">
-
-                <div className="money-field profit-field">
-                  <label>حد سود</label>
-
-                  <div>
-                    <span>$</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={form.takeProfit}
-                      onChange={(event) =>
-                        updateForm(
-                          "takeProfit",
-                          event.target.value
-                        )
-                      }
-                    />
-                  </div>
-
-                  <small>
-                    Take Profit
-                  </small>
-                </div>
-
-                <div className="money-field loss-field">
-                  <label>حد ضرر</label>
-
-                  <div>
-                    <span>$</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={form.stopLoss}
-                      onChange={(event) =>
-                        updateForm(
-                          "stopLoss",
-                          event.target.value
-                        )
-                      }
-                    />
-                  </div>
-
-                  <small>
-                    Stop Loss
-                  </small>
-                </div>
-
-                <Field
-                  label="Risk / Reward"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form.riskReward}
-                  onChange={(value) =>
-                    updateForm(
-                      "riskReward",
-                      value
-                    )
-                  }
-                  suffix="R:R"
-                />
-
-              </div>
-
-              <div className="rr-preview">
-
-                <div>
-                  <span>نسبت محاسبه‌شده</span>
-                  <strong>
-                    1 : {rrCalculated}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>سود هر معامله</span>
-                  <strong className="green-text">
-                    +${form.takeProfit || "0"}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>ضرر هر معامله</span>
-                  <strong className="red-text">
-                    -${form.stopLoss || "0"}
-                  </strong>
-                </div>
-
-              </div>
-            </SectionCard>
-
-            {/* TRAILING / BREAK EVEN */}
-
-            <SectionCard
-              icon="chart"
-              title="مدیریت هوشمند معامله"
-              description="Trailing Stop و Break Even را کنترل کنید."
-              accent="purple"
-            >
-              <div className="toggle-grid">
-
-                <Toggle
-                  label="Trailing Stop"
-                  description="حد ضرر را همراه قیمت حرکت می‌دهد."
-                  checked={form.trailingStop}
-                  onChange={(value) =>
-                    updateForm(
-                      "trailingStop",
-                      value
-                    )
-                  }
-                  color="cyan"
-                />
-
-                <Toggle
-                  label="Break Even"
-                  description="بعد از رسیدن به سود مشخص، معامله را به نقطه سر‌به‌سر منتقل می‌کند."
-                  checked={form.breakEven}
-                  onChange={(value) =>
-                    updateForm(
-                      "breakEven",
-                      value
-                    )
-                  }
-                  color="green"
-                />
-
-              </div>
-
-              <div className="form-grid two">
-
-                <Field
-                  label="Trailing Distance"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={form.trailingStopDistance}
-                  onChange={(value) =>
-                    updateForm(
-                      "trailingStopDistance",
-                      value
-                    )
-                  }
-                  suffix="$"
-                  disabled={!form.trailingStop}
-                />
-
-                <Field
-                  label="Break Even Trigger"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={form.breakEvenTrigger}
-                  onChange={(value) =>
-                    updateForm(
-                      "breakEvenTrigger",
-                      value
-                    )
-                  }
-                  suffix="$"
-                  disabled={!form.breakEven}
-                />
-
-              </div>
-            </SectionCard>
-
-            {/* DAILY LIMITS */}
-
-            <SectionCard
-              icon="shield"
-              title="محدودیت‌های روزانه"
-              description="برای جلوگیری از معامله بیش از حد، سقف سود و ضرر تعیین کنید."
-              accent="red"
-            >
-              <div className="form-grid four">
-
-                <Field
-                  label="توقف بعد از سود"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={form.dailyProfitStop}
-                  onChange={(value) =>
-                    updateForm(
-                      "dailyProfitStop",
-                      value
-                    )
-                  }
-                  suffix="$"
-                />
-
-                <Field
-                  label="حد ضرر روزانه"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={form.dailyLossLimit}
-                  onChange={(value) =>
-                    updateForm(
-                      "dailyLossLimit",
-                      value
-                    )
-                  }
-                  suffix="$"
-                />
-
-                <Field
-                  label="حداکثر Stop Loss"
-                  type="number"
-                  step="1"
-                  min="1"
-                  value={form.maxDailyStopLosses}
-                  onChange={(value) =>
-                    updateForm(
-                      "maxDailyStopLosses",
-                      value
-                    )
-                  }
-                  suffix="بار"
-                />
-
-                <Field
-                  label="حداکثر معاملات باز"
-                  type="number"
-                  step="1"
-                  min="1"
-                  value={form.maxOpenTrades}
-                  onChange={(value) =>
-                    updateForm(
-                      "maxOpenTrades",
-                      value
-                    )
-                  }
-                  suffix="معامله"
-                />
-
-              </div>
-
-              <div className="risk-summary">
-
-                <div className="risk-summary-item">
-                  <span>حد توقف سود روزانه</span>
-                  <strong className="green-text">
-                    +${form.dailyProfitStop || "0"}
-                  </strong>
-                </div>
-
-                <div className="risk-summary-item">
-                  <span>حد توقف ضرر روزانه</span>
-                  <strong className="red-text">
-                    -${dailyRisk}
-                  </strong>
-                </div>
-
-                <div className="risk-summary-item">
-                  <span>تعداد استاپ مجاز</span>
-                  <strong>
-                    {form.maxDailyStopLosses} بار
-                  </strong>
-                </div>
-
-              </div>
-            </SectionCard>
-
-            {/* BUY SELL */}
-
-            <SectionCard
-              icon="chart"
-              title="جهت معاملات"
-              description="مشخص کنید ربات اجازه خرید یا فروش داشته باشد."
-              accent="cyan"
-            >
-              <div className="toggle-grid">
-
-                <Toggle
-                  label="معاملات BUY"
-                  description="اجازه ایجاد معاملات خرید"
-                  checked={form.buyEnabled}
-                  onChange={(value) =>
-                    updateForm(
-                      "buyEnabled",
-                      value
-                    )
-                  }
-                  color="green"
-                />
-
-                <Toggle
-                  label="معاملات SELL"
-                  description="اجازه ایجاد معاملات فروش"
-                  checked={form.sellEnabled}
-                  onChange={(value) =>
-                    updateForm(
-                      "sellEnabled",
-                      value
-                    )
-                  }
-                  color="red"
-                />
-
-              </div>
-
-              {!form.buyEnabled &&
-                !form.sellEnabled && (
-                  <div className="danger-box">
-                    هیچ جهت معاملاتی فعال نیست؛ ربات
-                    قادر به ایجاد معامله نخواهد بود.
-                  </div>
-                )}
-            </SectionCard>
-
-            {/* FILTERS */}
-
-            <SectionCard
-              icon="filter"
-              title="فیلترهای ورود"
-              description="شرایط محیطی را قبل از اجازه معامله بررسی کنید."
-              accent="gold"
-            >
-              <div className="toggle-grid">
-
-                <Toggle
-                  label="Session Filter"
-                  description="فقط در سشن‌های مجاز فعالیت کند."
-                  checked={form.sessionFilter}
-                  onChange={(value) =>
-                    updateForm(
-                      "sessionFilter",
-                      value
-                    )
-                  }
-                  color="cyan"
-                />
-
-                <Toggle
-                  label="News Filter"
-                  description="در زمان خبرهای مهم از معامله جلوگیری کند."
-                  checked={form.newsFilter}
-                  onChange={(value) =>
-                    updateForm(
-                      "newsFilter",
-                      value
-                    )
-                  }
-                  color="gold"
-                />
-
-              </div>
-
-              <div className="form-grid two">
-
-                <Field
-                  label="حداکثر Spread"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={form.maxSpread}
-                  onChange={(value) =>
-                    updateForm(
-                      "maxSpread",
-                      value
-                    )
-                  }
-                  suffix="Point"
-                />
-
-                <Field
-                  label="Cooldown بین معاملات"
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={form.cooldownMinutes}
-                  onChange={(value) =>
-                    updateForm(
-                      "cooldownMinutes",
-                      value
-                    )
-                  }
-                  suffix="دقیقه"
-                />
-
-              </div>
-            </SectionCard>
-
-            {/* SIGNAL ENGINE */}
-
-            <SectionCard
-              icon="settings"
-              title="موتور سیگنال و تأیید"
-              description="حداقل امتیاز و تعداد تأییدهای مورد نیاز را تعیین کنید."
-              accent="purple"
-            >
-              <div className="score-card">
-
-                <div className="score-number">
-                  <strong>
-                    {form.signalThreshold}
-                  </strong>
-
-                  <span>/ 100</span>
-                </div>
-
-                <div className="score-bar">
-                  <div
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.max(
-                          0,
-                          Number(
-                            form.signalThreshold
-                          ) || 0
-                        )
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                <span>
-                  حداقل امتیاز سیگنال
-                </span>
-
-              </div>
-
-              <div className="form-grid two">
-
-                <Field
-                  label="Signal Threshold"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={form.signalThreshold}
-                  onChange={(value) =>
-                    updateForm(
-                      "signalThreshold",
-                      value
-                    )
-                  }
-                  suffix="/100"
-                />
-
-                <Field
-                  label="حداقل تأییدها"
-                  type="number"
-                  min="1"
-                  max="20"
-                  step="1"
-                  value={form.minConfirmations}
-                  onChange={(value) =>
-                    updateForm(
-                      "minConfirmations",
-                      value
-                    )
-                  }
-                  suffix="تأیید"
-                />
-
-              </div>
-            </SectionCard>
-
-            {/* TELEGRAM */}
-
-            <SectionCard
-              icon="telegram"
-              title="اعلان‌های Telegram"
-              description="ارسال اعلان‌های ربات به سیستم Telegram."
-              accent="cyan"
-            >
-              <Toggle
-                label="فعال‌سازی Telegram"
-                description="ارسال رویدادهای ربات به کانال Telegram."
-                checked={form.telegramEnabled}
-                onChange={(value) =>
-                  updateForm(
-                    "telegramEnabled",
-                    value
-                  )
-                }
-                color="cyan"
-              />
-
-              <div className="telegram-note">
-                <Icon name="telegram" size={20} />
-
-                <span>
-                  توکن Bot و Channel ID نباید داخل این صفحه
-                  ذخیره شوند؛ این اطلاعات باید در Environment
-                  Variables سرور قرار بگیرند.
-                </span>
-              </div>
-            </SectionCard>
-
-          </div>
-
-          {/* =================================================
-              SIDE SUMMARY
-          ================================================= */}
-
-          <aside className="settings-side">
-
-            <div className="sticky-panel">
-
-              <div className="side-title">
-                <div className="side-title-icon">
-                  <Icon name="settings" size={21} />
-                </div>
-
-                <div>
-                  <span>خلاصه تنظیمات</span>
-                  <strong>
-                    {form.name || "ربات جدید"}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="side-status">
-                <span
-                  className={
-                    form.isActive
-                      ? "live-dot"
-                      : "offline-dot"
-                  }
-                />
-
-                {form.isActive
-                  ? "فعال"
-                  : "غیرفعال"}
-              </div>
-
-              <div className="summary-list">
-
-                <div>
-                  <span>نماد</span>
-                  <strong>{form.symbol}</strong>
-                </div>
-
-                <div>
-                  <span>تایم‌فریم</span>
-                  <strong>{form.timeframe}</strong>
-                </div>
-
-                <div>
-                  <span>نوع حجم</span>
-                  <strong>
-                    {form.lotMode === "FIXED"
-                      ? "Fixed Lot"
-                      : "Risk %"}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>حد سود</span>
-                  <strong className="green-text">
-                    +${form.takeProfit || "0"}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>حد ضرر</span>
-                  <strong className="red-text">
-                    -${form.stopLoss || "0"}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>R/R</span>
-                  <strong>
-                    {rrCalculated}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>استاپ روزانه</span>
-                  <strong>
-                    {form.maxDailyStopLosses}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>معاملات باز</span>
-                  <strong>
-                    {form.maxOpenTrades}
-                  </strong>
-                </div>
-
-              </div>
-
-              <div className="side-divider" />
-
-              <div className="permission-box">
-
-                <span>اجازه معاملات</span>
-
-                <div className="permission-row">
-
-                  <span
-                    className={
-                      form.buyEnabled
-                        ? "permission buy"
-                        : "permission disabled"
-                    }
-                  >
-                    BUY
-                  </span>
-
-                  <span
-                    className={
-                      form.sellEnabled
-                        ? "permission sell"
-                        : "permission disabled"
-                    }
-                  >
-                    SELL
-                  </span>
-
-                </div>
-              </div>
-
-              <div className="side-actions">
-
-                <button
-                  type="button"
-                  className="save-button"
-                  onClick={saveBot}
-                  disabled={
-                    saving || creating
-                  }
-                >
-                  <Icon name="save" size={20} />
-
-                  {saving
-                    ? "در حال ذخیره..."
-                    : selectedId
-                      ? "ذخیره تنظیمات"
-                      : "ساخت و ذخیره ربات"}
-                </button>
-
-                {!selectedId && (
-                  <button
-                    type="button"
-                    className="create-secondary"
-                    onClick={createBot}
-                    disabled={
-                      saving || creating
-                    }
-                  >
-                    <Icon name="plus" size={18} />
-
-                    {creating
-                      ? "در حال ساخت..."
-                      : "ساخت ربات"}
-                  </button>
-                )}
-
-              </div>
-
-              <div className="security-note">
-                <Icon name="shield" size={17} />
-
-                <span>
-                  تنظیمات با حساب کاربری شما ذخیره می‌شود.
-                </span>
-              </div>
-
-            </div>
-          </aside>
-        </div>
-
-        {/* =================================================
-            FOOTER NOTE
-        ================================================= */}
-
-        <div className="bottom-note">
-          <Icon name="shield" size={18} />
-
-          <span>
-            تغییر تنظیمات تا زمانی که ذخیره نشود روی ربات
-            اعمال نمی‌شود. برای فعال‌کردن اجرای ربات،
-            ابتدا تنظیمات را ذخیره کنید و سپس وضعیت را فعال کنید.
-          </span>
-        </div>
-
-      </div>
-
-      {/* =====================================================
-          STYLES
-      ===================================================== */}
-
-      <style jsx>{`
+      <style jsx global>{`
         * {
           box-sizing: border-box;
         }
 
-        .bot-page {
-          min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at 85% 5%,
-              rgba(14, 165, 233, 0.12),
-              transparent 28%
-            ),
-            radial-gradient(
-              circle at 10% 35%,
-              rgba(16, 185, 129, 0.07),
-              transparent 24%
-            ),
-            #070b14;
-          color: #e8eef8;
-          padding: 28px 16px 60px;
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          background: #050914;
+        }
+
+        body {
           font-family:
-            Arial,
+            Vazirmatn,
+            IRANSans,
             Tahoma,
-            "Segoe UI",
+            Arial,
             sans-serif;
         }
 
+        button,
+        input,
+        select {
+          font: inherit;
+        }
+
+        button {
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .bot-page {
+          min-height: 100vh;
+          width: 100%;
+          color: #e8eef8;
+          background:
+            radial-gradient(
+              circle at 85% 0%,
+              rgba(14, 165, 233, 0.10),
+              transparent 28%
+            ),
+            radial-gradient(
+              circle at 5% 35%,
+              rgba(99, 102, 241, 0.08),
+              transparent 25%
+            ),
+            #050914;
+          padding: 28px 16px 70px;
+        }
+
         .page-shell {
-          width: min(1380px, 100%);
+          width: min(1120px, 100%);
           margin: 0 auto;
         }
 
-        .hero {
+        .topbar {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 24px;
-          padding: 26px;
-          border: 1px solid rgba(148, 163, 184, 0.13);
-          background:
-            linear-gradient(
-              135deg,
-              rgba(15, 23, 42, 0.98),
-              rgba(10, 18, 31, 0.94)
-            );
-          border-radius: 26px;
-          box-shadow:
-            0 20px 70px rgba(0, 0, 0, 0.28),
-            inset 0 1px 0 rgba(255, 255, 255, 0.035);
+          gap: 18px;
+          margin-bottom: 20px;
         }
 
-        .hero-brand {
+        .brand-area {
           display: flex;
           align-items: center;
-          gap: 17px;
+          gap: 13px;
           min-width: 0;
         }
 
-        .hero-logo {
-          width: 62px;
-          height: 62px;
-          flex: 0 0 62px;
+        .brand-icon {
+          width: 48px;
+          height: 48px;
+          border-radius: 15px;
           display: grid;
           place-items: center;
-          border-radius: 18px;
           color: #67e8f9;
           background:
             linear-gradient(
               145deg,
-              rgba(8, 145, 178, 0.3),
-              rgba(15, 23, 42, 0.9)
+              rgba(8, 145, 178, 0.25),
+              rgba(37, 99, 235, 0.13)
             );
           border: 1px solid rgba(103, 232, 249, 0.22);
           box-shadow:
-            0 0 35px rgba(34, 211, 238, 0.09);
+            0 10px 35px rgba(8, 145, 178, 0.10);
+          flex: 0 0 auto;
         }
 
-        .eyebrow {
-          color: #67e8f9;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 1.4px;
-          margin-bottom: 7px;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .hero h1 {
+        .brand-text h1 {
           margin: 0;
-          font-size: clamp(22px, 3vw, 32px);
-          line-height: 1.3;
-          color: #f8fafc;
+          font-size: clamp(21px, 4vw, 29px);
+          letter-spacing: -0.5px;
+          color: #f8fbff;
         }
 
-        .hero p {
-          margin: 8px 0 0;
-          color: #8fa0b8;
-          font-size: 14px;
-          line-height: 1.8;
-        }
-
-        .hero-actions {
-          display: flex;
-          gap: 10px;
-          flex-shrink: 0;
-        }
-
-        button {
-          font-family: inherit;
-        }
-
-        .primary-button,
-        .ghost-button,
-        .new-bot-button,
-        .save-button,
-        .create-secondary {
-          border: 0;
-          cursor: pointer;
-          transition:
-            transform 0.2s ease,
-            opacity 0.2s ease,
-            border-color 0.2s ease,
-            background 0.2s ease;
-        }
-
-        .primary-button:hover,
-        .ghost-button:hover,
-        .new-bot-button:hover,
-        .save-button:hover,
-        .create-secondary:hover {
-          transform: translateY(-1px);
-        }
-
-        .primary-button {
-          min-height: 46px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 0 18px;
-          border-radius: 13px;
-          color: #04131a;
-          background: linear-gradient(
-            135deg,
-            #67e8f9,
-            #22d3ee
-          );
-          font-weight: 800;
-        }
-
-        .ghost-button {
-          min-height: 46px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 0 15px;
-          border-radius: 13px;
-          color: #cbd5e1;
-          background: #111a2a;
-          border: 1px solid #263449;
-        }
-
-        .ghost-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .alert {
-          margin-top: 16px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 14px 16px;
-          border-radius: 15px;
-          border: 1px solid;
-        }
-
-        .alert-error {
-          background: rgba(127, 29, 29, 0.2);
-          border-color: rgba(248, 113, 113, 0.25);
-          color: #fecaca;
-        }
-
-        .alert-success {
-          background: rgba(6, 78, 59, 0.22);
-          border-color: rgba(52, 211, 153, 0.25);
-          color: #bbf7d0;
-        }
-
-        .alert-icon {
-          width: 40px;
-          height: 40px;
-          flex: 0 0 40px;
-          display: grid;
-          place-items: center;
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.04);
-        }
-
-        .alert div {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .alert strong {
-          display: block;
-          margin-bottom: 2px;
-        }
-
-        .alert p {
-          margin: 0;
-          color: inherit;
-          opacity: 0.85;
+        .brand-text p {
+          margin: 5px 0 0;
+          color: #8290a5;
           font-size: 13px;
         }
 
-        .alert button {
-          border: 0;
-          background: transparent;
-          color: inherit;
-          font-size: 22px;
-          cursor: pointer;
-        }
-
-        .overview-grid {
-          margin-top: 16px;
-          display: grid;
-          grid-template-columns:
-            repeat(4, minmax(0, 1fr));
-          gap: 12px;
-        }
-
-        .metric {
-          min-width: 0;
+        .top-actions {
           display: flex;
+          gap: 9px;
           align-items: center;
-          gap: 12px;
-          padding: 16px;
-          border-radius: 18px;
-          background: #0d1523;
-          border: 1px solid #1c293c;
+          flex-wrap: wrap;
+          justify-content: flex-end;
         }
 
-        .metric-icon {
-          width: 42px;
-          height: 42px;
-          flex: 0 0 42px;
-          display: grid;
-          place-items: center;
-          border-radius: 13px;
-          background: rgba(255, 255, 255, 0.035);
-        }
-
-        .metric span {
-          display: block;
-          color: #7f91aa;
-          font-size: 11px;
-          margin-bottom: 4px;
-        }
-
-        .metric strong {
-          display: block;
-          font-size: 18px;
-          color: #f8fafc;
-        }
-
-        .metric-cyan .metric-icon {
-          color: #67e8f9;
-        }
-
-        .metric-green .metric-icon {
-          color: #34d399;
-        }
-
-        .metric-red .metric-icon {
-          color: #fb7185;
-        }
-
-        .metric-gold .metric-icon {
-          color: #fbbf24;
-        }
-
-        .bot-selector-card {
-          margin-top: 16px;
-          padding: 20px;
-          border-radius: 21px;
-          background: #0c1421;
-          border: 1px solid #1c293c;
-        }
-
-        .selector-heading {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          margin-bottom: 16px;
-        }
-
-        .small-label {
-          display: block;
-          color: #71829a;
-          font-size: 11px;
-          margin-bottom: 5px;
-        }
-
-        .selector-heading h2 {
-          margin: 0;
-          font-size: 19px;
-          color: #f8fafc;
-        }
-
-        .new-bot-button {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          min-height: 40px;
+        .btn {
+          border: 1px solid #1e293b;
+          color: #dbe7f5;
+          background: #0b1220;
+          border-radius: 12px;
+          min-height: 44px;
           padding: 0 14px;
-          border-radius: 11px;
-          color: #67e8f9;
-          background: rgba(34, 211, 238, 0.08);
-          border: 1px solid rgba(34, 211, 238, 0.2);
-          font-weight: 700;
-        }
-
-        .bot-list {
-          display: grid;
-          grid-template-columns:
-            repeat(auto-fill, minmax(220px, 1fr));
-          gap: 9px;
-        }
-
-        .bot-chip {
-          min-width: 0;
-          display: flex;
+          display: inline-flex;
           align-items: center;
-          gap: 10px;
-          text-align: right;
-          padding: 11px;
-          border-radius: 14px;
-          color: #cbd5e1;
-          background: #101a2a;
-          border: 1px solid #1f2e43;
+          justify-content: center;
+          gap: 8px;
           cursor: pointer;
           transition:
-            border-color 0.2s ease,
-            background 0.2s ease,
-            transform 0.2s ease;
+            transform 0.18s ease,
+            border-color 0.18s ease,
+            background 0.18s ease,
+            opacity 0.18s ease;
         }
 
-        .bot-chip:hover {
+        .btn:hover {
           transform: translateY(-1px);
-          border-color: #344a65;
+          border-color: #334155;
+          background: #101a2b;
         }
 
-        .bot-chip.selected {
-          background: rgba(8, 145, 178, 0.09);
-          border-color: rgba(34, 211, 238, 0.48);
-        }
-
-        .bot-chip-icon {
-          width: 36px;
-          height: 36px;
-          flex: 0 0 36px;
-          display: grid;
-          place-items: center;
-          border-radius: 10px;
-          color: #67e8f9;
-          background: rgba(34, 211, 238, 0.08);
-        }
-
-        .bot-chip-content {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .bot-chip-content strong,
-        .bot-chip-content small {
-          display: block;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .bot-chip-content strong {
-          font-size: 13px;
-          color: #e8eef8;
-          margin-bottom: 3px;
-        }
-
-        .bot-chip-content small {
-          font-size: 10px;
-          color: #71829a;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .status-dot {
-          width: 8px;
-          height: 8px;
-          flex: 0 0 8px;
-          border-radius: 999px;
-          background: #475569;
-        }
-
-        .status-dot.active {
-          background: #34d399;
-          box-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
-        }
-
-        .loading-box,
-        .empty-box {
-          min-height: 110px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-direction: column;
-          gap: 8px;
-          border-radius: 15px;
-          background: #0a111d;
-          border: 1px dashed #25364c;
-          color: #8494aa;
-        }
-
-        .empty-icon {
-          width: 46px;
-          height: 46px;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          color: #67e8f9;
-          background: rgba(34, 211, 238, 0.07);
-        }
-
-        .empty-box strong {
-          color: #cbd5e1;
-          font-size: 14px;
-        }
-
-        .empty-box span {
-          font-size: 11px;
-        }
-
-        .spinner {
-          width: 23px;
-          height: 23px;
-          border: 2px solid #26364a;
-          border-top-color: #67e8f9;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        .status-panel {
-          margin-top: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 18px 20px;
-          border-radius: 20px;
-          border: 1px solid;
-        }
-
-        .status-active {
-          background: rgba(6, 78, 59, 0.13);
-          border-color: rgba(52, 211, 153, 0.25);
-        }
-
-        .status-off {
-          background: rgba(30, 41, 59, 0.42);
-          border-color: #253449;
-        }
-
-        .status-main {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          min-width: 0;
-        }
-
-        .status-icon {
-          width: 47px;
-          height: 47px;
-          flex: 0 0 47px;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          background: rgba(255, 255, 255, 0.04);
-          color: #67e8f9;
-        }
-
-        .status-active .status-icon {
-          color: #34d399;
-        }
-
-        .status-main span,
-        .status-main strong,
-        .status-main small {
-          display: block;
-        }
-
-        .status-main span {
-          color: #75869e;
-          font-size: 11px;
-          margin-bottom: 3px;
-        }
-
-        .status-main strong {
-          font-size: 16px;
-          color: #f8fafc;
-        }
-
-        .status-main small {
-          color: #7f91aa;
-          font-size: 11px;
-          margin-top: 4px;
-        }
-
-        .big-toggle {
-          min-width: 108px;
-          min-height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 9px;
-          border: 1px solid #334155;
-          border-radius: 12px;
-          background: #111b2b;
-          color: #94a3b8;
-          cursor: pointer;
-          font-weight: 800;
-        }
-
-        .big-toggle span {
-          width: 9px;
-          height: 9px;
-          border-radius: 50%;
-          background: #64748b;
-        }
-
-        .big-toggle.on {
-          color: #86efac;
-          border-color: rgba(52, 211, 153, 0.35);
-          background: rgba(6, 78, 59, 0.2);
-        }
-
-        .big-toggle.on span {
-          background: #34d399;
-          box-shadow: 0 0 10px rgba(52, 211, 153, 0.6);
-        }
-
-        .settings-layout {
-          margin-top: 16px;
-          display: grid;
-          grid-template-columns:
-            minmax(0, 1fr)
-            320px;
-          gap: 16px;
-          align-items: start;
-        }
-
-        .settings-main {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-        }
-
-        .settings-side {
-          min-width: 0;
-        }
-
-        .sticky-panel {
-          position: sticky;
-          top: 18px;
-          padding: 19px;
-          border-radius: 21px;
-          background:
-            linear-gradient(
-              180deg,
-              #0d1727,
-              #0a111d
-            );
-          border: 1px solid #203047;
-          box-shadow:
-            0 20px 60px rgba(0, 0, 0, 0.22);
-        }
-
-        .side-title {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .side-title-icon {
-          width: 40px;
-          height: 40px;
-          display: grid;
-          place-items: center;
-          border-radius: 12px;
-          color: #67e8f9;
-          background: rgba(34, 211, 238, 0.08);
-        }
-
-        .side-title span,
-        .side-title strong {
-          display: block;
-        }
-
-        .side-title span {
-          color: #71829a;
-          font-size: 10px;
-        }
-
-        .side-title strong {
-          margin-top: 2px;
-          color: #f8fafc;
-          font-size: 14px;
-        }
-
-        .side-status {
-          margin-top: 16px;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          width: fit-content;
-          padding: 6px 10px;
-          border-radius: 999px;
-          color: #cbd5e1;
-          background: #111b2a;
-          font-size: 11px;
-        }
-
-        .live-dot,
-        .offline-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-        }
-
-        .live-dot {
-          background: #34d399;
-          box-shadow: 0 0 9px rgba(52, 211, 153, 0.7);
-        }
-
-        .offline-dot {
-          background: #64748b;
-        }
-
-        .summary-list {
-          margin-top: 15px;
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-          overflow: hidden;
-          border: 1px solid #1c2a3d;
-          border-radius: 14px;
-        }
-
-        .summary-list div {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 10px 11px;
-          background: #0d1625;
-        }
-
-        .summary-list div:nth-child(even) {
-          background: #0b1320;
-        }
-
-        .summary-list span {
-          color: #71829a;
-          font-size: 10px;
-        }
-
-        .summary-list strong {
-          color: #dbe5f1;
-          font-size: 11px;
-          direction: ltr;
-        }
-
-        .green-text {
-          color: #34d399 !important;
-        }
-
-        .red-text {
-          color: #fb7185 !important;
-        }
-
-        .side-divider {
-          height: 1px;
-          background: #1e2b3d;
-          margin: 17px 0;
-        }
-
-        .permission-box > span {
-          color: #71829a;
-          font-size: 10px;
-        }
-
-        .permission-row {
-          display: flex;
-          gap: 7px;
-          margin-top: 8px;
-        }
-
-        .permission {
-          flex: 1;
-          text-align: center;
-          padding: 8px;
-          border-radius: 9px;
-          font-size: 10px;
-          font-weight: 800;
-        }
-
-        .permission.buy {
-          color: #6ee7b7;
-          background: rgba(16, 185, 129, 0.09);
-          border: 1px solid rgba(52, 211, 153, 0.15);
-        }
-
-        .permission.sell {
-          color: #fda4af;
-          background: rgba(244, 63, 94, 0.09);
-          border: 1px solid rgba(251, 113, 133, 0.15);
-        }
-
-        .permission.disabled {
-          color: #64748b;
-          background: #111a29;
-          border: 1px solid #1c2a3c;
-        }
-
-        .side-actions {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          margin-top: 17px;
-        }
-
-        .save-button {
-          min-height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          border-radius: 13px;
-          color: #04131a;
-          background:
-            linear-gradient(
-              135deg,
-              #67e8f9,
-              #22d3ee
-            );
-          font-weight: 900;
-        }
-
-        .save-button:disabled,
-        .create-secondary:disabled {
-          opacity: 0.55;
+        .btn:disabled {
           cursor: not-allowed;
+          opacity: 0.55;
           transform: none;
         }
 
-        .create-secondary {
-          min-height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          border-radius: 12px;
-          color: #cbd5e1;
-          background: #111b2b;
-          border: 1px solid #26364b;
-          font-weight: 700;
+        .btn-primary {
+          border-color: rgba(34, 211, 238, 0.35);
+          background:
+            linear-gradient(
+              135deg,
+              #0891b2,
+              #2563eb
+            );
+          color: white;
+          box-shadow:
+            0 12px 30px rgba(8, 145, 178, 0.18);
         }
 
-        .security-note {
+        .btn-primary:hover {
+          background:
+            linear-gradient(
+              135deg,
+              #06b6d4,
+              #2563eb
+            );
+        }
+
+        .btn-green {
+          border-color: rgba(34, 197, 94, 0.30);
+          color: #bbf7d0;
+          background: rgba(22, 101, 52, 0.16);
+        }
+
+        .btn-red {
+          border-color: rgba(248, 113, 113, 0.28);
+          color: #fecaca;
+          background: rgba(127, 29, 29, 0.16);
+        }
+
+        .notice {
+          border-radius: 14px;
+          padding: 12px 14px;
+          margin-bottom: 16px;
           display: flex;
-          align-items: flex-start;
-          gap: 7px;
-          margin-top: 13px;
-          padding-top: 12px;
-          border-top: 1px solid #1b293b;
-          color: #60728a;
-          font-size: 9px;
-          line-height: 1.7;
+          align-items: center;
+          gap: 10px;
+          font-size: 13px;
+        }
+
+        .notice-success {
+          background: rgba(16, 185, 129, 0.10);
+          border: 1px solid rgba(16, 185, 129, 0.22);
+          color: #a7f3d0;
+        }
+
+        .notice-error {
+          background: rgba(239, 68, 68, 0.10);
+          border: 1px solid rgba(239, 68, 68, 0.22);
+          color: #fecaca;
+        }
+
+        .bot-control {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 16px;
+          padding: 18px;
+          margin-bottom: 18px;
+          border-radius: 20px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(15, 23, 42, 0.98),
+              rgba(8, 15, 28, 0.98)
+            );
+          border: 1px solid #172235;
+          box-shadow:
+            0 20px 60px rgba(0, 0, 0, 0.20);
+        }
+
+        .bot-status {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+        }
+
+        .status-dot {
+          width: 13px;
+          height: 13px;
+          border-radius: 50%;
+          background: #475569;
+          box-shadow: 0 0 0 5px rgba(71, 85, 105, 0.10);
+        }
+
+        .status-dot.active {
+          background: #22c55e;
+          box-shadow:
+            0 0 0 5px rgba(34, 197, 94, 0.10),
+            0 0 22px rgba(34, 197, 94, 0.45);
+        }
+
+        .status-title {
+          margin: 0;
+          color: #f8fafc;
+          font-size: 16px;
+          font-weight: 800;
+        }
+
+        .status-subtitle {
+          margin: 4px 0 0;
+          color: #718096;
+          font-size: 12px;
+        }
+
+        .status-action {
+          min-width: 145px;
+        }
+
+        .bot-list {
+          display: flex;
+          gap: 9px;
+          overflow-x: auto;
+          padding: 2px 1px 9px;
+          margin-bottom: 18px;
+          scrollbar-width: thin;
+        }
+
+        .bot-chip {
+          flex: 0 0 auto;
+          border: 1px solid #172235;
+          background: #09111e;
+          color: #aebbd0;
+          padding: 11px 13px;
+          border-radius: 13px;
+          cursor: pointer;
+          min-width: 150px;
+          text-align: right;
+          transition: 0.18s ease;
+        }
+
+        .bot-chip:hover {
+          border-color: #2b3a50;
+        }
+
+        .bot-chip.active {
+          border-color: rgba(34, 211, 238, 0.42);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(8, 145, 178, 0.13),
+              rgba(37, 99, 235, 0.09)
+            );
+          color: #e8fbff;
+        }
+
+        .bot-chip strong {
+          display: block;
+          font-size: 13px;
+        }
+
+        .bot-chip small {
+          display: block;
+          color: #64748b;
+          margin-top: 4px;
+          font-size: 11px;
+        }
+
+        .empty-list {
+          width: 100%;
+          padding: 15px;
+          border-radius: 14px;
+          border: 1px dashed #26344a;
+          color: #718096;
+          text-align: center;
+          font-size: 13px;
+        }
+
+        .grid-two {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 16px;
         }
 
         .section-card {
+          background:
+            linear-gradient(
+              145deg,
+              rgba(11, 18, 32, 0.97),
+              rgba(7, 14, 26, 0.97)
+            );
+          border: 1px solid #172235;
+          border-radius: 20px;
           overflow: hidden;
-          border-radius: 21px;
-          background: #0c1421;
-          border: 1px solid #1c293c;
           box-shadow:
-            0 12px 45px rgba(0, 0, 0, 0.12);
-        }
-
-        .section-card::before {
-          content: "";
-          display: block;
-          height: 2px;
-          background: #22d3ee;
-          opacity: 0.7;
-        }
-
-        .accent-green::before {
-          background: #34d399;
-        }
-
-        .accent-red::before {
-          background: #fb7185;
-        }
-
-        .accent-gold::before {
-          background: #fbbf24;
-        }
-
-        .accent-purple::before {
-          background: #a78bfa;
+            0 16px 45px rgba(0, 0, 0, 0.14);
+          margin-bottom: 16px;
         }
 
         .section-header {
-          width: 100%;
           display: flex;
           align-items: center;
-          justify-content: space-between;
           gap: 12px;
-          padding: 18px 19px;
-          text-align: right;
-          color: inherit;
-          background: transparent;
-          border: 0;
-          cursor: pointer;
-        }
-
-        .section-title-wrap {
-          min-width: 0;
-          display: flex;
-          align-items: center;
-          gap: 11px;
+          padding: 17px 18px;
+          border-bottom: 1px solid #142033;
         }
 
         .section-icon {
           width: 42px;
           height: 42px;
-          flex: 0 0 42px;
+          flex: 0 0 auto;
+          border-radius: 13px;
           display: grid;
           place-items: center;
-          border-radius: 13px;
           color: #67e8f9;
-          background: rgba(34, 211, 238, 0.07);
-        }
-
-        .accent-green .section-icon {
-          color: #34d399;
-          background: rgba(52, 211, 153, 0.07);
-        }
-
-        .accent-red .section-icon {
-          color: #fb7185;
-          background: rgba(251, 113, 133, 0.07);
-        }
-
-        .accent-gold .section-icon {
-          color: #fbbf24;
-          background: rgba(251, 191, 36, 0.07);
-        }
-
-        .accent-purple .section-icon {
-          color: #a78bfa;
-          background: rgba(167, 139, 250, 0.07);
+          background: rgba(8, 145, 178, 0.10);
+          border: 1px solid rgba(34, 211, 238, 0.13);
         }
 
         .section-header h2 {
           margin: 0;
-          color: #edf3fb;
-          font-size: 15px;
+          font-size: 16px;
+          color: #f1f5f9;
         }
 
         .section-header p {
           margin: 4px 0 0;
-          color: #6f8098;
-          font-size: 10px;
+          color: #64748b;
+          font-size: 11px;
           line-height: 1.7;
         }
 
-        .chevron {
-          width: 32px;
-          height: 32px;
-          flex: 0 0 32px;
+        .section-content {
+          padding: 17px;
+        }
+
+        .field-grid {
           display: grid;
-          place-items: center;
-          color: #64748b;
-          border-radius: 9px;
-          background: #111b2a;
-          transition: transform 0.2s ease;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
         }
 
-        .chevron.open {
-          transform: rotate(180deg);
-        }
-
-        .section-body {
-          padding: 0 19px 20px;
-        }
-
-        .form-grid {
-          display: grid;
-          gap: 12px;
-        }
-
-        .form-grid + .form-grid {
-          margin-top: 12px;
-        }
-
-        .form-grid.two {
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-        }
-
-        .form-grid.three {
-          grid-template-columns:
-            repeat(3, minmax(0, 1fr));
-        }
-
-        .form-grid.four {
-          grid-template-columns:
-            repeat(4, minmax(0, 1fr));
+        .field-grid.three {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
         .field {
-          min-width: 0;
           display: block;
+          min-width: 0;
         }
 
-        .field-label {
-          display: block;
+        .field-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
           margin-bottom: 7px;
-          color: #91a2b9;
-          font-size: 10px;
+        }
+
+        .field-top span {
+          color: #cbd5e1;
+          font-size: 12px;
           font-weight: 700;
         }
 
-        .input-wrap {
-          position: relative;
+        .field-top small {
+          color: #526176;
+          font-size: 10px;
         }
 
-        .field input,
-        .field select,
-        .money-field input {
+        .input,
+        .select {
           width: 100%;
-          min-height: 45px;
-          border-radius: 11px;
-          border: 1px solid #223149;
-          background: #09111e;
-          color: #e8eef8;
+          min-height: 47px;
+          border-radius: 12px;
+          border: 1px solid #1d2a3e;
+          background: #070e1a;
+          color: #e5edf7;
+          padding: 0 13px;
           outline: none;
-          padding: 0 12px;
-          font-size: 12px;
-          transition:
-            border-color 0.2s ease,
-            box-shadow 0.2s ease;
+          transition: 0.18s ease;
+          direction: rtl;
         }
 
-        .field input:focus,
-        .field select:focus,
-        .money-field input:focus {
+        .input:focus,
+        .select:focus {
           border-color: rgba(34, 211, 238, 0.55);
           box-shadow:
             0 0 0 3px rgba(34, 211, 238, 0.07);
         }
 
-        .field input:disabled {
-          opacity: 0.38;
-          cursor: not-allowed;
+        .input::placeholder {
+          color: #475569;
         }
 
-        .field select {
-          cursor: pointer;
+        .select {
           appearance: auto;
         }
 
-        .input-suffix {
-          position: absolute;
-          left: 11px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: #53657d;
-          font-size: 9px;
-          direction: ltr;
-        }
-
-        .mode-selector {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-          margin-bottom: 12px;
-        }
-
-        .mode {
-          min-height: 73px;
-          padding: 12px;
-          border-radius: 13px;
-          text-align: right;
-          cursor: pointer;
-          background: #0a121f;
-          border: 1px solid #213148;
-          color: #b9c7d8;
-        }
-
-        .mode.active {
-          border-color: rgba(34, 211, 238, 0.5);
-          background: rgba(34, 211, 238, 0.06);
-          color: #67e8f9;
-        }
-
-        .mode strong,
-        .mode span {
-          display: block;
-        }
-
-        .mode strong {
-          font-size: 12px;
-        }
-
-        .mode span {
-          margin-top: 5px;
-          color: #667890;
-          font-size: 9px;
-        }
-
-        .warning-box,
-        .telegram-note,
-        .danger-box {
-          margin-top: 12px;
-          display: flex;
-          align-items: flex-start;
-          gap: 9px;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 10px;
-          line-height: 1.7;
-        }
-
-        .warning-box {
-          color: #fcd34d;
-          background: rgba(120, 53, 15, 0.16);
-          border: 1px solid rgba(245, 158, 11, 0.15);
-        }
-
-        .warning-box strong,
-        .warning-box span {
-          display: block;
-        }
-
-        .warning-box span {
-          color: #8f7b50;
-          margin-top: 2px;
-        }
-
-        .money-field {
-          min-width: 0;
-        }
-
-        .money-field label {
-          display: block;
-          margin-bottom: 7px;
-          color: #91a2b9;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .money-field > div {
-          position: relative;
-        }
-
-        .money-field > div > span {
-          position: absolute;
-          right: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          font-weight: 900;
-          direction: ltr;
-        }
-
-        .money-field input {
-          padding-right: 31px;
+        .money-input {
           direction: ltr;
           text-align: left;
         }
 
-        .money-field small {
-          display: block;
-          margin-top: 5px;
-          color: #53657d;
-          font-size: 9px;
-          direction: ltr;
-          text-align: right;
+        .tp-card,
+        .sl-card {
+          border-radius: 17px;
+          padding: 16px;
+          border: 1px solid;
         }
 
-        .profit-field > div > span {
-          color: #34d399;
+        .tp-card {
+          border-color: rgba(34, 197, 94, 0.17);
+          background: rgba(22, 101, 52, 0.07);
         }
 
-        .loss-field > div > span {
-          color: #fb7185;
+        .sl-card {
+          border-color: rgba(248, 113, 113, 0.17);
+          background: rgba(127, 29, 29, 0.07);
         }
 
-        .rr-preview {
-          margin-top: 12px;
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          padding: 11px;
-          border-radius: 13px;
-          background: #09111e;
-          border: 1px solid #1d2b3e;
+        .metric-label {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          color: #94a3b8;
+          font-size: 11px;
+          margin-bottom: 9px;
         }
 
-        .rr-preview div {
-          min-width: 0;
-          text-align: center;
+        .tp-card .metric-label {
+          color: #86efac;
         }
 
-        .rr-preview span,
-        .rr-preview strong {
-          display: block;
+        .sl-card .metric-label {
+          color: #fda4af;
         }
 
-        .rr-preview span {
-          color: #64758d;
-          font-size: 9px;
-          margin-bottom: 4px;
-        }
-
-        .rr-preview strong {
-          color: #dbe5f1;
-          font-size: 13px;
-          direction: ltr;
-        }
-
-        .toggle-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-        }
-
-        .toggle-card {
+        .metric-input {
           width: 100%;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: white;
+          font-size: 23px;
+          font-weight: 900;
+          direction: ltr;
+          text-align: left;
+        }
+
+        .rr-panel {
+          margin-top: 15px;
+          border-radius: 18px;
+          padding: 17px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(8, 145, 178, 0.11),
+              rgba(37, 99, 235, 0.07)
+            );
+          border: 1px solid rgba(34, 211, 238, 0.16);
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 15px;
+        }
+
+        .rr-title {
+          color: #94a3b8;
+          font-size: 11px;
+        }
+
+        .rr-number {
+          margin-top: 5px;
+          color: #67e8f9;
+          font-size: 28px;
+          font-weight: 900;
+          direction: ltr;
+        }
+
+        .rr-explanation {
+          text-align: left;
+          direction: ltr;
+          color: #64748b;
+          font-size: 10px;
+          line-height: 1.7;
+        }
+
+        .direction-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 12px;
-          min-height: 70px;
-          padding: 12px;
-          text-align: right;
-          border-radius: 13px;
-          background: #09111e;
-          border: 1px solid #1f2e43;
+        }
+
+        .direction {
+          min-height: 62px;
+          border-radius: 15px;
+          border: 1px solid #1d2a3e;
+          background: #070e1a;
+          color: #718096;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 0 14px;
+          cursor: pointer;
+          transition: 0.18s ease;
+        }
+
+        .direction.buy.active {
+          border-color: rgba(34, 197, 94, 0.36);
+          background: rgba(22, 101, 52, 0.13);
+          color: #86efac;
+        }
+
+        .direction.sell.active {
+          border-color: rgba(248, 113, 113, 0.36);
+          background: rgba(127, 29, 29, 0.13);
+          color: #fda4af;
+        }
+
+        .direction strong {
+          display: block;
+          font-size: 13px;
+        }
+
+        .direction small {
+          display: block;
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .toggle-list {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .toggle-row {
+          min-height: 67px;
+          border: 1px solid #18253a;
+          background: #070e1a;
+          border-radius: 14px;
+          padding: 11px 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
           color: #cbd5e1;
           cursor: pointer;
+          text-align: right;
+          transition: 0.18s ease;
         }
 
-        .toggle-card.checked {
-          background: rgba(34, 211, 238, 0.045);
-          border-color: rgba(34, 211, 238, 0.28);
+        .toggle-row:hover {
+          border-color: #2b3b52;
         }
 
-        .toggle-copy {
-          min-width: 0;
+        .toggle-row.active {
+          border-color: rgba(34, 211, 238, 0.23);
+          background: rgba(8, 145, 178, 0.06);
         }
 
-        .toggle-copy strong,
-        .toggle-copy span {
-          display: block;
-        }
-
-        .toggle-copy strong {
-          font-size: 12px;
-        }
-
-        .toggle-copy span {
-          margin-top: 4px;
-          color: #667890;
-          font-size: 9px;
-          line-height: 1.6;
-        }
-
-        .toggle-switch {
-          width: 42px;
+        .switch {
+          width: 39px;
           height: 23px;
-          flex: 0 0 42px;
-          padding: 3px;
           border-radius: 999px;
           background: #1e293b;
-          transition: background 0.2s ease;
+          padding: 3px;
+          flex: 0 0 auto;
+          transition: 0.18s ease;
         }
 
-        .toggle-switch span {
+        .switch span {
           display: block;
           width: 17px;
           height: 17px;
           border-radius: 50%;
           background: #64748b;
-          transition: transform 0.2s ease;
+          transition: 0.18s ease;
         }
 
-        .toggle-card.checked .toggle-switch {
+        .switch.on {
           background: #0891b2;
         }
 
-        .toggle-card.checked .toggle-switch span {
-          transform: translateX(-19px);
-          background: #ecfeff;
+        .switch.on span {
+          transform: translateX(-16px);
+          background: white;
         }
 
-        .toggle-green.checked {
-          border-color: rgba(52, 211, 153, 0.28);
-          background: rgba(52, 211, 153, 0.045);
+        .toggle-text {
+          min-width: 0;
         }
 
-        .toggle-green.checked .toggle-switch {
-          background: #059669;
-        }
-
-        .toggle-red.checked {
-          border-color: rgba(251, 113, 133, 0.28);
-          background: rgba(251, 113, 133, 0.045);
-        }
-
-        .toggle-red.checked .toggle-switch {
-          background: #e11d48;
-        }
-
-        .toggle-gold.checked {
-          border-color: rgba(251, 191, 36, 0.28);
-          background: rgba(251, 191, 36, 0.045);
-        }
-
-        .toggle-gold.checked .toggle-switch {
-          background: #d97706;
-        }
-
-        .risk-summary {
-          margin-top: 12px;
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-        }
-
-        .risk-summary-item {
-          padding: 12px;
-          border-radius: 12px;
-          background: #09111e;
-          border: 1px solid #1d2b3e;
-        }
-
-        .risk-summary-item span,
-        .risk-summary-item strong {
+        .toggle-text strong {
           display: block;
+          font-size: 12px;
         }
 
-        .risk-summary-item span {
-          color: #667890;
-          font-size: 9px;
-          margin-bottom: 5px;
+        .toggle-text small {
+          display: block;
+          color: #596a80;
+          margin-top: 4px;
+          font-size: 10px;
+          line-height: 1.5;
         }
 
-        .risk-summary-item strong {
+        .mode-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-bottom: 13px;
+        }
+
+        .mode-button {
+          min-height: 74px;
+          border-radius: 15px;
+          border: 1px solid #1d2a3e;
+          background: #070e1a;
+          color: #94a3b8;
+          padding: 12px;
+          cursor: pointer;
+          text-align: right;
+          transition: 0.18s ease;
+        }
+
+        .mode-button.active {
+          border-color: rgba(34, 211, 238, 0.35);
+          background: rgba(8, 145, 178, 0.09);
+          color: #e2faff;
+        }
+
+        .mode-button strong {
+          display: block;
           font-size: 13px;
-          direction: ltr;
+        }
+
+        .mode-button small {
+          display: block;
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 10px;
+          line-height: 1.6;
         }
 
         .danger-box {
+          margin-top: 13px;
+          border-radius: 15px;
+          padding: 13px;
+          border: 1px solid rgba(248, 113, 113, 0.14);
+          background: rgba(127, 29, 29, 0.06);
+          color: #cbd5e1;
+          font-size: 11px;
+          line-height: 1.9;
+        }
+
+        .danger-box strong {
           color: #fda4af;
-          background: rgba(127, 29, 29, 0.15);
-          border: 1px solid rgba(251, 113, 133, 0.18);
         }
 
-        .score-card {
-          padding: 15px;
+        .bottom-save {
+          position: sticky;
+          bottom: 12px;
+          z-index: 20;
+          margin-top: 7px;
+          border-radius: 18px;
+          padding: 9px;
+          background: rgba(5, 9, 20, 0.86);
+          border: 1px solid #172235;
+          backdrop-filter: blur(16px);
+          box-shadow:
+            0 15px 50px rgba(0, 0, 0, 0.30);
+        }
+
+        .save-button {
+          width: 100%;
+          min-height: 54px;
+          border: 0;
           border-radius: 14px;
-          background: #09111e;
-          border: 1px solid #1d2b3e;
-          margin-bottom: 12px;
-        }
-
-        .score-number {
-          display: flex;
-          align-items: baseline;
-          gap: 5px;
-          direction: ltr;
-        }
-
-        .score-number strong {
-          font-size: 27px;
-          color: #a78bfa;
-        }
-
-        .score-number span {
-          color: #65768e;
-          font-size: 10px;
-        }
-
-        .score-bar {
-          height: 7px;
-          margin: 11px 0 7px;
-          overflow: hidden;
-          border-radius: 999px;
-          background: #1c293a;
-        }
-
-        .score-bar div {
-          height: 100%;
-          border-radius: inherit;
+          color: white;
+          font-weight: 900;
+          font-size: 14px;
           background:
             linear-gradient(
-              90deg,
-              #8b5cf6,
-              #22d3ee
+              135deg,
+              #0891b2,
+              #2563eb
             );
-          transition: width 0.2s ease;
-        }
-
-        .score-card > span {
-          color: #667890;
-          font-size: 9px;
-        }
-
-        .telegram-note {
-          align-items: center;
-          color: #67e8f9;
-          background: rgba(34, 211, 238, 0.045);
-          border: 1px solid rgba(34, 211, 238, 0.13);
-        }
-
-        .telegram-note span {
-          color: #71829a;
-        }
-
-        .bottom-note {
-          margin-top: 16px;
+          cursor: pointer;
           display: flex;
-          align-items: flex-start;
+          align-items: center;
+          justify-content: center;
           gap: 9px;
-          padding: 13px 15px;
-          color: #60728a;
+          box-shadow:
+            0 10px 30px rgba(37, 99, 235, 0.20);
+        }
+
+        .save-button:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        .summary-strip {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+
+        .summary-item {
+          border: 1px solid #172235;
+          background: #09111e;
+          border-radius: 15px;
+          padding: 13px;
+          min-width: 0;
+        }
+
+        .summary-item span {
+          color: #64748b;
+          display: block;
           font-size: 10px;
-          line-height: 1.8;
-          border-radius: 14px;
-          background: #0b1320;
-          border: 1px solid #172538;
+          margin-bottom: 5px;
         }
 
-        @media (max-width: 1050px) {
-          .settings-layout {
+        .summary-item strong {
+          color: #e2e8f0;
+          font-size: 14px;
+        }
+
+        .summary-item.profit strong {
+          color: #4ade80;
+        }
+
+        .summary-item.loss strong {
+          color: #fb7185;
+        }
+
+        .loading-screen {
+          width: min(700px, 100%);
+          margin: 90px auto;
+          text-align: center;
+          color: #718096;
+        }
+
+        .loading-icon {
+          width: 55px;
+          height: 55px;
+          border-radius: 17px;
+          display: grid;
+          place-items: center;
+          margin: 0 auto 14px;
+          color: #67e8f9;
+          border: 1px solid #1c3047;
+          background: #09111e;
+          animation: pulse 1.4s infinite;
+        }
+
+        @keyframes pulse {
+          0%,
+          100% {
+            opacity: 0.55;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+
+        @media (max-width: 850px) {
+          .grid-two {
             grid-template-columns: 1fr;
           }
 
-          .sticky-panel {
-            position: static;
+          .field-grid.three {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
-          .settings-side {
-            order: -1;
-          }
-
-          .overview-grid {
-            grid-template-columns:
-              repeat(2, minmax(0, 1fr));
+          .summary-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
 
-        @media (max-width: 760px) {
+        @media (max-width: 620px) {
           .bot-page {
-            padding: 12px 10px 40px;
+            padding: 15px 10px 55px;
           }
 
-          .hero {
-            padding: 17px;
-            border-radius: 20px;
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .hero-logo {
-            width: 50px;
-            height: 50px;
-            flex-basis: 50px;
-          }
-
-          .hero-actions {
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .primary-button,
-          .ghost-button {
-            width: 100%;
-          }
-
-          .overview-grid {
-            grid-template-columns:
-              repeat(2, minmax(0, 1fr));
-          }
-
-          .metric {
-            padding: 12px;
-          }
-
-          .metric-icon {
-            width: 36px;
-            height: 36px;
-            flex-basis: 36px;
-          }
-
-          .selector-heading {
-            align-items: stretch;
-            flex-direction: column;
-          }
-
-          .new-bot-button {
-            width: 100%;
-            justify-content: center;
-          }
-
-          .bot-list {
-            grid-template-columns: 1fr;
-          }
-
-          .status-panel {
-            align-items: stretch;
-            flex-direction: column;
-          }
-
-          .big-toggle {
-            width: 100%;
-          }
-
-          .form-grid.two,
-          .form-grid.three,
-          .form-grid.four {
-            grid-template-columns: 1fr;
-          }
-
-          .toggle-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .rr-preview,
-          .risk-summary {
-            grid-template-columns: 1fr;
-          }
-
-          .section-header {
-            padding: 15px;
-          }
-
-          .section-body {
-            padding: 0 15px 16px;
-          }
-
-          .section-header p {
-            display: none;
-          }
-
-          .section-icon {
-            width: 38px;
-            height: 38px;
-            flex-basis: 38px;
-          }
-
-          .section-header h2 {
-            font-size: 14px;
-          }
-
-          .sticky-panel {
-            padding: 15px;
-          }
-        }
-
-        @media (max-width: 420px) {
-          .overview-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .hero-brand {
+          .topbar {
             align-items: flex-start;
+            flex-direction: column;
           }
 
-          .hero h1 {
-            font-size: 21px;
+          .top-actions {
+            width: 100%;
           }
 
-          .hero p {
-            font-size: 11px;
+          .top-actions .btn {
+            flex: 1;
           }
 
-          .hero-actions {
+          .bot-control {
             grid-template-columns: 1fr;
           }
 
-          .metric strong {
-            font-size: 16px;
+          .status-action {
+            width: 100%;
+          }
+
+          .field-grid,
+          .field-grid.three,
+          .toggle-list,
+          .mode-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .section-card {
+            border-radius: 17px;
+          }
+
+          .section-header,
+          .section-content {
+            padding: 14px;
+          }
+
+          .rr-panel {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .rr-explanation {
+            text-align: right;
+            direction: rtl;
+          }
+
+          .summary-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .brand-text p {
+            font-size: 11px;
           }
         }
       `}</style>
+
+      <div className="page-shell">
+        {/* =================================================
+            HEADER
+        ================================================= */}
+
+        <header className="topbar">
+          <div className="brand-area">
+            <div className="brand-icon">
+              <Icon name="bot" size={25} />
+            </div>
+
+            <div className="brand-text">
+              <h1>ساخت و مدیریت ربات</h1>
+              <p>
+                تنظیمات واقعی ربات معاملاتی Trading AI
+              </p>
+            </div>
+          </div>
+
+          <div className="top-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={loadBots}
+              disabled={loading || saving}
+            >
+              <Icon name="refresh" size={17} />
+              بروزرسانی
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={newBot}
+              disabled={saving}
+            >
+              <Icon name="plus" size={17} />
+              ربات جدید
+            </button>
+          </div>
+        </header>
+
+        {/* =================================================
+            NOTICES
+        ================================================= */}
+
+        {message && (
+          <div className="notice notice-success">
+            <Icon name="check" size={18} />
+            <span>{message}</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="notice notice-error">
+            <Icon name="warning" size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* =================================================
+            LOADING
+        ================================================= */}
+
+        {loading ? (
+          <div className="loading-screen">
+            <div className="loading-icon">
+              <Icon name="refresh" size={24} />
+            </div>
+
+            <div>
+              در حال دریافت تنظیمات ربات‌ها...
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* =============================================
+                BOT STATUS
+            ============================================= */}
+
+            <div className="bot-control">
+              <div className="bot-status">
+                <div
+                  className={`status-dot ${
+                    form.isActive ? "active" : ""
+                  }`}
+                />
+
+                <div>
+                  <p className="status-title">
+                    {form.isActive
+                      ? "ربات در وضعیت فعال است"
+                      : "ربات خاموش است"}
+                  </p>
+
+                  <p className="status-subtitle">
+                    {selectedId
+                      ? "تنظیمات فعلی این ربات از دیتابیس خوانده شده است."
+                      : "یک ربات جدید بسازید و تنظیمات آن را ذخیره کنید."}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={`btn status-action ${
+                  form.isActive
+                    ? "btn-red"
+                    : "btn-green"
+                }`}
+                onClick={toggleBotActive}
+                disabled={!selectedId || saving}
+              >
+                <Icon
+                  name={form.isActive ? "loss" : "zap"}
+                  size={18}
+                />
+
+                {form.isActive
+                  ? "خاموش کردن ربات"
+                  : "روشن کردن ربات"}
+              </button>
+            </div>
+
+            {/* =============================================
+                BOT LIST
+            ============================================= */}
+
+            <div className="bot-list">
+              {bots.length === 0 ? (
+                <div className="empty-list">
+                  هنوز رباتی ساخته نشده است. از دکمه «ربات
+                  جدید» استفاده کنید.
+                </div>
+              ) : (
+                <>
+                  {bots.map((bot) => (
+                    <button
+                      key={bot.id}
+                      type="button"
+                      className={`bot-chip ${
+                        selectedId === bot.id
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() => selectBot(bot)}
+                    >
+                      <strong>
+                        {bot.name}
+                      </strong>
+
+                      <small>
+                        {bot.symbol || "XAUUSD"} •{" "}
+                        {bot.timeframe || "15m"}
+                      </small>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* =============================================
+                SUMMARY
+            ============================================= */}
+
+            <div className="summary-strip">
+              <div className="summary-item">
+                <span>بازار</span>
+                <strong>{form.symbol}</strong>
+              </div>
+
+              <div className="summary-item">
+                <span>تایم‌فریم</span>
+                <strong>{form.timeframe}</strong>
+              </div>
+
+              <div className="summary-item profit">
+                <span>حد سود</span>
+                <strong>
+                  {formatMoney(calculatedProfit)}
+                </strong>
+              </div>
+
+              <div className="summary-item loss">
+                <span>حد ضرر</span>
+                <strong>
+                  {formatMoney(calculatedLoss)}
+                </strong>
+              </div>
+            </div>
+
+            {/* =============================================
+                BASIC
+            ============================================= */}
+
+            <SectionCard
+              icon="bot"
+              title="اطلاعات اصلی ربات"
+              description="نام و مشخصات پایه ربات را تعیین کنید."
+            >
+              <div className="field-grid">
+                <Field
+                  label="نام ربات"
+                  hint="نام دلخواه"
+                >
+                  <input
+                    className="input"
+                    value={form.name}
+                    onChange={(e) =>
+                      update(
+                        "name",
+                        e.target.value
+                      )
+                    }
+                    placeholder="مثلاً Gold AI Pro"
+                  />
+                </Field>
+
+                <Field
+                  label="نوع بازار"
+                  hint="Market"
+                >
+                  <select
+                    className="select"
+                    value={form.marketType}
+                    onChange={(e) =>
+                      update(
+                        "marketType",
+                        e.target.value
+                      )
+                    }
+                  >
+                    <option value="FOREX">
+                      Forex
+                    </option>
+                    <option value="CRYPTO">
+                      Crypto
+                    </option>
+                    <option value="INDEX">
+                      Index
+                    </option>
+                    <option value="METALS">
+                      Metals
+                    </option>
+                  </select>
+                </Field>
+
+                <Field
+                  label="نماد معاملاتی"
+                  hint="Symbol"
+                >
+                  <select
+                    className="select"
+                    value={form.symbol}
+                    onChange={(e) =>
+                      update(
+                        "symbol",
+                        e.target.value
+                      )
+                    }
+                  >
+                    <option value="XAUUSD">
+                      XAUUSD • Gold
+                    </option>
+                    <option value="EURUSD">
+                      EURUSD
+                    </option>
+                    <option value="GBPUSD">
+                      GBPUSD
+                    </option>
+                    <option value="USDJPY">
+                      USDJPY
+                    </option>
+                    <option value="BTCUSDT">
+                      BTCUSDT
+                    </option>
+                    <option value="ETHUSDT">
+                      ETHUSDT
+                    </option>
+                  </select>
+                </Field>
+
+                <Field
+                  label="تایم‌فریم"
+                  hint="Timeframe"
+                >
+                  <select
+                    className="select"
+                    value={form.timeframe}
+                    onChange={(e) =>
+                      update(
+                        "timeframe",
+                        e.target.value
+                      )
+                    }
+                  >
+                    <option value="1m">
+                      1 دقیقه
+                    </option>
+                    <option value="5m">
+                      5 دقیقه
+                    </option>
+                    <option value="15m">
+                      15 دقیقه
+                    </option>
+                    <option value="30m">
+                      30 دقیقه
+                    </option>
+                    <option value="1h">
+                      1 ساعت
+                    </option>
+                    <option value="4h">
+                      4 ساعت
+                    </option>
+                    <option value="1d">
+                      روزانه
+                    </option>
+                  </select>
+                </Field>
+              </div>
+            </SectionCard>
+
+            {/* =============================================
+                MONEY / RISK
+            ============================================= */}
+
+            <SectionCard
+              icon="money"
+              title="حجم و مدیریت ریسک"
+              description="مشخص کنید ربات با چه حجمی و چه میزان ریسکی وارد معامله شود."
+            >
+              <div className="field-grid">
+                <Field
+                  label="روش تعیین حجم"
+                  hint="Lot Mode"
+                >
+                  <select
+                    className="select"
+                    value={form.lotMode}
+                    onChange={(e) =>
+                      update(
+                        "lotMode",
+                        e.target.value
+                      )
+                    }
+                  >
+                    <option value="FIXED">
+                      حجم ثابت
+                    </option>
+                    <option value="RISK_PERCENT">
+                      درصد ریسک
+                    </option>
+                  </select>
+                </Field>
+
+                <Field
+                  label="حجم ثابت"
+                  hint="Lot"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0.001"
+                    step="0.001"
+                    value={form.lotSize}
+                    onChange={(e) =>
+                      update(
+                        "lotSize",
+                        e.target.value
+                      )
+                    }
+                    disabled={
+                      form.lotMode !== "FIXED"
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="درصد ریسک"
+                  hint="%"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={form.riskPercent}
+                    onChange={(e) =>
+                      update(
+                        "riskPercent",
+                        e.target.value
+                      )
+                    }
+                    disabled={
+                      form.lotMode !==
+                      "RISK_PERCENT"
+                    }
+                  />
+                </Field>
+              </div>
+
+              <div style={{ height: 14 }} />
+
+              <div className="direction-grid">
+                <button
+                  type="button"
+                  className={`direction buy ${
+                    form.buyEnabled
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    update(
+                      "buyEnabled",
+                      !form.buyEnabled
+                    )
+                  }
+                >
+                  <span>
+                    <strong>BUY</strong>
+                    <small>
+                      معاملات خرید
+                    </small>
+                  </span>
+
+                  <Icon
+                    name="profit"
+                    size={22}
+                  />
+                </button>
+
+                <button
+                  type="button"
+                  className={`direction sell ${
+                    form.sellEnabled
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    update(
+                      "sellEnabled",
+                      !form.sellEnabled
+                    )
+                  }
+                >
+                  <span>
+                    <strong>SELL</strong>
+                    <small>
+                      معاملات فروش
+                    </small>
+                  </span>
+
+                  <Icon
+                    name="loss"
+                    size={22}
+                  />
+                </button>
+              </div>
+            </SectionCard>
+
+            {/* =============================================
+                TP / SL
+            ============================================= */}
+
+            <SectionCard
+              icon="profit"
+              title="حد سود، حد ضرر و R/R"
+              description="نسبت ریسک به بازده بر اساس مقادیر واقعی TP و SL محاسبه می‌شود."
+            >
+              <div className="field-grid">
+                <div className="tp-card">
+                  <div className="metric-label">
+                    <Icon
+                      name="profit"
+                      size={17}
+                    />
+                    حد سود
+                  </div>
+
+                  <input
+                    className="metric-input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={form.takeProfit}
+                    onChange={(e) =>
+                      update(
+                        "takeProfit",
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: 10,
+                      marginTop: 7,
+                    }}
+                  >
+                    مقدار سود هدف هر معامله
+                  </div>
+                </div>
+
+                <div className="sl-card">
+                  <div className="metric-label">
+                    <Icon
+                      name="loss"
+                      size={17}
+                    />
+                    حد ضرر
+                  </div>
+
+                  <input
+                    className="metric-input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={form.stopLoss}
+                    onChange={(e) =>
+                      update(
+                        "stopLoss",
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: 10,
+                      marginTop: 7,
+                    }}
+                  >
+                    مقدار زیان مجاز هر معامله
+                  </div>
+                </div>
+              </div>
+
+              <div className="rr-panel">
+                <div>
+                  <div className="rr-title">
+                    نسبت ریسک به بازده محاسبه‌شده
+                  </div>
+
+                  <div className="rr-number">
+                    1 :{" "}
+                    {riskReward > 0
+                      ? riskReward.toFixed(2)
+                      : "0.00"}
+                  </div>
+                </div>
+
+                <div className="rr-explanation">
+                  TP ÷ SL
+                  <br />
+                  {tp > 0 && sl > 0
+                    ? `${tp} ÷ ${sl} = ${riskReward.toFixed(
+                        2
+                      )}`
+                    : "حد سود و ضرر را وارد کنید"}
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* =============================================
+                SMART MANAGEMENT
+            ============================================= */}
+
+            <SectionCard
+              icon="settings"
+              title="مدیریت هوشمند معامله"
+              description="قواعدی که در زمان باز بودن معامله روی مدیریت آن اعمال می‌شوند."
+            >
+              <div className="toggle-list">
+                <Toggle
+                  checked={form.trailingStop}
+                  onChange={(value) =>
+                    update(
+                      "trailingStop",
+                      value
+                    )
+                  }
+                  label="Trailing Stop"
+                  description="جابجایی هوشمند حد ضرر"
+                />
+
+                <Toggle
+                  checked={form.breakEven}
+                  onChange={(value) =>
+                    update(
+                      "breakEven",
+                      value
+                    )
+                  }
+                  label="Break Even"
+                  description="انتقال حد ضرر به نقطه ورود"
+                />
+              </div>
+
+              <div style={{ height: 14 }} />
+
+              <div className="field-grid">
+                <Field
+                  label="فاصله Trailing Stop"
+                  hint="$"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={
+                      form.trailingStopDistance
+                    }
+                    onChange={(e) =>
+                      update(
+                        "trailingStopDistance",
+                        e.target.value
+                      )
+                    }
+                    disabled={
+                      !form.trailingStop
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="فعال شدن Break Even"
+                  hint="$"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={
+                      form.breakEvenTrigger
+                    }
+                    onChange={(e) =>
+                      update(
+                        "breakEvenTrigger",
+                        e.target.value
+                      )
+                    }
+                    disabled={
+                      !form.breakEven
+                    }
+                  />
+                </Field>
+              </div>
+            </SectionCard>
+
+            {/* =============================================
+                DAILY PROTECTION
+            ============================================= */}
+
+            <SectionCard
+              icon="shield"
+              title="محافظت و محدودیت‌های روزانه"
+              description="برای جلوگیری از ادامه معامله در شرایط نامطلوب."
+            >
+              <div className="field-grid">
+                <Field
+                  label="توقف بعد از سود روزانه"
+                  hint="$"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={
+                      form.dailyProfitStop
+                    }
+                    onChange={(e) =>
+                      update(
+                        "dailyProfitStop",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="حد ضرر روزانه"
+                  hint="$"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={
+                      form.dailyLossLimit
+                    }
+                    onChange={(e) =>
+                      update(
+                        "dailyLossLimit",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="حداکثر Stop Loss روزانه"
+                  hint="تعداد"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={
+                      form.maxDailyStopLosses
+                    }
+                    onChange={(e) =>
+                      update(
+                        "maxDailyStopLosses",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="حداکثر معاملات باز"
+                  hint="تعداد"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={
+                      form.maxOpenTrades
+                    }
+                    onChange={(e) =>
+                      update(
+                        "maxOpenTrades",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+
+              <div className="danger-box">
+                <strong>محافظت فعال:</strong>{" "}
+                اگر حد سود روزانه یا حد ضرر روزانه
+                تکمیل شود، موتور اجرای ربات باید
+                معامله جدید را متوقف کند.
+              </div>
+            </SectionCard>
+
+            {/* =============================================
+                AUTO CONTROL
+            ============================================= */}
+
+            <SectionCard
+              icon="zap"
+              title="کنترل اجرای ربات"
+              description="این بخش مشخص می‌کند ربات چگونه و تحت چه شرایطی اجازه اجرای معاملات داشته باشد."
+            >
+              <div className="mode-grid">
+                <button
+                  type="button"
+                  className={`mode-button ${
+                    form.auto.executionMode ===
+                    "MANUAL"
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    updateAuto(
+                      "executionMode",
+                      "MANUAL"
+                    )
+                  }
+                >
+                  <strong>
+                    دستی
+                  </strong>
+
+                  <small>
+                    ربات فقط بعد از روشن کردن
+                    توسط کاربر فعال می‌شود.
+                  </small>
+                </button>
+
+                <button
+                  type="button"
+                  className={`mode-button ${
+                    form.auto.executionMode ===
+                    "AUTO_CONFIRM"
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    updateAuto(
+                      "executionMode",
+                      "AUTO_CONFIRM"
+                    )
+                  }
+                >
+                  <strong>
+                    خودکار با تأیید کاربر
+                  </strong>
+
+                  <small>
+                    بعد از تأیید کاربر، موتور ربات
+                    می‌تواند طبق قوانین ذخیره‌شده
+                    اجرا شود.
+                  </small>
+                </button>
+              </div>
+
+              <div className="field-grid three">
+                <Field
+                  label="خاموشی بعد از X سود"
+                  hint="0 = غیرفعال"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={
+                      form.auto.stopAfterWins
+                    }
+                    onChange={(e) =>
+                      updateAuto(
+                        "stopAfterWins",
+                        numberValue(
+                          e.target.value,
+                          0
+                        )
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="خاموشی بعد از X ضرر"
+                  hint="0 = غیرفعال"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={
+                      form.auto.stopAfterLosses
+                    }
+                    onChange={(e) =>
+                      updateAuto(
+                        "stopAfterLosses",
+                        numberValue(
+                          e.target.value,
+                          0
+                        )
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="حداکثر ضرر متوالی"
+                  hint="0 = بدون محدودیت"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={
+                      form.auto
+                        .maxConsecutiveLosses
+                    }
+                    onChange={(e) =>
+                      updateAuto(
+                        "maxConsecutiveLosses",
+                        numberValue(
+                          e.target.value,
+                          0
+                        )
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+
+              <div style={{ height: 12 }} />
+
+              <Toggle
+                checked={
+                  form.auto.confirmationRequired
+                }
+                onChange={(value) =>
+                  updateAuto(
+                    "confirmationRequired",
+                    value
+                  )
+                }
+                label="تأیید کاربر برای فعال‌سازی اجرای خودکار"
+                description="برای اجرای خودکار، فعال‌سازی باید توسط کاربر تأیید شده باشد."
+              />
+            </SectionCard>
+
+            {/* =============================================
+                FILTERS
+            ============================================= */}
+
+            <SectionCard
+              icon="filter"
+              title="فیلترهای ورود"
+              description="فیلترهایی که قبل از اجازه ورود معامله بررسی می‌شوند."
+            >
+              <div className="field-grid">
+                <Field
+                  label="حداکثر Spread"
+                  hint="Point"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={form.maxSpread}
+                    onChange={(e) =>
+                      update(
+                        "maxSpread",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="Cooldown"
+                  hint="دقیقه"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={
+                      form.cooldownMinutes
+                    }
+                    onChange={(e) =>
+                      update(
+                        "cooldownMinutes",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="حداقل امتیاز سیگنال"
+                  hint="0 تا 100"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={
+                      form.signalThreshold
+                    }
+                    onChange={(e) =>
+                      update(
+                        "signalThreshold",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label="حداقل تأییدیه‌ها"
+                  hint="تعداد"
+                >
+                  <input
+                    className="input money-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={
+                      form.minConfirmations
+                    }
+                    onChange={(e) =>
+                      update(
+                        "minConfirmations",
+                        e.target.value
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+
+              <div style={{ height: 14 }} />
+
+              <div className="toggle-list">
+                <Toggle
+                  checked={
+                    form.sessionFilter
+                  }
+                  onChange={(value) =>
+                    update(
+                      "sessionFilter",
+                      value
+                    )
+                  }
+                  label="Session Filter"
+                  description="محدود کردن معاملات به سشن‌های مجاز"
+                />
+
+                <Toggle
+                  checked={form.newsFilter}
+                  onChange={(value) =>
+                    update(
+                      "newsFilter",
+                      value
+                    )
+                  }
+                  label="News Filter"
+                  description="جلوگیری از ورود در زمان اخبار مهم"
+                />
+              </div>
+            </SectionCard>
+
+            {/* =============================================
+                TELEGRAM
+            ============================================= */}
+
+            <SectionCard
+              icon="telegram"
+              title="اعلان‌ها و Telegram"
+              description="کنترل ارسال اعلان‌های مربوط به ربات."
+            >
+              <Toggle
+                checked={
+                  form.telegramEnabled
+                }
+                onChange={(value) =>
+                  update(
+                    "telegramEnabled",
+                    value
+                  )
+                }
+                label="ارسال اعلان Telegram"
+                description="ارسال وضعیت و سیگنال‌ها به Telegram در صورت پیکربندی سرویس."
+              />
+            </SectionCard>
+
+            {/* =============================================
+                SAVE
+            ============================================= */}
+
+            <div className="bottom-save">
+              <button
+                type="button"
+                className="save-button"
+                onClick={saveBot}
+                disabled={saving}
+              >
+                <Icon
+                  name={saving ? "refresh" : "save"}
+                  size={19}
+                />
+
+                {saving
+                  ? "در حال ذخیره و بروزرسانی..."
+                  : selectedBot
+                  ? "ذخیره و بروزرسانی ربات"
+                  : "ساخت و ذخیره ربات"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </main>
   );
 }
