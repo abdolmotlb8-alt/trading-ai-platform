@@ -1,704 +1,866 @@
-// مسیر فایل:
-// app/page.tsx
+"use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  ArrowUpLeft,
-  BarChart3,
-  Bot,
-  BrainCircuit,
-  CheckCircle2,
-  ChevronLeft,
-  CircleHelp,
-  Clock3,
-  Cpu,
-  Globe2,
-  KeyRound,
-  LineChart,
-  LockKeyhole,
-  Menu,
-  Rocket,
-  ShieldCheck,
-  Sparkles,
-  TrendingUp,
-  UserPlus,
-  WalletCards,
-  Zap,
-} from "lucide-react";
 
-export const metadata = {
-  title: "Trading AI | پلتفرم هوشمند معاملات",
-  description:
-    "تحلیل هوشمند بازار، مدیریت ریسک و ابزارهای حرفه‌ای معاملاتی با Trading AI",
-};
+type IconName =
+  | "arrow"
+  | "chart"
+  | "shield"
+  | "brain"
+  | "menu"
+  | "close"
+  | "check"
+  | "lock"
+  | "user"
+  | "mail"
+  | "eye"
+  | "eyeOff"
+  | "sparkles"
+  | "bot"
+  | "globe"
+  | "zap";
 
-const features = [
-  {
-    icon: BrainCircuit,
-    title: "تحلیل هوشمند بازار",
-    description:
-      "تحلیل ساختار بازار، روندها، حمایت و مقاومت با ابزارهای هوشمند.",
-  },
-  {
-    icon: Bot,
-    title: "ربات‌های معاملاتی",
-    description:
-      "ساخت، مدیریت و کنترل ربات‌های معاملاتی با تنظیمات حرفه‌ای.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "مدیریت ریسک",
-    description:
-      "کنترل ریسک، حد ضرر، حد سود و مدیریت سرمایه برای معاملات.",
-  },
-  {
-    icon: LineChart,
-    title: "سیگنال‌های تحلیلی",
-    description:
-      "بررسی فرصت‌های بازار بر اساس چندین فاکتور و تأیید تحلیلی.",
-  },
-  {
-    icon: Globe2,
-    title: "بازارهای جهانی",
-    description:
-      "دسترسی به اطلاعات بازارهای فارکس، طلا، ارزهای دیجیتال و شاخص‌ها.",
-  },
-  {
-    icon: Clock3,
-    title: "دسترسی ۲۴ ساعته",
-    description:
-      "مدیریت حساب و بررسی اطلاعات معاملاتی در هر زمان و هر مکان.",
-  },
-];
+function Icon({
+  name,
+  size = 22,
+}: {
+  name: IconName;
+  size?: number;
+}) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
 
-const steps = [
-  {
-    number: "01",
-    title: "ساخت حساب کاربری",
-    description: "در چند مرحله کوتاه حساب خود را ایجاد کنید.",
-  },
-  {
-    number: "02",
-    title: "انتخاب ابزار موردنظر",
-    description: "بازار، ربات، تحلیل یا سرویس معاملاتی خود را انتخاب کنید.",
-  },
-  {
-    number: "03",
-    title: "شروع فعالیت",
-    description: "تنظیمات خود را انجام دهید و فعالیت‌ها را مدیریت کنید.",
-  },
-];
+  if (name === "arrow") {
+    return (
+      <svg {...common}>
+        <path d="M5 12h14" />
+        <path d="m13 6 6 6-6 6" />
+      </svg>
+    );
+  }
 
-function Logo() {
+  if (name === "chart") {
+    return (
+      <svg {...common}>
+        <path d="M3 3v18h18" />
+        <path d="m7 15 4-5 3 3 5-7" />
+      </svg>
+    );
+  }
+
+  if (name === "shield") {
+    return (
+      <svg {...common}>
+        <path d="M12 3 20 7v5c0 5-3.5 8-8 10-4.5-2-8-5-8-10V7z" />
+        <path d="m8 12 3 3 5-6" />
+      </svg>
+    );
+  }
+
+  if (name === "brain") {
+    return (
+      <svg {...common}>
+        <path d="M9 4a3 3 0 0 0-5 2 3 3 0 0 0 0 5 3 3 0 0 0 2 5 3 3 0 0 0 5 3V5a3 3 0 0 0-2-1Z" />
+        <path d="M15 4a3 3 0 0 1 5 2 3 3 0 0 1 0 5 3 3 0 0 1-2 5 3 3 0 0 1-5 3V5a3 3 0 0 1 2-1Z" />
+        <path d="M4 11h5M15 11h5M8 7v3M16 7v3M8 16v-2M16 16v-2" />
+      </svg>
+    );
+  }
+
+  if (name === "menu") {
+    return (
+      <svg {...common}>
+        <path d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    );
+  }
+
+  if (name === "close") {
+    return (
+      <svg {...common}>
+        <path d="m6 6 12 12M18 6 6 18" />
+      </svg>
+    );
+  }
+
+  if (name === "check") {
+    return (
+      <svg {...common}>
+        <path d="m5 12 4 4L19 6" />
+      </svg>
+    );
+  }
+
+  if (name === "lock") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="10" width="16" height="11" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </svg>
+    );
+  }
+
+  if (name === "user") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </svg>
+    );
+  }
+
+  if (name === "mail") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="m3 7 9 6 9-6" />
+      </svg>
+    );
+  }
+
+  if (name === "eye") {
+    return (
+      <svg {...common}>
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    );
+  }
+
+  if (name === "eyeOff") {
+    return (
+      <svg {...common}>
+        <path d="m3 3 18 18" />
+        <path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 3.9" />
+        <path d="M6.7 6.7C3.7 8.5 2 12 2 12s3.5 7 10 7a9.8 9.8 0 0 0 4-.9" />
+        <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      </svg>
+    );
+  }
+
+  if (name === "sparkles") {
+    return (
+      <svg {...common}>
+        <path d="m12 3-1.5 5.5L5 10l5.5 1.5L12 17l1.5-5.5L19 10l-5.5-1.5z" />
+        <path d="m19 16-.7 2.3L16 19l2.3.7L19 22l.7-2.3L22 19l-2.3-.7z" />
+      </svg>
+    );
+  }
+
+  if (name === "bot") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="7" width="16" height="13" rx="3" />
+        <path d="M12 3v4M8 13h.01M16 13h.01M8 17h8" />
+      </svg>
+    );
+  }
+
+  if (name === "globe") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
+      </svg>
+    );
+  }
+
   return (
-    <Link href="/" className="brand" aria-label="صفحه اصلی Trading AI">
-      <span className="brand-mark">
-        <svg
-          viewBox="0 0 48 48"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <rect
-            x="2"
-            y="2"
-            width="44"
-            height="44"
-            rx="14"
-            fill="url(#logoGradient)"
-          />
-          <path
-            d="M12 30L19 23L25 28L36 15"
-            stroke="white"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M29 15H36V22"
-            stroke="white"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <defs>
-            <linearGradient
-              id="logoGradient"
-              x1="4"
-              y1="4"
-              x2="44"
-              y2="44"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop stopColor="#22D3EE" />
-              <stop offset="1" stopColor="#2563EB" />
-            </linearGradient>
-          </defs>
-        </svg>
-      </span>
-
-      <span className="brand-text">
-        <strong>Trading</strong>
-        <b> AI</b>
-      </span>
-    </Link>
+    <svg {...common}>
+      <path d="m13 2-9 12h7l-1 8 9-12h-7z" />
+    </svg>
   );
 }
 
 export default function HomePage() {
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [authModal, setAuthModal] = useState<"login" | "register" | null>(
+    null
+  );
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
   return (
-    <main dir="rtl" className="site-shell">
-      <div className="background-glow glow-one" />
-      <div className="background-glow glow-two" />
+    <>
+      <main dir="rtl" className="site">
+        <header className="header">
+          <div className="container headerInner">
+            <Link href="/" className="brand">
+              <span className="brandIcon">
+                <Icon name="brain" size={26} />
+              </span>
 
-      <header className="header">
-        <div className="container header-inner">
-          <Logo />
-
-          <nav className="desktop-nav" aria-label="منوی اصلی">
-            <Link href="#features">امکانات</Link>
-            <Link href="#how-it-works">نحوه کار</Link>
-            <Link href="#markets">بازارها</Link>
-            <Link href="/economic">تقویم اقتصادی</Link>
-            <Link href="/support">پشتیبانی</Link>
-          </nav>
-
-          <div className="header-actions">
-            <Link href="/login" className="login-link">
-              ورود
+              <span className="brandText">
+                <strong>Trading AI</strong>
+                <small>هوش مصنوعی بازار</small>
+              </span>
             </Link>
 
-            <Link href="/register" className="register-button">
-              <UserPlus size={17} />
-              ثبت‌نام رایگان
-            </Link>
+            <nav className={`navigation ${mobileMenu ? "open" : ""}`}>
+              <Link href="#features" onClick={() => setMobileMenu(false)}>
+                امکانات
+              </Link>
+
+              <Link href="#advantages" onClick={() => setMobileMenu(false)}>
+                مزایا
+              </Link>
+
+              <Link href="#security" onClick={() => setMobileMenu(false)}>
+                امنیت
+              </Link>
+
+              <Link href="#about" onClick={() => setMobileMenu(false)}>
+                درباره ما
+              </Link>
+
+              <div className="mobileActions">
+                <button
+                  className="mobileLogin"
+                  onClick={() => {
+                    setAuthModal("login");
+                    setMobileMenu(false);
+                  }}
+                >
+                  ورود به حساب
+                </button>
+
+                <button
+                  className="mobileRegister"
+                  onClick={() => {
+                    setAuthModal("register");
+                    setMobileMenu(false);
+                  }}
+                >
+                  ثبت‌نام رایگان
+                </button>
+              </div>
+            </nav>
+
+            <div className="headerActions">
+              <button
+                className="loginButton"
+                onClick={() => setAuthModal("login")}
+              >
+                ورود
+              </button>
+
+              <button
+                className="registerButton"
+                onClick={() => setAuthModal("register")}
+              >
+                ثبت‌نام رایگان
+                <Icon name="arrow" size={17} />
+              </button>
+            </div>
 
             <button
-              type="button"
-              className="mobile-menu-button"
+              className="menuButton"
               aria-label="باز کردن منو"
+              onClick={() => setMobileMenu(!mobileMenu)}
             >
-              <Menu size={23} />
+              <Icon name={mobileMenu ? "close" : "menu"} size={25} />
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <section className="hero">
-        <div className="container hero-grid">
-          <div className="hero-content">
-            <div className="eyebrow">
-              <span className="eyebrow-dot" />
-              <Sparkles size={16} />
-              پلتفرم هوشمند تحلیل و معاملات
-            </div>
+        <section className="hero">
+          <div className="heroGlow glowOne" />
+          <div className="heroGlow glowTwo" />
 
-            <h1>
-              تصمیم‌های بهتر،
-              <br />
-              <span>معاملات هوشمندتر</span>
-            </h1>
-
-            <p className="hero-description">
-              با Trading AI بازار را دقیق‌تر بررسی کنید، ریسک معاملات خود را
-              مدیریت کنید و با ابزارهای حرفه‌ای، کنترل بیشتری روی فعالیت‌های
-              معاملاتی خود داشته باشید.
-            </p>
-
-            <div className="hero-actions">
-              <Link href="/register" className="primary-button">
-                شروع رایگان
-                <ArrowLeft size={19} />
-              </Link>
-
-              <Link href="/ai-analysis" className="secondary-button">
-                مشاهده تحلیل‌ها
-                <BarChart3 size={18} />
-              </Link>
-            </div>
-
-            <div className="hero-trust">
-              <div className="trust-item">
-                <CheckCircle2 size={17} />
-                <span>شروع با پلن رایگان</span>
+          <div className="container heroGrid">
+            <div className="heroContent">
+              <div className="eyebrow">
+                <span className="eyebrowDot" />
+                <Icon name="sparkles" size={17} />
+                پلتفرم هوشمند تحلیل بازار
               </div>
 
-              <div className="trust-item">
-                <ShieldCheck size={17} />
-                <span>مدیریت امن حساب</span>
-              </div>
+              <h1>
+                تصمیم‌های بهتر
+                <br />
+                <span>با هوش مصنوعی</span>
+              </h1>
 
-              <div className="trust-item">
-                <Zap size={17} />
-                <span>دسترسی سریع</span>
-              </div>
-            </div>
-          </div>
+              <p className="heroDescription">
+                بازارهای مالی را هوشمندتر بررسی کن. با Trading AI به ابزارهای
+                تحلیل، مدیریت ریسک، سیگنال‌ها و ربات‌های معاملاتی دسترسی داشته
+                باش.
+              </p>
 
-          <div className="hero-visual">
-            <div className="visual-orbit orbit-one" />
-            <div className="visual-orbit orbit-two" />
-
-            <div className="dashboard-preview">
-              <div className="preview-topbar">
-                <div className="preview-brand">
-                  <span className="mini-logo">
-                    <Cpu size={15} />
-                  </span>
-                  <span>Trading AI</span>
-                </div>
-
-                <span className="live-status">
-                  <i />
-                  آنلاین
-                </span>
-              </div>
-
-              <div className="preview-heading">
-                <div>
-                  <span>نمای کلی بازار</span>
-                  <h3>داشبورد هوشمند</h3>
-                </div>
-
-                <div className="preview-date">امروز</div>
-              </div>
-
-              <div className="preview-stats">
-                <div className="preview-stat">
-                  <span>وضعیت بازار</span>
-                  <strong className="positive">صعودی</strong>
-                  <small>
-                    <TrendingUp size={13} />
-                    تحلیل لحظه‌ای
-                  </small>
-                </div>
-
-                <div className="preview-stat">
-                  <span>امتیاز تحلیل</span>
-                  <strong>87.4%</strong>
-                  <small>اعتماد تحلیلی</small>
-                </div>
-              </div>
-
-              <div className="chart-card">
-                <div className="chart-header">
-                  <span>نمودار عملکرد</span>
-                  <span className="chart-period">1D</span>
-                </div>
-
-                <svg
-                  className="market-chart"
-                  viewBox="0 0 440 190"
-                  preserveAspectRatio="none"
-                  role="img"
-                  aria-label="نمودار نمونه رابط کاربری"
+              <div className="heroButtons">
+                <button
+                  className="primaryButton"
+                  onClick={() => setAuthModal("register")}
                 >
-                  <defs>
-                    <linearGradient
-                      id="chartFill"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="0%" stopColor="#22D3EE" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#22D3EE" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
+                  شروع رایگان با Trading AI
+                  <Icon name="arrow" size={19} />
+                </button>
 
-                  <path
-                    d="M0 155H440M0 110H440M0 65H440M0 20H440"
-                    stroke="currentColor"
-                    strokeOpacity="0.1"
-                    strokeDasharray="4 5"
-                  />
-
-                  <path
-                    d="M0 155 L30 140 L58 147 L88 108 L116 118 L145 82 L173 98 L202 62 L230 75 L258 42 L286 55 L315 25 L343 48 L370 18 L400 32 L440 8 L440 190 L0 190Z"
-                    fill="url(#chartFill)"
-                  />
-
-                  <path
-                    d="M0 155 L30 140 L58 147 L88 108 L116 118 L145 82 L173 98 L202 62 L230 75 L258 42 L286 55 L315 25 L343 48 L370 18 L400 32 L440 8"
-                    stroke="#22D3EE"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-
-                  <circle cx="440" cy="8" r="5" fill="#22D3EE" />
-                </svg>
-
-                <div className="chart-bottom">
-                  <span>شروع</span>
-                  <span>اکنون</span>
-                </div>
+                <Link href="#features" className="secondaryButton">
+                  مشاهده امکانات
+                  <Icon name="arrow" size={18} />
+                </Link>
               </div>
 
-              <div className="preview-bottom">
-                <div className="preview-bottom-item">
-                  <span className="preview-icon cyan">
-                    <BrainCircuit size={16} />
-                  </span>
-                  <div>
-                    <strong>تحلیل هوشمند</strong>
-                    <small>فعال</small>
-                  </div>
+              <div className="heroTrust">
+                <div className="trustItem">
+                  <Icon name="shield" size={19} />
+                  امنیت حساب
                 </div>
 
-                <div className="preview-bottom-item">
-                  <span className="preview-icon purple">
-                    <ShieldCheck size={16} />
-                  </span>
-                  <div>
-                    <strong>مدیریت ریسک</strong>
-                    <small>محافظت‌شده</small>
-                  </div>
+                <div className="trustItem">
+                  <Icon name="check" size={19} />
+                  شروع رایگان
+                </div>
+
+                <div className="trustItem">
+                  <Icon name="globe" size={19} />
+                  دسترسی آنلاین
                 </div>
               </div>
             </div>
 
-            <div className="floating-card floating-card-top">
-              <span className="floating-icon">
-                <TrendingUp size={18} />
+            <div className="heroVisual">
+              <div className="visualOrb">
+                <div className="orbRing ringOne" />
+                <div className="orbRing ringTwo" />
+
+                <div className="orbCore">
+                  <Icon name="brain" size={65} />
+                  <strong>AI</strong>
+                  <span>Market Intelligence</span>
+                </div>
+              </div>
+
+              <div className="floatingCard cardTop">
+                <span className="floatingIcon blue">
+                  <Icon name="chart" size={22} />
+                </span>
+
+                <div>
+                  <strong>تحلیل هوشمند</strong>
+                  <small>بررسی ساختار بازار</small>
+                </div>
+
+                <span className="statusDot" />
+              </div>
+
+              <div className="floatingCard cardBottom">
+                <span className="floatingIcon purple">
+                  <Icon name="shield" size={22} />
+                </span>
+
+                <div>
+                  <strong>مدیریت ریسک</strong>
+                  <small>کنترل بهتر معاملات</small>
+                </div>
+
+                <span className="statusDot" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="statsSection">
+          <div className="container statsGrid">
+            <div className="statCard">
+              <span className="statIcon">
+                <Icon name="brain" size={25} />
               </span>
-              <div>
-                <strong>تحلیل بازار</strong>
-                <small>به‌روزرسانی شده</small>
-              </div>
-              <CheckCircle2 className="floating-check" size={18} />
+              <strong>AI</strong>
+              <p>تحلیل هوشمند بازار</p>
             </div>
 
-            <div className="floating-card floating-card-bottom">
-              <span className="floating-icon purple-bg">
-                <ShieldCheck size={18} />
+            <div className="statCard">
+              <span className="statIcon">
+                <Icon name="globe" size={25} />
               </span>
-              <div>
-                <strong>امنیت حساب</strong>
-                <small>فعال و محافظت‌شده</small>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="numbers-section">
-        <div className="container numbers-grid">
-          <div className="number-item">
-            <strong>
-              <Sparkles size={23} />
-              AI
-            </strong>
-            <span>تحلیل هوشمند بازار</span>
-          </div>
-
-          <div className="number-item">
-            <strong>24/7</strong>
-            <span>دسترسی به پلتفرم</span>
-          </div>
-
-          <div className="number-item">
-            <strong>
-              <ShieldCheck size={23} />
-              Secure
-            </strong>
-            <span>تمرکز بر امنیت حساب</span>
-          </div>
-
-          <div className="number-item">
-            <strong>
-              <Zap size={23} />
-              Fast
-            </strong>
-            <span>رابط کاربری سریع</span>
-          </div>
-        </div>
-      </section>
-
-      <section id="features" className="section">
-        <div className="container">
-          <div className="section-heading">
-            <div className="section-tag">
-              <Sparkles size={15} />
-              امکانات پلتفرم
+              <strong>24/7</strong>
+              <p>دسترسی آنلاین به پلتفرم</p>
             </div>
 
-            <h2>
-              همه ابزارهای موردنیاز،
-              <br />
-              <span>در یک محیط حرفه‌ای</span>
-            </h2>
-
-            <p>
-              ابزارهای کاربردی Trading AI برای تحلیل بهتر، مدیریت معاملات و
-              کنترل فعالیت‌های شما طراحی شده‌اند.
-            </p>
-          </div>
-
-          <div className="features-grid">
-            {features.map((feature) => {
-              const Icon = feature.icon;
-
-              return (
-                <article className="feature-card" key={feature.title}>
-                  <div className="feature-icon">
-                    <Icon size={24} />
-                  </div>
-
-                  <h3>{feature.title}</h3>
-                  <p>{feature.description}</p>
-
-                  <Link href="/register" className="feature-link">
-                    شروع استفاده
-                    <ChevronLeft size={17} />
-                  </Link>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section id="markets" className="market-section">
-        <div className="container market-grid">
-          <div className="market-content">
-            <div className="section-tag">
-              <Globe2 size={15} />
-              بازارهای جهانی
+            <div className="statCard">
+              <span className="statIcon">
+                <Icon name="shield" size={25} />
+              </span>
+              <strong>Secure</strong>
+              <p>مدیریت امن حساب کاربری</p>
             </div>
 
-            <h2>
-              بازار را بهتر بشناسید،
-              <br />
-              <span>آگاهانه‌تر تصمیم بگیرید</span>
-            </h2>
-
-            <p>
-              اطلاعات بازار و ابزارهای تحلیلی خود را در یک محیط یکپارچه
-              مشاهده و مدیریت کنید.
-            </p>
-
-            <Link href="/market" className="primary-button">
-              مشاهده بازارها
-              <ArrowLeft size={18} />
-            </Link>
-          </div>
-
-          <div className="market-list">
-            <div className="market-row">
-              <div className="market-symbol">
-                <span className="symbol-icon gold">Au</span>
-                <div>
-                  <strong>Gold / USD</strong>
-                  <small>طلا</small>
-                </div>
-              </div>
-
-              <div className="market-value">
-                <strong>بازار جهانی</strong>
-                <span className="positive">قابل بررسی</span>
-              </div>
-            </div>
-
-            <div className="market-row">
-              <div className="market-symbol">
-                <span className="symbol-icon blue">₿</span>
-                <div>
-                  <strong>BTC / USD</strong>
-                  <small>ارز دیجیتال</small>
-                </div>
-              </div>
-
-              <div className="market-value">
-                <strong>بازار جهانی</strong>
-                <span className="positive">قابل بررسی</span>
-              </div>
-            </div>
-
-            <div className="market-row">
-              <div className="market-symbol">
-                <span className="symbol-icon purple">FX</span>
-                <div>
-                  <strong>EUR / USD</strong>
-                  <small>فارکس</small>
-                </div>
-              </div>
-
-              <div className="market-value">
-                <strong>بازار جهانی</strong>
-                <span className="positive">قابل بررسی</span>
-              </div>
-            </div>
-
-            <div className="market-row">
-              <div className="market-symbol">
-                <span className="symbol-icon green">SP</span>
-                <div>
-                  <strong>SPX / USD</strong>
-                  <small>شاخص بازار</small>
-                </div>
-              </div>
-
-              <div className="market-value">
-                <strong>بازار جهانی</strong>
-                <span className="positive">قابل بررسی</span>
-              </div>
+            <div className="statCard">
+              <span className="statIcon">
+                <Icon name="zap" size={25} />
+              </span>
+              <strong>Smart</strong>
+              <p>ابزارهای کاربردی معاملاتی</p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id="how-it-works" className="section">
-        <div className="container">
-          <div className="section-heading">
-            <div className="section-tag">
-              <Rocket size={15} />
-              شروع کار
-            </div>
-
-            <h2>
-              شروع کار با Trading AI
-              <br />
-              <span>ساده و سریع</span>
-            </h2>
-
-            <p>
-              بدون پیچیدگی اضافی، حساب خود را ایجاد کنید و امکانات موردنظر را
-              بررسی کنید.
-            </p>
-          </div>
-
-          <div className="steps-grid">
-            {steps.map((step) => (
-              <article className="step-card" key={step.number}>
-                <span className="step-number">{step.number}</span>
-                <h3>{step.title}</h3>
-                <p>{step.description}</p>
-              </article>
-            ))}
-          </div>
-
-          <div className="cta-box">
-            <div className="cta-icon">
-              <Rocket size={29} />
-            </div>
-
-            <div className="cta-content">
-              <h3>آماده شروع هستید؟</h3>
+        <section id="features" className="section">
+          <div className="container">
+            <div className="sectionHeading">
+              <span className="sectionTag">امکانات پلتفرم</span>
+              <h2>
+                همه ابزارها در یک
+                <span> محیط هوشمند</span>
+              </h2>
               <p>
-                همین حالا حساب خود را ایجاد کنید و محیط Trading AI را بررسی
-                کنید.
+                امکانات کاربردی برای بررسی بازار، تحلیل اطلاعات و مدیریت
+                بهتر فعالیت‌های معاملاتی.
               </p>
             </div>
 
-            <Link href="/register" className="primary-button">
-              ساخت حساب
-              <ArrowLeft size={18} />
-            </Link>
+            <div className="featuresGrid">
+              <article className="featureCard">
+                <div className="featureIcon blue">
+                  <Icon name="brain" size={29} />
+                </div>
+
+                <h3>تحلیل هوشمند بازار</h3>
+
+                <p>
+                  بررسی اطلاعات بازار و ساختار قیمت با ابزارهای تحلیلی
+                  هوشمند.
+                </p>
+
+                <Link href="/ai-analysis" className="featureLink">
+                  مشاهده تحلیل
+                  <Icon name="arrow" size={17} />
+                </Link>
+              </article>
+
+              <article className="featureCard">
+                <div className="featureIcon purple">
+                  <Icon name="chart" size={29} />
+                </div>
+
+                <h3>مدیریت معاملات</h3>
+
+                <p>
+                  مشاهده و مدیریت اطلاعات معاملات در یک محیط منظم و قابل
+                  پیگیری.
+                </p>
+
+                <Link href="/market" className="featureLink">
+                  بررسی بازار
+                  <Icon name="arrow" size={17} />
+                </Link>
+              </article>
+
+              <article className="featureCard">
+                <div className="featureIcon green">
+                  <Icon name="shield" size={29} />
+                </div>
+
+                <h3>مدیریت ریسک</h3>
+
+                <p>
+                  تنظیمات مربوط به کنترل ریسک و بررسی شرایط پیش از انجام
+                  معامله.
+                </p>
+
+                <Link href="/bots" className="featureLink">
+                  مشاهده ربات‌ها
+                  <Icon name="arrow" size={17} />
+                </Link>
+              </article>
+
+              <article className="featureCard">
+                <div className="featureIcon orange">
+                  <Icon name="bot" size={29} />
+                </div>
+
+                <h3>ربات‌های معاملاتی</h3>
+
+                <p>
+                  ایجاد و مدیریت تنظیمات ربات‌ها بر اساس امکانات فعال حساب
+                  کاربری.
+                </p>
+
+                <Link href="/bots" className="featureLink">
+                  مدیریت ربات‌ها
+                  <Icon name="arrow" size={17} />
+                </Link>
+              </article>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <footer className="footer">
-        <div className="container footer-grid">
-          <div className="footer-brand">
-            <Logo />
+        <section id="advantages" className="section advantagesSection">
+          <div className="container advantagesGrid">
+            <div className="advantagesContent">
+              <span className="sectionTag">چرا Trading AI؟</span>
 
-            <p>
-              Trading AI؛ محیطی برای تحلیل بازار، مدیریت معاملات و استفاده از
-              ابزارهای هوشمند معاملاتی.
-            </p>
+              <h2>
+                طراحی شده برای
+                <br />
+                <span>تصمیم‌گیری آگاهانه</span>
+              </h2>
 
-            <div className="footer-security">
-              <LockKeyhole size={15} />
-              امنیت و حریم خصوصی کاربران
+              <p>
+                Trading AI محیطی یکپارچه برای استفاده از ابزارهای تحلیلی و
+                مدیریت فعالیت‌های معاملاتی فراهم می‌کند.
+              </p>
+
+              <ul className="advantagesList">
+                <li>
+                  <span>
+                    <Icon name="check" size={18} />
+                  </span>
+                  رابط کاربری ساده و منظم
+                </li>
+
+                <li>
+                  <span>
+                    <Icon name="check" size={18} />
+                  </span>
+                  سازگار با موبایل و دسکتاپ
+                </li>
+
+                <li>
+                  <span>
+                    <Icon name="check" size={18} />
+                  </span>
+                  دسترسی به بخش‌های مختلف پلتفرم
+                </li>
+
+                <li>
+                  <span>
+                    <Icon name="check" size={18} />
+                  </span>
+                  امکان توسعه و اتصال سرویس‌های معاملاتی
+                </li>
+              </ul>
+
+              <button
+                className="primaryButton"
+                onClick={() => setAuthModal("register")}
+              >
+                ساخت حساب کاربری
+                <Icon name="arrow" size={18} />
+              </button>
+            </div>
+
+            <div className="advantagesPanel">
+              <div className="panelHeader">
+                <div>
+                  <span>Trading AI</span>
+                  <strong>مرکز کنترل هوشمند</strong>
+                </div>
+
+                <div className="panelLogo">
+                  <Icon name="brain" size={25} />
+                </div>
+              </div>
+
+              <div className="panelLine">
+                <span>تحلیل بازار</span>
+                <strong className="greenText">فعال</strong>
+              </div>
+
+              <div className="progress">
+                <span style={{ width: "82%" }} />
+              </div>
+
+              <div className="panelLine">
+                <span>مدیریت ریسک</span>
+                <strong className="greenText">قابل استفاده</strong>
+              </div>
+
+              <div className="progress">
+                <span style={{ width: "72%" }} />
+              </div>
+
+              <div className="panelLine">
+                <span>ابزارهای معاملاتی</span>
+                <strong className="blueText">آماده تنظیم</strong>
+              </div>
+
+              <div className="progress">
+                <span style={{ width: "64%" }} />
+              </div>
+
+              <div className="panelFooter">
+                <Icon name="shield" size={18} />
+                وضعیت رابط کاربری
+                <span>آماده</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="security" className="securitySection">
+          <div className="container securityContent">
+            <div className="securityIcon">
+              <Icon name="shield" size={35} />
+            </div>
+
+            <div>
+              <span className="sectionTag">امنیت و حریم خصوصی</span>
+
+              <h2>حساب خود را با دقت مدیریت کن</h2>
+
+              <p>
+                برای ورود و ثبت‌نام از صفحات اختصاصی احراز هویت استفاده کن.
+                اطلاعات حساب باید از طریق منطق احراز هویت سمت سرور مدیریت شود.
+              </p>
+            </div>
+
+            <button
+              className="secondaryButton"
+              onClick={() => setAuthModal("login")}
+            >
+              ورود امن
+              <Icon name="lock" size={18} />
+            </button>
+          </div>
+        </section>
+
+        <section id="about" className="ctaSection">
+          <div className="container ctaBox">
+            <div>
+              <span className="sectionTag">شروع کار</span>
+
+              <h2>آماده‌ای هوشمندتر شروع کنی؟</h2>
+
+              <p>
+                حساب خود را ایجاد کن و امکانات موجود پلتفرم را بررسی کن.
+              </p>
+            </div>
+
+            <button
+              className="primaryButton"
+              onClick={() => setAuthModal("register")}
+            >
+              ثبت‌نام رایگان
+              <Icon name="arrow" size={18} />
+            </button>
+          </div>
+        </section>
+
+        <footer className="footer">
+          <div className="container footerGrid">
+            <div className="footerBrand">
+              <Link href="/" className="brand">
+                <span className="brandIcon">
+                  <Icon name="brain" size={24} />
+                </span>
+
+                <span className="brandText">
+                  <strong>Trading AI</strong>
+                  <small>هوش مصنوعی بازار</small>
+                </span>
+              </Link>
+
+              <p>
+                پلتفرم هوشمند برای تحلیل بازار و مدیریت ابزارهای معاملاتی.
+              </p>
+            </div>
+
+            <div className="footerColumn">
+              <h3>دسترسی سریع</h3>
+              <Link href="/dashboard">داشبورد</Link>
+              <Link href="/market">بازار</Link>
+              <Link href="/ai-analysis">تحلیل هوشمند</Link>
+              <Link href="/bots">ربات‌ها</Link>
+            </div>
+
+            <div className="footerColumn">
+              <h3>حساب کاربری</h3>
+              <button onClick={() => setAuthModal("login")}>ورود</button>
+              <button onClick={() => setAuthModal("register")}>
+                ثبت‌نام
+              </button>
+              <Link href="/settings">تنظیمات</Link>
+              <Link href="/support">پشتیبانی</Link>
             </div>
           </div>
 
-          <div className="footer-column">
-            <h3>دسترسی سریع</h3>
-            <Link href="/market">بازارها</Link>
-            <Link href="/ai-analysis">تحلیل هوشمند</Link>
-            <Link href="/bots">ربات‌های معاملاتی</Link>
-            <Link href="/economic">تقویم اقتصادی</Link>
+          <div className="container footerBottom">
+            <span>© {new Date().getFullYear()} Trading AI</span>
+            <span>تمام حقوق محفوظ است.</span>
           </div>
+        </footer>
+      </main>
 
-          <div className="footer-column">
-            <h3>حساب کاربری</h3>
-            <Link href="/login">ورود به حساب</Link>
-            <Link href="/register">ثبت‌نام</Link>
-            <Link href="/forgot-password">فراموشی رمز عبور</Link>
-            <Link href="/settings">تنظیمات حساب</Link>
-          </div>
+      {authModal && (
+        <div
+          className="modalOverlay"
+          onClick={() => setAuthModal(null)}
+          role="presentation"
+        >
+          <div
+            className="authModal"
+            onClick={(event) => event.stopPropagation()}
+            dir="rtl"
+          >
+            <button
+              className="modalClose"
+              aria-label="بستن"
+              onClick={() => setAuthModal(null)}
+            >
+              <Icon name="close" size={21} />
+            </button>
 
-          <div className="footer-column">
-            <h3>پشتیبانی</h3>
-            <Link href="/support">
-              <CircleHelp size={16} />
-              مرکز پشتیبانی
-            </Link>
-            <Link href="/support">ارسال درخواست</Link>
-            <Link href="/terms">قوانین و شرایط</Link>
-            <Link href="/privacy">حریم خصوصی</Link>
+            <div className="authLogo">
+              <Icon name="brain" size={30} />
+            </div>
+
+            <h2>
+              {authModal === "login" ? "خوش آمدید" : "ایجاد حساب جدید"}
+            </h2>
+
+            <p className="authDescription">
+              {authModal === "login"
+                ? "برای ورود، اطلاعات حساب خود را وارد کنید."
+                : "برای شروع کار با Trading AI حساب خود را ایجاد کنید."}
+            </p>
+
+            <form
+              className="authForm"
+              action={authModal === "login" ? "/api/auth/login" : "/api/auth/register"}
+              method="POST"
+            >
+              {authModal === "register" && (
+                <label>
+                  نام کاربری
+                  <div className="inputWrapper">
+                    <Icon name="user" size={19} />
+                    <input
+                      type="text"
+                      name="name"
+                      placeholder="نام خود را وارد کنید"
+                      autoComplete="name"
+                      required
+                    />
+                  </div>
+                </label>
+              )}
+
+              <label>
+                ایمیل
+                <div className="inputWrapper">
+                  <Icon name="mail" size={19} />
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="example@email.com"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+              </label>
+
+              <label>
+                رمز عبور
+                <div className="inputWrapper">
+                  <Icon name="lock" size={19} />
+
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    placeholder="رمز عبور خود را وارد کنید"
+                    autoComplete={
+                      authModal === "login"
+                        ? "current-password"
+                        : "new-password"
+                    }
+                    minLength={8}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="passwordToggle"
+                    aria-label="نمایش رمز عبور"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    <Icon
+                      name={showPassword ? "eyeOff" : "eye"}
+                      size={19}
+                    />
+                  </button>
+                </div>
+              </label>
+
+              {authModal === "login" && (
+                <div className="formOptions">
+                  <label className="rememberOption">
+                    <input
+                      type="checkbox"
+                      name="remember"
+                      checked={rememberMe}
+                      onChange={(event) =>
+                        setRememberMe(event.target.checked)
+                      }
+                    />
+                    <span>مرا به خاطر بسپار</span>
+                  </label>
+
+                  <Link href="/forgot-password">فراموشی رمز عبور</Link>
+                </div>
+              )}
+
+              <button type="submit" className="authSubmit">
+                {authModal === "login" ? "ورود به حساب" : "ایجاد حساب"}
+                <Icon name="arrow" size={18} />
+              </button>
+            </form>
+
+            <div className="authSwitch">
+              {authModal === "login" ? (
+                <>
+                  حساب کاربری ندارید؟
+                  <button onClick={() => setAuthModal("register")}>
+                    ثبت‌نام کنید
+                  </button>
+                </>
+              ) : (
+                <>
+                  قبلاً حساب ساخته‌اید؟
+                  <button onClick={() => setAuthModal("login")}>
+                    وارد شوید
+                  </button>
+                </>
+              )}
+            </div>
+
+            <p className="authNote">
+              با ادامه کار، مسئولیت اطلاعات واردشده بر عهده کاربر است.
+            </p>
           </div>
         </div>
+      )}
 
-        <div className="container footer-bottom">
-          <span>
-            © {new Date().getFullYear()} Trading AI. تمامی حقوق محفوظ است.
-          </span>
-
-          <span className="footer-bottom-status">
-            <i />
-            سیستم در حال توسعه و بهبود
-          </span>
-        </div>
-      </footer>
-
-      <style jsx global>{`
-        @import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");
-
-        :root {
-          --background: #050b18;
-          --surface: #0b1426;
-          --surface-light: #101d34;
-          --border: rgba(148, 163, 184, 0.15);
-          --text: #f8fafc;
-          --muted: #94a3b8;
-          --cyan: #22d3ee;
-          --blue: #3b82f6;
-          --purple: #8b5cf6;
-          --green: #34d399;
-        }
-
+      <style>{`
         * {
           box-sizing: border-box;
-          scroll-behavior: smooth;
         }
 
         html {
-          background: var(--background);
+          scroll-behavior: smooth;
         }
 
         body {
           margin: 0;
-          color: var(--text);
-          background:
-            radial-gradient(
-              circle at 80% 0%,
-              rgba(37, 99, 235, 0.12),
-              transparent 35%
-            ),
-            var(--background);
-          font-family: "Vazirmatn", sans-serif;
-          overflow-x: hidden;
+          background: #060d1d;
+          color: #f8fafc;
+          font-family: Tahoma, Arial, sans-serif;
         }
 
-        a {
-          color: inherit;
-          text-decoration: none;
+        button,
+        input {
+          font: inherit;
         }
 
         button,
@@ -706,1306 +868,1313 @@ export default function HomePage() {
           -webkit-tap-highlight-color: transparent;
         }
 
-        .site-shell {
-          position: relative;
+        button {
+          cursor: pointer;
+        }
+
+        a {
+          color: inherit;
+          text-decoration: none;
+        }
+
+        .site {
           min-height: 100vh;
           overflow: hidden;
+          background:
+            radial-gradient(
+              circle at 80% 5%,
+              rgba(25, 104, 204, 0.17),
+              transparent 30%
+            ),
+            #060d1d;
         }
 
         .container {
-          width: min(1180px, calc(100% - 48px));
+          width: min(1180px, calc(100% - 40px));
           margin: 0 auto;
-          position: relative;
-          z-index: 2;
-        }
-
-        .background-glow {
-          position: absolute;
-          width: 480px;
-          height: 480px;
-          border-radius: 999px;
-          filter: blur(120px);
-          pointer-events: none;
-          opacity: 0.12;
-        }
-
-        .glow-one {
-          background: #2563eb;
-          top: 180px;
-          right: -250px;
-        }
-
-        .glow-two {
-          background: #7c3aed;
-          top: 750px;
-          left: -280px;
         }
 
         .header {
-          position: relative;
-          z-index: 20;
-          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-          background: rgba(5, 11, 24, 0.75);
-          backdrop-filter: blur(22px);
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+          background: rgba(6, 13, 29, 0.88);
+          backdrop-filter: blur(20px);
         }
 
-        .header-inner {
+        .headerInner {
           min-height: 86px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 28px;
+          gap: 25px;
         }
 
         .brand {
           display: inline-flex;
           align-items: center;
           gap: 11px;
-          direction: ltr;
           flex-shrink: 0;
         }
 
-        .brand-mark {
-          width: 43px;
-          height: 43px;
+        .brandIcon {
+          width: 47px;
+          height: 47px;
           display: grid;
           place-items: center;
+          color: white;
+          border: 1px solid rgba(103, 232, 249, 0.35);
+          border-radius: 15px;
+          background: linear-gradient(135deg, #13c9df, #3569f1);
+          box-shadow: 0 0 30px rgba(34, 211, 238, 0.2);
         }
 
-        .brand-mark svg {
-          width: 100%;
-          height: 100%;
+        .brandText {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          direction: ltr;
         }
 
-        .brand-text {
-          font-size: 22px;
-          font-weight: 800;
+        .brandText strong {
+          font-size: 21px;
           letter-spacing: -0.7px;
-          white-space: nowrap;
         }
 
-        .brand-text b {
-          color: var(--cyan);
+        .brandText small {
+          color: #94a3b8;
+          font-size: 10px;
+          direction: rtl;
         }
 
-        .desktop-nav {
+        .navigation {
           display: flex;
-          align-items: center;
-          gap: 27px;
-          margin-right: auto;
-          margin-left: auto;
-        }
-
-        .desktop-nav a {
-          color: #aab8ce;
-          font-size: 13px;
-          font-weight: 500;
-          transition: color 0.2s ease;
-          white-space: nowrap;
-        }
-
-        .desktop-nav a:hover {
-          color: var(--cyan);
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 17px;
-        }
-
-        .login-link {
-          color: #dbeafe;
-          font-size: 14px;
-          font-weight: 600;
-          transition: color 0.2s ease;
-        }
-
-        .login-link:hover {
-          color: var(--cyan);
-        }
-
-        .register-button,
-        .primary-button,
-        .secondary-button {
-          display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 9px;
-          border-radius: 13px;
+          gap: 28px;
+          color: #aebbd0;
           font-size: 13px;
-          font-weight: 700;
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            background 0.2s ease;
         }
 
-        .register-button {
+        .navigation a {
+          transition: color 0.2s ease;
+        }
+
+        .navigation a:hover {
+          color: #67e8f9;
+        }
+
+        .headerActions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .loginButton,
+        .registerButton,
+        .mobileLogin,
+        .mobileRegister {
+          border: 0;
+          border-radius: 11px;
           padding: 12px 17px;
-          color: #04111f;
-          background: linear-gradient(135deg, #67e8f9, #22d3ee);
-          box-shadow: 0 8px 25px rgba(34, 211, 238, 0.12);
+          font-size: 12px;
+          font-weight: bold;
+          transition: 0.2s ease;
         }
 
-        .register-button:hover,
-        .primary-button:hover,
-        .secondary-button:hover {
+        .loginButton {
+          color: #dbeafe;
+          background: transparent;
+          border: 1px solid rgba(148, 163, 184, 0.25);
+        }
+
+        .registerButton {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #03111e;
+          background: #22d3ee;
+        }
+
+        .loginButton:hover {
+          background: rgba(148, 163, 184, 0.1);
+        }
+
+        .registerButton:hover,
+        .primaryButton:hover {
           transform: translateY(-2px);
+          background: #67e8f9;
         }
 
-        .mobile-menu-button {
+        .menuButton {
           display: none;
-          border: 1px solid var(--border);
-          background: rgba(15, 23, 42, 0.7);
-          color: white;
+          border: 1px solid rgba(148, 163, 184, 0.3);
           border-radius: 10px;
-          width: 42px;
-          height: 42px;
-          place-items: center;
+          color: white;
+          background: rgba(15, 23, 42, 0.9);
+          padding: 10px;
+        }
+
+        .mobileActions {
+          display: none;
         }
 
         .hero {
           position: relative;
-          padding: 92px 0 90px;
+          padding: 105px 0 90px;
+          isolation: isolate;
         }
 
-        .hero-grid {
+        .heroGrid {
           display: grid;
-          grid-template-columns: 1fr 0.95fr;
+          grid-template-columns: 1.05fr 0.95fr;
           align-items: center;
-          gap: 65px;
+          gap: 70px;
         }
 
-        .hero-content {
-          min-width: 0;
-        }
-
-        .eyebrow,
-        .section-tag {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          width: fit-content;
-          color: #67e8f9;
-          border: 1px solid rgba(34, 211, 238, 0.2);
-          background: rgba(34, 211, 238, 0.06);
-          border-radius: 999px;
-          padding: 8px 13px;
-          font-size: 11px;
-          font-weight: 600;
-        }
-
-        .eyebrow-dot {
-          width: 7px;
-          height: 7px;
-          background: var(--cyan);
-          border-radius: 50%;
-          box-shadow: 0 0 15px rgba(34, 211, 238, 0.8);
-        }
-
-        .hero h1 {
-          font-size: clamp(38px, 4.6vw, 66px);
-          line-height: 1.35;
-          letter-spacing: -2px;
-          margin: 24px 0 23px;
-          font-weight: 900;
-        }
-
-        .hero h1 span,
-        .section-heading h2 span,
-        .market-content h2 span {
-          background: linear-gradient(90deg, #22d3ee, #60a5fa, #a78bfa);
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
-        }
-
-        .hero-description {
-          color: #9caec5;
-          font-size: 15px;
-          line-height: 2.3;
-          max-width: 570px;
-          margin: 0;
-        }
-
-        .hero-actions {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 12px;
-          margin-top: 31px;
-        }
-
-        .primary-button {
-          min-height: 49px;
-          padding: 0 22px;
-          color: #03111f;
-          background: linear-gradient(135deg, #67e8f9, #22d3ee 60%, #38bdf8);
-          box-shadow: 0 12px 35px rgba(34, 211, 238, 0.13);
-        }
-
-        .secondary-button {
-          min-height: 49px;
-          padding: 0 21px;
-          color: #dbeafe;
-          border: 1px solid rgba(148, 163, 184, 0.2);
-          background: rgba(15, 23, 42, 0.55);
-        }
-
-        .hero-trust {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 18px;
-          margin-top: 27px;
-        }
-
-        .trust-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #8193ad;
-          font-size: 10px;
-        }
-
-        .trust-item svg {
-          color: var(--green);
-        }
-
-        .hero-visual {
-          min-height: 520px;
-          position: relative;
-          display: grid;
-          place-items: center;
-        }
-
-        .visual-orbit {
+        .heroGlow {
           position: absolute;
-          border: 1px solid rgba(34, 211, 238, 0.09);
+          z-index: -1;
           border-radius: 50%;
+          filter: blur(100px);
           pointer-events: none;
         }
 
-        .orbit-one {
-          width: 520px;
-          height: 520px;
+        .glowOne {
+          width: 420px;
+          height: 420px;
+          top: -120px;
+          right: -100px;
+          background: rgba(14, 165, 233, 0.14);
         }
 
-        .orbit-two {
-          width: 390px;
-          height: 390px;
-          border-color: rgba(139, 92, 246, 0.12);
+        .glowTwo {
+          width: 350px;
+          height: 350px;
+          bottom: -120px;
+          left: 5%;
+          background: rgba(124, 58, 237, 0.12);
         }
 
-        .dashboard-preview {
-          position: relative;
-          width: min(100%, 460px);
-          padding: 20px;
-          border-radius: 25px;
-          border: 1px solid rgba(148, 163, 184, 0.2);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(21, 38, 66, 0.94),
-              rgba(7, 16, 32, 0.97)
-            );
-          box-shadow:
-            0 35px 90px rgba(0, 0, 0, 0.35),
-            inset 0 1px 0 rgba(255, 255, 255, 0.05);
-          transform: perspective(1200px) rotateY(-5deg) rotateX(3deg);
-          z-index: 3;
-        }
-
-        .preview-topbar,
-        .preview-heading,
-        .chart-header,
-        .chart-bottom,
-        .preview-bottom,
-        .preview-bottom-item {
-          display: flex;
-          align-items: center;
-        }
-
-        .preview-topbar,
-        .preview-heading,
-        .chart-header,
-        .chart-bottom {
-          justify-content: space-between;
-        }
-
-        .preview-topbar {
-          padding-bottom: 20px;
-          border-bottom: 1px solid var(--border);
-        }
-
-        .preview-brand {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          direction: ltr;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        .mini-logo {
-          display: grid;
-          place-items: center;
-          width: 27px;
-          height: 27px;
-          color: #04111f;
-          background: var(--cyan);
-          border-radius: 8px;
-        }
-
-        .live-status {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #86efac;
-          font-size: 10px;
-        }
-
-        .live-status i,
-        .footer-bottom-status i {
-          width: 6px;
-          height: 6px;
-          background: #34d399;
-          border-radius: 50%;
-          box-shadow: 0 0 12px rgba(52, 211, 153, 0.7);
-        }
-
-        .preview-heading {
-          margin-top: 23px;
-        }
-
-        .preview-heading span {
-          color: #8da1bc;
-          font-size: 10px;
-        }
-
-        .preview-heading h3 {
-          margin: 7px 0 0;
-          font-size: 18px;
-        }
-
-        .preview-date {
-          color: #93a4bd;
-          font-size: 10px;
-          padding: 7px 11px;
-          border: 1px solid var(--border);
-          border-radius: 8px;
-        }
-
-        .preview-stats {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-          margin-top: 18px;
-        }
-
-        .preview-stat {
-          border: 1px solid var(--border);
-          background: rgba(15, 23, 42, 0.6);
-          border-radius: 13px;
-          padding: 14px;
-        }
-
-        .preview-stat span {
-          display: block;
-          color: #8193ad;
-          font-size: 10px;
-        }
-
-        .preview-stat strong {
-          display: block;
-          font-size: 21px;
-          margin: 8px 0;
-          direction: ltr;
+        .heroContent {
           text-align: right;
         }
 
-        .preview-stat small {
-          display: flex;
+        .eyebrow,
+        .sectionTag {
+          display: inline-flex;
           align-items: center;
-          gap: 5px;
-          color: #7186a3;
-          font-size: 9px;
-        }
-
-        .positive {
-          color: #34d399 !important;
-        }
-
-        .chart-card {
-          margin-top: 12px;
-          padding: 15px;
-          border: 1px solid var(--border);
-          border-radius: 15px;
-          background: rgba(15, 23, 42, 0.42);
-        }
-
-        .chart-header {
-          color: #a5b4c8;
-          font-size: 10px;
-        }
-
-        .chart-period {
-          color: var(--cyan);
-          padding: 4px 8px;
-          border-radius: 6px;
-          background: rgba(34, 211, 238, 0.09);
-        }
-
-        .market-chart {
-          width: 100%;
-          height: 170px;
-          margin-top: 12px;
-          color: white;
-          overflow: visible;
-        }
-
-        .chart-bottom {
-          color: #64748b;
-          font-size: 9px;
-          direction: ltr;
-        }
-
-        .preview-bottom {
-          gap: 10px;
-          margin-top: 12px;
-        }
-
-        .preview-bottom-item {
-          flex: 1;
           gap: 8px;
-          padding: 11px;
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          min-width: 0;
+          color: #67e8f9;
+          font-size: 12px;
+          font-weight: bold;
         }
 
-        .preview-bottom-item strong,
-        .preview-bottom-item small {
-          display: block;
+        .eyebrow {
+          padding: 10px 15px;
+          border: 1px solid rgba(34, 211, 238, 0.2);
+          border-radius: 999px;
+          background: rgba(34, 211, 238, 0.07);
         }
 
-        .preview-bottom-item strong {
-          color: #cbd5e1;
-          font-size: 9px;
-          white-space: nowrap;
+        .eyebrowDot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #22d3ee;
+          box-shadow: 0 0 12px #22d3ee;
         }
 
-        .preview-bottom-item small {
-          color: #7186a3;
-          font-size: 8px;
-          margin-top: 4px;
+        .hero h1 {
+          margin: 25px 0 20px;
+          color: #f8fafc;
+          font-size: clamp(37px, 5vw, 65px);
+          font-weight: 900;
+          line-height: 1.45;
+          letter-spacing: -2px;
         }
 
-        .preview-icon,
-        .floating-icon {
-          display: grid;
-          place-items: center;
-          flex-shrink: 0;
-          width: 32px;
-          height: 32px;
-          border-radius: 9px;
+        .hero h1 span,
+        .sectionHeading h2 span,
+        .advantagesContent h2 span {
+          color: #22d3ee;
         }
 
-        .preview-icon.cyan,
-        .floating-icon {
-          color: var(--cyan);
-          background: rgba(34, 211, 238, 0.1);
+        .heroDescription {
+          max-width: 580px;
+          margin: 0;
+          color: #94a3b8;
+          font-size: 15px;
+          line-height: 2.4;
         }
 
-        .preview-icon.purple,
-        .purple-bg {
-          color: #c4b5fd;
-          background: rgba(139, 92, 246, 0.13);
-        }
-
-        .floating-card {
-          position: absolute;
-          z-index: 5;
+        .heroButtons {
           display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-top: 32px;
+        }
+
+        .primaryButton,
+        .secondaryButton {
+          display: inline-flex;
           align-items: center;
-          gap: 10px;
-          padding: 13px;
-          border: 1px solid rgba(148, 163, 184, 0.2);
-          border-radius: 15px;
-          background: rgba(10, 22, 41, 0.9);
-          backdrop-filter: blur(18px);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
-        }
-
-        .floating-card strong,
-        .floating-card small {
-          display: block;
-        }
-
-        .floating-card strong {
-          color: #e2e8f0;
-          font-size: 10px;
-          white-space: nowrap;
-        }
-
-        .floating-card small {
-          color: #7186a3;
-          font-size: 9px;
-          margin-top: 4px;
-        }
-
-        .floating-check {
-          color: var(--green);
-          margin-right: 4px;
-        }
-
-        .floating-card-top {
-          top: 35px;
-          right: -25px;
-        }
-
-        .floating-card-bottom {
-          bottom: 42px;
-          left: -28px;
-        }
-
-        .numbers-section {
-          border-top: 1px solid var(--border);
-          border-bottom: 1px solid var(--border);
-          background: rgba(15, 23, 42, 0.3);
-        }
-
-        .numbers-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-        }
-
-        .number-item {
-          text-align: center;
-          padding: 28px 15px;
-          border-left: 1px solid var(--border);
-        }
-
-        .number-item:last-child {
-          border-left: 0;
-        }
-
-        .number-item strong {
-          display: flex;
           justify-content: center;
+          gap: 10px;
+          min-height: 53px;
+          padding: 0 22px;
+          border-radius: 13px;
+          font-size: 13px;
+          font-weight: bold;
+          transition: 0.2s ease;
+        }
+
+        .primaryButton {
+          border: 1px solid #22d3ee;
+          color: #04111f;
+          background: #22d3ee;
+        }
+
+        .secondaryButton {
+          border: 1px solid rgba(148, 163, 184, 0.3);
+          color: #dbeafe;
+          background: rgba(15, 23, 42, 0.55);
+        }
+
+        .secondaryButton:hover {
+          border-color: #22d3ee;
+          color: #67e8f9;
+        }
+
+        .heroTrust {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 20px;
+          margin-top: 30px;
+          color: #94a3b8;
+          font-size: 11px;
+        }
+
+        .trustItem {
+          display: flex;
           align-items: center;
           gap: 7px;
-          direction: ltr;
-          font-size: 24px;
-          letter-spacing: -0.5px;
         }
 
-        .number-item span {
-          display: block;
-          color: #8193ad;
-          font-size: 11px;
-          margin-top: 8px;
+        .trustItem svg {
+          color: #22d3ee;
         }
 
-        .section {
-          padding: 110px 0;
-        }
-
-        .section-heading {
-          max-width: 650px;
-          margin: 0 auto 52px;
-          text-align: center;
-        }
-
-        .section-heading .section-tag {
-          margin: 0 auto;
-        }
-
-        .section-heading h2,
-        .market-content h2 {
-          margin: 20px 0 18px;
-          font-size: clamp(29px, 3.2vw, 43px);
-          line-height: 1.6;
-          letter-spacing: -1.1px;
-        }
-
-        .section-heading p,
-        .market-content p {
-          color: #8ea0b9;
-          font-size: 13px;
-          line-height: 2.2;
-          margin: 0 auto;
-        }
-
-        .features-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 17px;
-        }
-
-        .feature-card {
-          padding: 28px;
-          border: 1px solid var(--border);
-          border-radius: 21px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(15, 30, 53, 0.8),
-              rgba(7, 16, 31, 0.65)
-            );
-          transition:
-            transform 0.25s ease,
-            border-color 0.25s ease;
-        }
-
-        .feature-card:hover {
-          transform: translateY(-5px);
-          border-color: rgba(34, 211, 238, 0.3);
-        }
-
-        .feature-icon {
+        .heroVisual {
+          position: relative;
+          min-height: 440px;
           display: grid;
           place-items: center;
-          width: 52px;
-          height: 52px;
-          color: var(--cyan);
-          border-radius: 15px;
-          background: linear-gradient(
-            135deg,
-            rgba(34, 211, 238, 0.15),
-            rgba(59, 130, 246, 0.08)
-          );
-          border: 1px solid rgba(34, 211, 238, 0.12);
         }
 
-        .feature-card h3 {
-          margin: 23px 0 11px;
-          font-size: 17px;
-        }
-
-        .feature-card p {
-          min-height: 65px;
-          color: #8193ad;
-          font-size: 12px;
-          line-height: 2.2;
-          margin: 0;
-        }
-
-        .feature-link {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          width: fit-content;
-          color: var(--cyan);
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 20px;
-        }
-
-        .market-section {
-          padding: 105px 0;
+        .visualOrb {
+          position: relative;
+          width: 340px;
+          height: 340px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
           background:
             radial-gradient(
-              circle at 15% 50%,
-              rgba(59, 130, 246, 0.1),
-              transparent 35%
-            ),
-            rgba(10, 20, 37, 0.6);
-          border-top: 1px solid var(--border);
-          border-bottom: 1px solid var(--border);
+              circle,
+              rgba(34, 211, 238, 0.13),
+              rgba(37, 99, 235, 0.04) 55%,
+              transparent 70%
+            );
         }
 
-        .market-grid {
-          display: grid;
-          grid-template-columns: 0.9fr 1.1fr;
-          gap: 80px;
-          align-items: center;
+        .orbRing {
+          position: absolute;
+          border: 1px solid rgba(34, 211, 238, 0.23);
+          border-radius: 50%;
         }
 
-        .market-content h2 {
-          font-size: clamp(29px, 3.2vw, 43px);
+        .ringOne {
+          inset: 15px;
+          transform: rotate(35deg) scaleY(0.48);
         }
 
-        .market-content p {
-          margin: 0 0 27px;
-          max-width: 450px;
+        .ringTwo {
+          inset: 15px;
+          transform: rotate(-35deg) scaleY(0.48);
         }
 
-        .market-list {
-          padding: 10px;
-          border: 1px solid var(--border);
-          border-radius: 22px;
-          background: rgba(7, 16, 31, 0.6);
-        }
-
-        .market-row {
+        .orbCore {
+          position: relative;
+          z-index: 2;
+          width: 190px;
+          height: 190px;
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          padding: 20px 16px;
-          border-bottom: 1px solid var(--border);
+          justify-content: center;
+          gap: 6px;
+          border: 1px solid rgba(103, 232, 249, 0.35);
+          border-radius: 50%;
+          color: #67e8f9;
+          background: radial-gradient(
+            circle at 35% 20%,
+            #163d67,
+            #0a162b 70%
+          );
+          box-shadow:
+            0 0 80px rgba(34, 211, 238, 0.13),
+            inset 0 0 50px rgba(59, 130, 246, 0.12);
         }
 
-        .market-row:last-child {
-          border-bottom: 0;
+        .orbCore strong {
+          color: white;
+          font-size: 29px;
+          direction: ltr;
         }
 
-        .market-symbol,
-        .market-value {
+        .orbCore span {
+          color: #94a3b8;
+          font-size: 9px;
+          direction: ltr;
+        }
+
+        .floatingCard {
+          position: absolute;
+          z-index: 5;
+          width: 235px;
           display: flex;
           align-items: center;
           gap: 11px;
+          padding: 14px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          border-radius: 16px;
+          background: rgba(13, 27, 49, 0.9);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+          backdrop-filter: blur(18px);
         }
 
-        .market-symbol strong,
-        .market-symbol small,
-        .market-value strong,
-        .market-value span {
-          display: block;
+        .cardTop {
+          top: 35px;
+          right: -10px;
         }
 
-        .market-symbol strong {
-          font-size: 12px;
-          direction: ltr;
-          text-align: right;
+        .cardBottom {
+          bottom: 35px;
+          left: -10px;
         }
 
-        .market-symbol small {
-          color: #7186a3;
-          font-size: 10px;
-          margin-top: 5px;
-        }
-
-        .symbol-icon {
+        .floatingIcon {
+          width: 43px;
+          height: 43px;
           display: grid;
           place-items: center;
-          width: 42px;
-          height: 42px;
-          border-radius: 13px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .symbol-icon.gold {
-          color: #fcd34d;
-          background: rgba(251, 191, 36, 0.12);
-        }
-
-        .symbol-icon.blue {
-          color: #93c5fd;
-          background: rgba(59, 130, 246, 0.12);
-        }
-
-        .symbol-icon.purple {
-          color: #c4b5fd;
-          background: rgba(139, 92, 246, 0.12);
-        }
-
-        .symbol-icon.green {
-          color: #6ee7b7;
-          background: rgba(16, 185, 129, 0.12);
-        }
-
-        .market-value {
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 5px;
-        }
-
-        .market-value strong {
-          font-size: 11px;
-          color: #cbd5e1;
-        }
-
-        .market-value span {
-          font-size: 10px;
-        }
-
-        .steps-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 20px;
-        }
-
-        .step-card {
-          position: relative;
-          padding: 31px;
-          border: 1px solid var(--border);
-          border-radius: 21px;
-          background: rgba(11, 23, 42, 0.55);
-        }
-
-        .step-number {
-          color: var(--cyan);
-          font-size: 28px;
-          font-weight: 900;
-          direction: ltr;
-        }
-
-        .step-card h3 {
-          font-size: 17px;
-          margin: 20px 0 12px;
-        }
-
-        .step-card p {
-          color: #8193ad;
-          font-size: 12px;
-          line-height: 2.2;
-          margin: 0;
-        }
-
-        .cta-box {
-          display: flex;
-          align-items: center;
-          gap: 20px;
-          margin-top: 65px;
-          padding: 28px 32px;
-          border: 1px solid rgba(34, 211, 238, 0.2);
-          border-radius: 23px;
-          background:
-            linear-gradient(
-              100deg,
-              rgba(34, 211, 238, 0.09),
-              rgba(59, 130, 246, 0.05)
-            );
-        }
-
-        .cta-icon {
-          display: grid;
-          place-items: center;
-          width: 58px;
-          height: 58px;
-          color: var(--cyan);
-          border-radius: 17px;
-          background: rgba(34, 211, 238, 0.1);
           flex-shrink: 0;
+          border-radius: 12px;
         }
 
-        .cta-content {
+        .floatingIcon.blue,
+        .featureIcon.blue {
+          color: #67e8f9;
+          background: rgba(34, 211, 238, 0.13);
+        }
+
+        .floatingIcon.purple,
+        .featureIcon.purple {
+          color: #c4b5fd;
+          background: rgba(139, 92, 246, 0.14);
+        }
+
+        .floatingCard div {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
           flex: 1;
         }
 
-        .cta-content h3 {
-          margin: 0 0 7px;
-          font-size: 18px;
+        .floatingCard strong {
+          color: #f8fafc;
+          font-size: 11px;
         }
 
-        .cta-content p {
-          color: #8193ad;
-          font-size: 12px;
-          margin: 0;
+        .floatingCard small {
+          color: #94a3b8;
+          font-size: 9px;
         }
 
-        .footer {
-          border-top: 1px solid var(--border);
-          background: rgba(3, 9, 20, 0.8);
-          padding-top: 65px;
+        .statusDot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #4ade80;
+          box-shadow: 0 0 10px rgba(74, 222, 128, 0.7);
         }
 
-        .footer-grid {
+        .statsSection {
+          padding: 0 0 90px;
+        }
+
+        .statsGrid {
           display: grid;
-          grid-template-columns: 1.6fr 1fr 1fr 1fr;
-          gap: 45px;
-          padding-bottom: 55px;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
         }
 
-        .footer-brand p {
-          max-width: 310px;
-          color: #7186a3;
-          font-size: 12px;
+        .statCard {
+          padding: 25px 20px;
+          text-align: center;
+          border: 1px solid rgba(148, 163, 184, 0.14);
+          border-radius: 20px;
+          background: linear-gradient(
+            145deg,
+            rgba(15, 30, 53, 0.8),
+            rgba(10, 20, 37, 0.55)
+          );
+        }
+
+        .statIcon {
+          width: 48px;
+          height: 48px;
+          display: grid;
+          place-items: center;
+          margin: 0 auto 15px;
+          color: #67e8f9;
+          border-radius: 14px;
+          background: rgba(34, 211, 238, 0.09);
+        }
+
+        .statCard strong {
+          display: block;
+          color: #f8fafc;
+          font-size: 28px;
+          direction: ltr;
+        }
+
+        .statCard p {
+          margin: 8px 0 0;
+          color: #94a3b8;
+          font-size: 11px;
+        }
+
+        .section {
+          padding: 95px 0;
+        }
+
+        .sectionHeading {
+          max-width: 620px;
+          margin: 0 auto 45px;
+          text-align: center;
+        }
+
+        .sectionHeading h2 {
+          margin: 18px 0;
+          font-size: clamp(28px, 4vw, 42px);
+          line-height: 1.7;
+        }
+
+        .sectionHeading p {
+          margin: 0;
+          color: #94a3b8;
+          font-size: 13px;
+          line-height: 2.3;
+        }
+
+        .featuresGrid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 17px;
+        }
+
+        .featureCard {
+          padding: 27px 23px;
+          border: 1px solid rgba(148, 163, 184, 0.15);
+          border-radius: 21px;
+          background: linear-gradient(
+            145deg,
+            rgba(15, 30, 53, 0.82),
+            rgba(8, 18, 34, 0.65)
+          );
+          transition: 0.25s ease;
+        }
+
+        .featureCard:hover {
+          transform: translateY(-5px);
+          border-color: rgba(34, 211, 238, 0.4);
+        }
+
+        .featureIcon {
+          width: 58px;
+          height: 58px;
+          display: grid;
+          place-items: center;
+          margin-bottom: 23px;
+          border-radius: 17px;
+        }
+
+        .featureIcon.green {
+          color: #86efac;
+          background: rgba(34, 197, 94, 0.12);
+        }
+
+        .featureIcon.orange {
+          color: #fdba74;
+          background: rgba(249, 115, 22, 0.12);
+        }
+
+        .featureCard h3 {
+          margin: 0 0 13px;
+          color: #f8fafc;
+          font-size: 15px;
+        }
+
+        .featureCard p {
+          min-height: 78px;
+          margin: 0;
+          color: #94a3b8;
+          font-size: 11px;
           line-height: 2.2;
-          margin: 20px 0;
         }
 
-        .footer-security {
-          display: flex;
+        .featureLink {
+          display: inline-flex;
           align-items: center;
           gap: 7px;
+          margin-top: 24px;
+          color: #67e8f9;
+          font-size: 11px;
+          font-weight: bold;
+        }
+
+        .advantagesSection {
+          background: rgba(10, 21, 39, 0.5);
+          border-top: 1px solid rgba(148, 163, 184, 0.08);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .advantagesGrid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          align-items: center;
+          gap: 85px;
+        }
+
+        .advantagesContent h2 {
+          margin: 20px 0;
+          font-size: clamp(28px, 4vw, 42px);
+          line-height: 1.65;
+        }
+
+        .advantagesContent > p {
+          max-width: 500px;
+          margin: 0;
+          color: #94a3b8;
+          font-size: 13px;
+          line-height: 2.4;
+        }
+
+        .advantagesList {
+          display: grid;
+          gap: 17px;
+          padding: 0;
+          margin: 28px 0 32px;
+          list-style: none;
+        }
+
+        .advantagesList li {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          color: #cbd5e1;
+          font-size: 12px;
+        }
+
+        .advantagesList li span {
+          width: 25px;
+          height: 25px;
+          display: grid;
+          place-items: center;
+          color: #4ade80;
+          border-radius: 50%;
+          background: rgba(34, 197, 94, 0.12);
+        }
+
+        .advantagesPanel {
+          padding: 30px;
+          border: 1px solid rgba(103, 232, 249, 0.18);
+          border-radius: 25px;
+          background:
+            radial-gradient(
+              circle at 80% 0%,
+              rgba(37, 99, 235, 0.17),
+              transparent 45%
+            ),
+            #0b172b;
+          box-shadow: 0 25px 80px rgba(0, 0, 0, 0.2);
+        }
+
+        .panelHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding-bottom: 25px;
+          margin-bottom: 25px;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+        }
+
+        .panelHeader div:first-child {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+
+        .panelHeader span {
           color: #64748b;
+          font-size: 10px;
+          direction: ltr;
+        }
+
+        .panelHeader strong {
+          color: white;
+          font-size: 16px;
+        }
+
+        .panelLogo {
+          width: 50px;
+          height: 50px;
+          display: grid;
+          place-items: center;
+          color: #67e8f9;
+          border-radius: 15px;
+          background: rgba(34, 211, 238, 0.1);
+        }
+
+        .panelLine {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 22px;
+          color: #cbd5e1;
+          font-size: 12px;
+        }
+
+        .greenText {
+          color: #4ade80;
           font-size: 10px;
         }
 
-        .footer-security svg {
-          color: var(--green);
+        .blueText {
+          color: #67e8f9;
+          font-size: 10px;
         }
 
-        .footer-column {
+        .progress {
+          height: 7px;
+          margin-top: 11px;
+          overflow: hidden;
+          border-radius: 20px;
+          background: #1e293b;
+        }
+
+        .progress span {
+          display: block;
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #0891b2, #22d3ee);
+        }
+
+        .panelFooter {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding-top: 25px;
+          margin-top: 30px;
+          border-top: 1px solid rgba(148, 163, 184, 0.13);
+          color: #94a3b8;
+          font-size: 10px;
+        }
+
+        .panelFooter svg {
+          color: #4ade80;
+        }
+
+        .panelFooter span {
+          margin-right: auto;
+          color: #4ade80;
+        }
+
+        .securitySection {
+          padding: 60px 0;
+        }
+
+        .securityContent {
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          align-items: center;
+          gap: 25px;
+          padding: 35px;
+          border: 1px solid rgba(34, 211, 238, 0.18);
+          border-radius: 24px;
+          background: rgba(13, 29, 49, 0.7);
+        }
+
+        .securityIcon {
+          width: 70px;
+          height: 70px;
+          display: grid;
+          place-items: center;
+          color: #67e8f9;
+          border-radius: 20px;
+          background: rgba(34, 211, 238, 0.1);
+        }
+
+        .securityContent h2 {
+          margin: 10px 0;
+          font-size: 23px;
+        }
+
+        .securityContent p {
+          max-width: 650px;
+          margin: 0;
+          color: #94a3b8;
+          font-size: 12px;
+          line-height: 2.2;
+        }
+
+        .ctaSection {
+          padding: 65px 0 100px;
+        }
+
+        .ctaBox {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 30px;
+          padding: 45px;
+          border: 1px solid rgba(34, 211, 238, 0.2);
+          border-radius: 27px;
+          background:
+            radial-gradient(
+              circle at 10% 20%,
+              rgba(37, 99, 235, 0.18),
+              transparent 45%
+            ),
+            #0b172b;
+        }
+
+        .ctaBox h2 {
+          margin: 15px 0;
+          font-size: clamp(25px, 4vw, 36px);
+        }
+
+        .ctaBox p {
+          margin: 0;
+          color: #94a3b8;
+          font-size: 12px;
+        }
+
+        .footer {
+          padding: 60px 0 25px;
+          border-top: 1px solid rgba(148, 163, 184, 0.12);
+          background: #040a16;
+        }
+
+        .footerGrid {
+          display: grid;
+          grid-template-columns: 2fr 1fr 1fr;
+          gap: 60px;
+        }
+
+        .footerBrand p {
+          max-width: 320px;
+          margin-top: 22px;
+          color: #64748b;
+          font-size: 11px;
+          line-height: 2.2;
+        }
+
+        .footerColumn {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
           gap: 15px;
         }
 
-        .footer-column h3 {
+        .footerColumn h3 {
           margin: 0 0 8px;
+          color: #f8fafc;
           font-size: 13px;
-          color: #e2e8f0;
         }
 
-        .footer-column a {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #7186a3;
+        .footerColumn a,
+        .footerColumn button {
+          padding: 0;
+          border: 0;
+          color: #64748b;
+          background: transparent;
           font-size: 11px;
-          transition: color 0.2s ease;
         }
 
-        .footer-column a:hover {
-          color: var(--cyan);
+        .footerColumn a:hover,
+        .footerColumn button:hover {
+          color: #67e8f9;
         }
 
-        .footer-bottom {
+        .footerBottom {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 20px;
-          padding: 22px 0;
-          border-top: 1px solid var(--border);
-          color: #53657e;
+          padding-top: 25px;
+          margin-top: 50px;
+          border-top: 1px solid rgba(148, 163, 184, 0.1);
+          color: #475569;
           font-size: 10px;
         }
 
-        .footer-bottom-status {
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          display: grid;
+          place-items: center;
+          padding: 20px;
+          background: rgba(2, 6, 23, 0.8);
+          backdrop-filter: blur(14px);
+        }
+
+        .authModal {
+          position: relative;
+          width: min(100%, 440px);
+          max-height: 95vh;
+          overflow-y: auto;
+          padding: 35px;
+          border: 1px solid rgba(103, 232, 249, 0.25);
+          border-radius: 25px;
+          background:
+            radial-gradient(
+              circle at 90% 0%,
+              rgba(37, 99, 235, 0.18),
+              transparent 40%
+            ),
+            #0b172b;
+          box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+        }
+
+        .modalClose {
+          position: absolute;
+          top: 17px;
+          left: 17px;
+          display: grid;
+          place-items: center;
+          width: 35px;
+          height: 35px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          border-radius: 10px;
+          color: #94a3b8;
+          background: transparent;
+        }
+
+        .modalClose:hover {
+          color: white;
+          border-color: #22d3ee;
+        }
+
+        .authLogo {
+          width: 65px;
+          height: 65px;
+          display: grid;
+          place-items: center;
+          margin: 0 auto 20px;
+          color: #67e8f9;
+          border: 1px solid rgba(34, 211, 238, 0.3);
+          border-radius: 20px;
+          background: rgba(34, 211, 238, 0.1);
+        }
+
+        .authModal h2 {
+          margin: 0;
+          text-align: center;
+          color: white;
+          font-size: 25px;
+        }
+
+        .authDescription {
+          margin: 13px 0 28px;
+          color: #94a3b8;
+          text-align: center;
+          font-size: 11px;
+          line-height: 2;
+        }
+
+        .authForm {
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+
+        .authForm label {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+          color: #cbd5e1;
+          font-size: 11px;
+          font-weight: bold;
+        }
+
+        .inputWrapper {
           display: flex;
           align-items: center;
-          gap: 7px;
+          gap: 10px;
+          min-height: 49px;
+          padding: 0 13px;
+          border: 1px solid rgba(148, 163, 184, 0.23);
+          border-radius: 12px;
+          color: #64748b;
+          background: rgba(2, 6, 23, 0.4);
+          transition: border-color 0.2s ease;
+        }
+
+        .inputWrapper:focus-within {
+          border-color: #22d3ee;
+        }
+
+        .inputWrapper input {
+          width: 100%;
+          min-width: 0;
+          border: 0;
+          outline: 0;
+          color: #f8fafc;
+          background: transparent;
+          font-size: 12px;
+        }
+
+        .inputWrapper input::placeholder {
+          color: #475569;
+        }
+
+        .passwordToggle {
+          display: grid;
+          place-items: center;
+          padding: 0;
+          border: 0;
+          color: #64748b;
+          background: transparent;
+        }
+
+        .formOptions {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          font-size: 10px;
+        }
+
+        .rememberOption {
+          display: flex !important;
+          flex-direction: row !important;
+          align-items: center;
+          gap: 7px !important;
+          color: #94a3b8 !important;
+          font-weight: normal !important;
+        }
+
+        .rememberOption input {
+          accent-color: #22d3ee;
+        }
+
+        .formOptions a {
+          color: #67e8f9;
+        }
+
+        .authSubmit {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          min-height: 52px;
+          margin-top: 5px;
+          border: 1px solid #22d3ee;
+          border-radius: 12px;
+          color: #04111f;
+          background: #22d3ee;
+          font-size: 12px;
+          font-weight: bold;
+          transition: 0.2s ease;
+        }
+
+        .authSubmit:hover {
+          background: #67e8f9;
+        }
+
+        .authSwitch {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 5px;
+          margin-top: 25px;
+          color: #94a3b8;
+          font-size: 11px;
+        }
+
+        .authSwitch button {
+          padding: 0;
+          border: 0;
+          color: #67e8f9;
+          background: transparent;
+          font-size: 11px;
+          font-weight: bold;
+        }
+
+        .authNote {
+          margin: 23px 0 0;
+          color: #475569;
+          text-align: center;
+          font-size: 9px;
+          line-height: 2;
         }
 
         @media (max-width: 1050px) {
-          .desktop-nav {
+          .navigation {
             gap: 15px;
           }
 
-          .hero-grid {
+          .heroGrid {
             gap: 30px;
           }
 
-          .floating-card-top {
-            right: -8px;
-          }
-
-          .floating-card-bottom {
-            left: -8px;
-          }
-
-          .market-grid {
-            gap: 40px;
+          .featuresGrid,
+          .statsGrid {
+            grid-template-columns: repeat(2, 1fr);
           }
         }
 
-        @media (max-width: 850px) {
-          .container {
-            width: min(100% - 34px, 600px);
+        @media (max-width: 820px) {
+          .headerInner {
+            min-height: 74px;
           }
 
-          .header-inner {
-            min-height: 75px;
-          }
-
-          .desktop-nav,
-          .login-link {
+          .headerActions {
             display: none;
           }
 
-          .mobile-menu-button {
+          .menuButton {
             display: grid;
           }
 
-          .register-button {
-            padding: 10px 13px;
-            font-size: 11px;
+          .navigation {
+            position: absolute;
+            top: calc(100% + 1px);
+            right: 20px;
+            left: 20px;
+            display: none;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0;
+            padding: 15px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 17px;
+            background: #0b172b;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+          }
+
+          .navigation.open {
+            display: flex;
+          }
+
+          .navigation > a {
+            padding: 15px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+          }
+
+          .mobileActions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+          }
+
+          .mobileLogin,
+          .mobileRegister {
+            flex: 1;
+          }
+
+          .mobileLogin {
+            color: white;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: transparent;
+          }
+
+          .mobileRegister {
+            color: #04111f;
+            background: #22d3ee;
           }
 
           .hero {
-            padding: 58px 0 60px;
+            padding: 70px 0;
           }
 
-          .hero-grid {
+          .heroGrid,
+          .advantagesGrid {
             grid-template-columns: 1fr;
-            gap: 60px;
           }
 
-          .hero-content {
+          .heroContent {
             text-align: center;
           }
 
-          .eyebrow {
-            margin: 0 auto;
+          .heroDescription {
+            margin: auto;
           }
 
-          .hero h1 {
-            font-size: clamp(35px, 8vw, 50px);
-            letter-spacing: -1px;
-          }
-
-          .hero-description {
-            margin: 0 auto;
-            font-size: 13px;
-          }
-
-          .hero-actions,
-          .hero-trust {
+          .heroButtons,
+          .heroTrust {
             justify-content: center;
           }
 
-          .hero-visual {
-            min-height: 450px;
+          .heroVisual {
+            min-height: 390px;
           }
 
-          .dashboard-preview {
-            transform: none;
-          }
-
-          .numbers-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .number-item:nth-child(2) {
-            border-left: 0;
-          }
-
-          .number-item:nth-child(-n + 2) {
-            border-bottom: 1px solid var(--border);
-          }
-
-          .section,
-          .market-section {
-            padding: 75px 0;
-          }
-
-          .features-grid,
-          .steps-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .market-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .market-content {
+          .advantagesContent {
             text-align: center;
           }
 
-          .market-content .section-tag {
-            margin: 0 auto;
+          .advantagesContent > p {
+            margin: auto;
           }
 
-          .market-content p {
-            margin-left: auto;
+          .advantagesList {
+            width: fit-content;
             margin-right: auto;
-          }
-
-          .primary-button {
             margin-left: auto;
-            margin-right: auto;
+            text-align: right;
           }
 
-          .footer-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 35px;
-          }
-        }
-
-        @media (max-width: 520px) {
-          .container {
-            width: calc(100% - 28px);
+          .advantagesContent .primaryButton {
+            margin: auto;
           }
 
-          .brand-text {
-            font-size: 19px;
+          .securityContent {
+            grid-template-columns: auto 1fr;
           }
 
-          .brand-mark {
-            width: 37px;
-            height: 37px;
-          }
-
-          .header-actions {
-            gap: 8px;
-          }
-
-          .register-button svg {
-            display: none;
-          }
-
-          .hero h1 {
-            font-size: 34px;
-            line-height: 1.55;
-          }
-
-          .hero-description {
-            font-size: 12px;
-            line-height: 2.3;
-          }
-
-          .hero-actions {
-            flex-direction: column;
-            width: 100%;
-          }
-
-          .hero-actions a {
-            width: 100%;
-          }
-
-          .hero-trust {
-            gap: 10px;
-          }
-
-          .trust-item {
-            font-size: 9px;
-          }
-
-          .hero-visual {
-            min-height: 380px;
-          }
-
-          .dashboard-preview {
-            padding: 12px;
-            border-radius: 19px;
-          }
-
-          .preview-stat {
-            padding: 10px;
-          }
-
-          .preview-stat strong {
-            font-size: 17px;
-          }
-
-          .market-chart {
-            height: 130px;
-          }
-
-          .floating-card {
-            padding: 9px;
-            gap: 7px;
-          }
-
-          .floating-card-top {
-            top: 5px;
-            right: -4px;
-          }
-
-          .floating-card-bottom {
-            bottom: 10px;
-            left: -4px;
-          }
-
-          .floating-card strong {
-            font-size: 8px;
-          }
-
-          .floating-card small {
-            font-size: 7px;
-          }
-
-          .floating-check {
-            display: none;
-          }
-
-          .orbit-one {
-            width: 350px;
-            height: 350px;
-          }
-
-          .orbit-two {
-            width: 280px;
-            height: 280px;
-          }
-
-          .number-item {
-            padding: 23px 8px;
-          }
-
-          .number-item strong {
-            font-size: 20px;
-          }
-
-          .number-item span {
-            font-size: 9px;
-          }
-
-          .section-heading {
-            margin-bottom: 32px;
-          }
-
-          .section-heading h2,
-          .market-content h2 {
-            font-size: 27px;
-            line-height: 1.7;
-          }
-
-          .section-heading p,
-          .market-content p {
-            font-size: 11px;
-          }
-
-          .features-grid,
-          .steps-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .feature-card {
-            padding: 23px;
-          }
-
-          .feature-card p {
-            min-height: auto;
-          }
-
-          .market-row {
-            padding: 16px 8px;
-          }
-
-          .market-symbol strong {
-            font-size: 10px;
-          }
-
-          .market-value strong {
-            font-size: 9px;
-          }
-
-          .cta-box {
-            flex-direction: column;
-            text-align: center;
-            padding: 27px 18px;
-          }
-
-          .cta-content p {
-            line-height: 2;
-          }
-
-          .cta-box .primary-button {
-            width: 100%;
-          }
-
-          .footer-grid {
-            grid-template-columns: 1fr 1fr;
-            gap: 35px 20px;
-          }
-
-          .footer-brand {
+          .securityContent .secondaryButton {
             grid-column: 1 / -1;
           }
 
-          .footer-column h3 {
+          .ctaBox {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .container {
+            width: min(100% - 28px, 1180px);
+          }
+
+          .brandIcon {
+            width: 41px;
+            height: 41px;
+          }
+
+          .brandText strong {
+            font-size: 18px;
+          }
+
+          .brandText small {
+            font-size: 9px;
+          }
+
+          .hero h1 {
+            font-size: 37px;
+            letter-spacing: -1px;
+          }
+
+          .heroDescription {
             font-size: 12px;
           }
 
-          .footer-column a {
-            font-size: 10px;
+          .heroButtons {
+            flex-direction: column;
           }
 
-          .footer-bottom {
+          .heroButtons a,
+          .heroButtons button {
+            width: 100%;
+          }
+
+          .heroVisual {
+            min-height: 350px;
+            transform: scale(0.86);
+          }
+
+          .cardTop {
+            right: -20px;
+          }
+
+          .cardBottom {
+            left: -20px;
+          }
+
+          .statsGrid,
+          .featuresGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .section {
+            padding: 65px 0;
+          }
+
+          .sectionHeading h2,
+          .advantagesContent h2 {
+            font-size: 29px;
+          }
+
+          .featureCard p {
+            min-height: auto;
+          }
+
+          .securityContent {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 25px;
+          }
+
+          .ctaBox {
+            padding: 28px;
+          }
+
+          .ctaBox h2 {
+            font-size: 25px;
+          }
+
+          .ctaBox .primaryButton {
+            width: 100%;
+          }
+
+          .footerGrid {
+            grid-template-columns: 1fr 1fr;
+            gap: 35px;
+          }
+
+          .footerBrand {
+            grid-column: 1 / -1;
+          }
+
+          .footerBottom {
             flex-direction: column;
             align-items: flex-start;
-            gap: 10px;
-            line-height: 1.8;
+          }
+
+          .authModal {
+            padding: 28px 20px;
           }
         }
       `}</style>
-    </main>
+    </>
   );
 }
