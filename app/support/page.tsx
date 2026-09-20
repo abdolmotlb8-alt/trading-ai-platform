@@ -1,485 +1,686 @@
-import Link from "next/link";
-import { getCurrentUser } from "@/lib/current-user";
+"use client";
 
-export default async function SupportPage() {
-  const user = await getCurrentUser();
+import { useEffect, useMemo, useState } from "react";
 
-  if (!user) {
-    return (
-      <main
-        dir="rtl"
-        style={{
-          minHeight: "100vh",
-          padding: "70px 20px",
-          background:
-            "radial-gradient(circle at top right, rgba(34,211,238,.13), transparent 32%), #06101e",
-          color: "#f8fafc",
-          fontFamily: "Arial, Tahoma, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "650px",
-            margin: "0 auto",
-            padding: "45px 28px",
-            textAlign: "center",
-            borderRadius: "28px",
-            background: "rgba(15,23,42,.78)",
-            border: "1px solid rgba(148,163,184,.13)",
-          }}
-        >
-          <div style={{ fontSize: "55px", marginBottom: "18px" }}>
-            🔐
-          </div>
+type Ticket = {
+  id: string;
+  subject: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: {
+    id: string;
+    message: string;
+    senderType: string;
+    createdAt: string;
+  }[];
+};
 
-          <h1 style={{ fontSize: "32px", margin: "0 0 15px" }}>
-            پشتیبانی Trading AI
-          </h1>
+type Announcement = {
+  id: string;
+  title: string;
+  message: string;
+  priority: string;
+  publishedAt: string;
+};
 
-          <p
-            style={{
-              color: "#94a3b8",
-              lineHeight: 2,
-              marginBottom: "28px",
-            }}
-          >
-            برای استفاده از مرکز پشتیبانی ابتدا وارد حساب کاربری خود شوید.
-          </p>
+type ChatMessage = {
+  role: "user" | "bot";
+  text: string;
+};
 
-          <Link
-            href="/login"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "14px 28px",
-              borderRadius: "14px",
-              background: "#22d3ee",
-              color: "#04121e",
-              fontWeight: 800,
-              textDecoration: "none",
-            }}
-          >
-            ورود به حساب
-          </Link>
-        </div>
-      </main>
-    );
+const quickQuestions = [
+  "چطور ربات معاملاتی را فعال کنم؟",
+  "چطور تیکت پشتیبانی ایجاد کنم؟",
+  "اخبار اقتصادی سایت چگونه کار می‌کند؟",
+  "چطور متاتریدر را وصل کنم؟",
+  "چطور اعلان تلگرام را فعال کنم؟",
+];
+
+export default function SupportPage() {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [creatingTicket, setCreatingTicket] = useState(false);
+
+  const [chatOpen, setChatOpen] = useState(true);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: "bot",
+      text:
+        "سلام 👋 من دستیار پشتیبانی Trading AI هستم.\n\n" +
+        "می‌توانم درباره حساب، ربات‌ها، اخبار، سیگنال‌ها، تلگرام، متاتریدر و بخش‌های مختلف سایت راهنمایی‌تان کنم.\n\n" +
+        "اگر پاسخ سؤال شما را ندانم، می‌توانیم برایتان تیکت واقعی پشتیبانی ایجاد کنیم.",
+    },
+  ]);
+
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [announcementPriority, setAnnouncementPriority] = useState("NORMAL");
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
+  const [announcementResult, setAnnouncementResult] = useState("");
+
+  async function loadData() {
+    try {
+      setLoading(true);
+
+      const [supportResponse, announcementResponse] = await Promise.all([
+        fetch("/api/support", {
+          cache: "no-store",
+        }),
+        fetch("/api/announcements", {
+          cache: "no-store",
+        }),
+      ]);
+
+      if (supportResponse.ok) {
+        const supportData = await supportResponse.json();
+        setTickets(supportData.tickets || []);
+      }
+
+      if (announcementResponse.ok) {
+        const announcementData = await announcementResponse.json();
+        setAnnouncements(announcementData.announcements || []);
+      }
+    } catch {
+      // صفحه حتی در صورت خطای موقت API نیز باز می‌ماند.
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const openTickets = useMemo(
+    () =>
+      tickets.filter(
+        (ticket) =>
+          ticket.status === "OPEN" ||
+          ticket.status === "IN_PROGRESS"
+      ).length,
+    [tickets]
+  );
+
+  async function createTicket() {
+    if (!subject.trim() || !message.trim()) {
+      alert("موضوع و متن درخواست را وارد کنید.");
+      return;
+    }
+
+    try {
+      setCreatingTicket(true);
+
+      const response = await fetch("/api/support", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          subject: subject.trim(),
+          message: message.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || "ایجاد تیکت انجام نشد.");
+        return;
+      }
+
+      setSubject("");
+      setMessage("");
+
+      await loadData();
+
+      alert("تیکت با موفقیت ایجاد شد.");
+    } catch {
+      alert("خطا در ارتباط با سرور.");
+    } finally {
+      setCreatingTicket(false);
+    }
+  }
+
+  async function sendChat(customMessage?: string) {
+    const text = (customMessage ?? chatInput).trim();
+
+    if (!text || chatLoading) {
+      return;
+    }
+
+    setChatMessages((previous) => [
+      ...previous,
+      {
+        role: "user",
+        text,
+      },
+    ]);
+
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const response = await fetch("/api/support/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+        }),
+      });
+
+      const data = await response.json();
+
+      setChatMessages((previous) => [
+        ...previous,
+        {
+          role: "bot",
+          text:
+            data.answer ||
+            "متأسفانه در حال حاضر نتوانستم پاسخ مناسبی پیدا کنم.",
+        },
+      ]);
+    } catch {
+      setChatMessages((previous) => [
+        ...previous,
+        {
+          role: "bot",
+          text:
+            "ارتباط با سرور پشتیبانی برقرار نشد. لطفاً دوباره تلاش کنید یا یک تیکت ایجاد کنید.",
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  async function publishAnnouncement() {
+    if (!announcementTitle.trim() || !announcementMessage.trim()) {
+      setAnnouncementResult("عنوان و متن اعلامیه را وارد کنید.");
+      return;
+    }
+
+    try {
+      setAnnouncementLoading(true);
+      setAnnouncementResult("");
+
+      const response = await fetch("/api/announcements", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: announcementTitle.trim(),
+          message: announcementMessage.trim(),
+          priority: announcementPriority,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setAnnouncementResult(
+          data.error || "انتشار اعلامیه انجام نشد."
+        );
+        return;
+      }
+
+      setAnnouncementTitle("");
+      setAnnouncementMessage("");
+      setAnnouncementPriority("NORMAL");
+      setAnnouncementResult("اعلامیه با موفقیت منتشر شد.");
+
+      await loadData();
+    } catch {
+      setAnnouncementResult("خطا در ارتباط با سرور.");
+    } finally {
+      setAnnouncementLoading(false);
+    }
   }
 
   return (
     <main
       dir="rtl"
-      style={{
-        minHeight: "100vh",
-        padding: "28px 16px 70px",
-        background:
-          "radial-gradient(circle at top right, rgba(34,211,238,.12), transparent 30%), radial-gradient(circle at bottom left, rgba(37,99,235,.10), transparent 30%), #06101e",
-        color: "#f8fafc",
-        fontFamily: "Arial, Tahoma, sans-serif",
-      }}
+      className="min-h-screen bg-[#050b16] px-4 py-6 text-white sm:px-6 lg:px-10"
     >
-      <div style={{ maxWidth: "1180px", margin: "0 auto" }}>
-
+      <div className="mx-auto max-w-6xl space-y-6">
         {/* Header */}
-        <section
-          style={{
-            padding: "28px",
-            borderRadius: "26px",
-            background: "rgba(15,23,42,.75)",
-            border: "1px solid rgba(148,163,184,.13)",
-            marginBottom: "22px",
-          }}
-        >
-          <div
-            style={{
-              display: "inline-flex",
-              padding: "8px 14px",
-              borderRadius: "999px",
-              background: "rgba(34,211,238,.08)",
-              border: "1px solid rgba(34,211,238,.18)",
-              color: "#67e8f9",
-              fontSize: "12px",
-              marginBottom: "14px",
-            }}
-          >
-            ✦ TRADING AI SUPPORT
-          </div>
-
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "clamp(30px, 6vw, 46px)",
-            }}
-          >
-            مرکز پشتیبانی
-          </h1>
-
-          <p
-            style={{
-              color: "#94a3b8",
-              lineHeight: 2,
-              margin: "12px 0 0",
-            }}
-          >
-            سلام {user.name} 👋
-            <br />
-            از این بخش می‌توانید مشکلات، سوالات و درخواست‌های خود را مدیریت
-            کنید.
-          </p>
-        </section>
-
-        {/* Support options */}
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: "16px",
-            marginBottom: "22px",
-          }}
-        >
-          <div
-            style={{
-              padding: "24px",
-              borderRadius: "24px",
-              background:
-                "linear-gradient(145deg, rgba(8,47,73,.75), rgba(15,23,42,.82))",
-              border: "1px solid rgba(34,211,238,.14)",
-            }}
-          >
-            <div
-              style={{
-                width: "52px",
-                height: "52px",
-                borderRadius: "16px",
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(34,211,238,.09)",
-                fontSize: "25px",
-                marginBottom: "16px",
-              }}
-            >
-              🎫
-            </div>
-
-            <h2 style={{ margin: "0 0 10px", fontSize: "21px" }}>
-              ارسال درخواست
-            </h2>
-
-            <p
-              style={{
-                color: "#94a3b8",
-                lineHeight: 1.9,
-                fontSize: "13px",
-                margin: 0,
-              }}
-            >
-              اگر مشکلی دارید، می‌توانید درخواست پشتیبانی ایجاد کنید.
-            </p>
-
-            <button
-              type="button"
-              style={{
-                width: "100%",
-                minHeight: "46px",
-                marginTop: "20px",
-                border: 0,
-                borderRadius: "13px",
-                background: "#22d3ee",
-                color: "#04121e",
-                fontWeight: 800,
-              }}
-            >
-              ایجاد تیکت
-            </button>
-          </div>
-
-          <div
-            style={{
-              padding: "24px",
-              borderRadius: "24px",
-              background: "rgba(15,23,42,.75)",
-              border: "1px solid rgba(148,163,184,.12)",
-            }}
-          >
-            <div
-              style={{
-                width: "52px",
-                height: "52px",
-                borderRadius: "16px",
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(34,197,94,.08)",
-                fontSize: "25px",
-                marginBottom: "16px",
-              }}
-            >
-              💬
-            </div>
-
-            <h2 style={{ margin: "0 0 10px", fontSize: "21px" }}>
-              گفت‌وگو با پشتیبانی
-            </h2>
-
-            <p
-              style={{
-                color: "#94a3b8",
-                lineHeight: 1.9,
-                fontSize: "13px",
-                margin: 0,
-              }}
-            >
-              سیستم گفت‌وگوی مستقیم با تیم پشتیبانی در مرحله بعد فعال می‌شود.
-            </p>
-
-            <div
-              style={{
-                marginTop: "20px",
-                padding: "11px",
-                borderRadius: "12px",
-                textAlign: "center",
-                background: "rgba(148,163,184,.06)",
-                color: "#64748b",
-                fontSize: "12px",
-              }}
-            >
-              به‌زودی
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: "24px",
-              borderRadius: "24px",
-              background: "rgba(15,23,42,.75)",
-              border: "1px solid rgba(148,163,184,.12)",
-            }}
-          >
-            <div
-              style={{
-                width: "52px",
-                height: "52px",
-                borderRadius: "16px",
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(250,204,21,.08)",
-                fontSize: "25px",
-                marginBottom: "16px",
-              }}
-            >
-              📚
-            </div>
-
-            <h2 style={{ margin: "0 0 10px", fontSize: "21px" }}>
-              سوالات متداول
-            </h2>
-
-            <p
-              style={{
-                color: "#94a3b8",
-                lineHeight: 1.9,
-                fontSize: "13px",
-                margin: 0,
-              }}
-            >
-              پاسخ سوالات متداول درباره حساب، ربات‌ها، بازار و بروکر.
-            </p>
-
-            <div
-              style={{
-                marginTop: "20px",
-                padding: "11px",
-                borderRadius: "12px",
-                textAlign: "center",
-                background: "rgba(148,163,184,.06)",
-                color: "#64748b",
-                fontSize: "12px",
-              }}
-            >
-              در حال آماده‌سازی
-            </div>
-          </div>
-        </section>
-
-        {/* Ticket area */}
-        <section
-          style={{
-            padding: "26px",
-            borderRadius: "26px",
-            background: "rgba(15,23,42,.75)",
-            border: "1px solid rgba(148,163,184,.12)",
-            marginBottom: "22px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "15px",
-              flexWrap: "wrap",
-              marginBottom: "20px",
-            }}
-          >
+        <section className="overflow-hidden rounded-3xl border border-cyan-400/10 bg-gradient-to-br from-[#0d1b2f] via-[#0b1627] to-[#07101d] p-6 shadow-2xl shadow-black/20 sm:p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 style={{ margin: 0, fontSize: "23px" }}>
-                درخواست‌های من
-              </h2>
+              <div className="mb-4 inline-flex rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-300">
+                TRADING AI SUPPORT ✦
+              </div>
 
-              <p
-                style={{
-                  color: "#64748b",
-                  margin: "8px 0 0",
-                  fontSize: "13px",
-                }}
-              >
-                درخواست‌های پشتیبانی شما در این بخش نمایش داده می‌شوند.
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                مرکز پشتیبانی
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-sm leading-8 text-slate-400 sm:text-base">
+                پاسخ‌گویی، ثبت درخواست، مشاهده تیکت‌ها و دریافت
+                اعلامیه‌های رسمی Trading AI در یک محیط مرتب و حرفه‌ای.
               </p>
             </div>
 
-            <span
-              style={{
-                padding: "8px 12px",
-                borderRadius: "10px",
-                background: "rgba(34,211,238,.08)",
-                color: "#67e8f9",
-                fontSize: "12px",
-              }}
-            >
-              0 درخواست فعال
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/5 bg-white/[0.03] px-5 py-4 text-center">
+                <div className="text-2xl font-black text-cyan-300">
+                  {tickets.length}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  کل تیکت‌ها
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/5 bg-white/[0.03] px-5 py-4 text-center">
+                <div className="text-2xl font-black text-emerald-300">
+                  {openTickets}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  درخواست فعال
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Announcements */}
+        <section className="rounded-3xl border border-white/5 bg-[#0b1525] p-5 shadow-xl shadow-black/10 sm:p-6">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-black">اعلامیه‌های رسمی</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                آخرین اطلاعیه‌های منتشرشده برای کاربران
+              </p>
+            </div>
+
+            <span className="w-fit rounded-full bg-cyan-400/10 px-3 py-1.5 text-xs text-cyan-300">
+              {announcements.length} اعلامیه
             </span>
           </div>
 
-          <div
-            style={{
-              padding: "35px 20px",
-              textAlign: "center",
-              borderRadius: "18px",
-              background: "#0b1929",
-              border: "1px dashed rgba(148,163,184,.15)",
-            }}
-          >
-            <div style={{ fontSize: "40px", marginBottom: "12px" }}>
-              📭
+          {announcements.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-[#081220] p-8 text-center">
+              <div className="text-4xl">📢</div>
+              <p className="mt-3 text-sm text-slate-400">
+                هنوز اعلامیه‌ای منتشر نشده است.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {announcements.map((announcement) => (
+                <article
+                  key={announcement.id}
+                  className="rounded-2xl border border-white/5 bg-gradient-to-br from-[#101c30] to-[#0a1423] p-5"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-xl">
+                      📢
+                    </div>
+
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] ${
+                        announcement.priority === "HIGH"
+                          ? "bg-red-400/10 text-red-300"
+                          : announcement.priority === "LOW"
+                            ? "bg-slate-400/10 text-slate-400"
+                            : "bg-cyan-400/10 text-cyan-300"
+                      }`}
+                    >
+                      {announcement.priority === "HIGH"
+                        ? "مهم"
+                        : announcement.priority === "LOW"
+                          ? "عادی"
+                          : "اطلاعیه"}
+                    </span>
+                  </div>
+
+                  <h3 className="mt-4 text-lg font-bold">
+                    {announcement.title}
+                  </h3>
+
+                  <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-400">
+                    {announcement.message}
+                  </p>
+
+                  <div className="mt-4 border-t border-white/5 pt-3 text-xs text-slate-600">
+                    {new Date(
+                      announcement.publishedAt
+                    ).toLocaleString("fa-IR")}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Main grid */}
+        <section className="grid gap-6 lg:grid-cols-2">
+          {/* AI Support */}
+          <div className="overflow-hidden rounded-3xl border border-cyan-400/10 bg-[#0b1525] shadow-xl">
+            <div className="border-b border-white/5 p-5 sm:p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-black">
+                    دستیار پشتیبانی Trading AI
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    پاسخ‌گویی سریع به سؤالات کاربران
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setChatOpen((value) => !value)}
+                  className="rounded-xl bg-cyan-400/10 px-3 py-2 text-xs text-cyan-300 transition hover:bg-cyan-400/20"
+                >
+                  {chatOpen ? "بستن" : "باز کردن"}
+                </button>
+              </div>
             </div>
 
-            <strong style={{ display: "block", fontSize: "17px" }}>
-              هنوز درخواستی ثبت نشده است
-            </strong>
+            {chatOpen && (
+              <>
+                <div className="h-[390px] space-y-4 overflow-y-auto p-5">
+                  {chatMessages.map((chat, index) => (
+                    <div
+                      key={`${chat.role}-${index}`}
+                      className={`flex ${
+                        chat.role === "user"
+                          ? "justify-start"
+                          : "justify-end"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[88%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-7 ${
+                          chat.role === "user"
+                            ? "bg-cyan-400 text-[#03111b]"
+                            : "border border-white/5 bg-[#111d30] text-slate-300"
+                        }`}
+                      >
+                        {chat.text}
+                      </div>
+                    </div>
+                  ))}
 
-            <p
-              style={{
-                color: "#64748b",
-                fontSize: "13px",
-                margin: "9px 0 0",
-              }}
-            >
-              در صورت نیاز، یک درخواست جدید ایجاد کنید.
-            </p>
+                  {chatLoading && (
+                    <div className="flex justify-end">
+                      <div className="rounded-2xl bg-[#111d30] px-4 py-3 text-sm text-cyan-300">
+                        در حال بررسی سؤال...
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-white/5 p-5">
+                  <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+                    {quickQuestions.map((question) => (
+                      <button
+                        key={question}
+                        type="button"
+                        onClick={() => sendChat(question)}
+                        className="shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 transition hover:border-cyan-400/30 hover:text-cyan-300"
+                      >
+                        {question}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      value={chatInput}
+                      onChange={(event) =>
+                        setChatInput(event.target.value)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          sendChat();
+                        }
+                      }}
+                      placeholder="سؤال خود را بنویسید..."
+                      className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-[#07111f] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/40"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => sendChat()}
+                      disabled={chatLoading}
+                      className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-bold text-[#03111b] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      ارسال
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Create ticket */}
+          <div className="rounded-3xl border border-white/5 bg-[#0b1525] p-5 shadow-xl sm:p-6">
+            <div className="mb-6">
+              <h2 className="text-xl font-black">ارسال درخواست پشتیبانی</h2>
+              <p className="mt-2 text-sm leading-7 text-slate-500">
+                اگر دستیار نتوانست پاسخ مناسب بدهد، درخواست خود را
+                مستقیماً برای تیم پشتیبانی ارسال کنید.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm text-slate-400">
+                  موضوع
+                </label>
+                <input
+                  value={subject}
+                  onChange={(event) => setSubject(event.target.value)}
+                  placeholder="مثلاً مشکل اتصال متاتریدر"
+                  className="w-full rounded-2xl border border-white/10 bg-[#07111f] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/40"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-400">
+                  توضیحات
+                </label>
+                <textarea
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  placeholder="مشکل یا سؤال خود را کامل توضیح دهید..."
+                  rows={7}
+                  className="w-full resize-none rounded-2xl border border-white/10 bg-[#07111f] px-4 py-3 text-sm leading-7 text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/40"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={createTicket}
+                disabled={creatingTicket}
+                className="w-full rounded-2xl bg-cyan-400 px-5 py-3.5 text-sm font-black text-[#03111b] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingTicket
+                  ? "در حال ایجاد تیکت..."
+                  : "ایجاد تیکت پشتیبانی"}
+              </button>
+            </div>
           </div>
         </section>
 
-        {/* Help cards */}
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: "16px",
-          }}
-        >
-          <Link
-            href="/bots"
-            style={{
-              padding: "22px",
-              borderRadius: "22px",
-              background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
-              color: "white",
-              textDecoration: "none",
-            }}
-          >
-            <div style={{ fontSize: "28px", marginBottom: "10px" }}>
-              🤖
+        {/* Tickets */}
+        <section className="rounded-3xl border border-white/5 bg-[#0b1525] p-5 shadow-xl sm:p-6">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-black">درخواست‌های من</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                وضعیت و پیام‌های درخواست‌های پشتیبانی شما
+              </p>
             </div>
 
-            <h3 style={{ margin: "0 0 7px" }}>
-              مشکل ربات‌ها؟
-            </h3>
-
-            <p
-              style={{
-                color: "#64748b",
-                fontSize: "13px",
-                margin: 0,
-              }}
+            <button
+              type="button"
+              onClick={loadData}
+              className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-slate-400 hover:text-white"
             >
-              مشاهده بخش مدیریت ربات‌ها
-            </p>
-          </Link>
+              بروزرسانی
+            </button>
+          </div>
 
-          <Link
-            href="/broker"
-            style={{
-              padding: "22px",
-              borderRadius: "22px",
-              background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
-              color: "white",
-              textDecoration: "none",
-            }}
-          >
-            <div style={{ fontSize: "28px", marginBottom: "10px" }}>
-              🔗
+          {loading ? (
+            <div className="rounded-2xl bg-[#081220] p-8 text-center text-sm text-slate-500">
+              در حال دریافت اطلاعات...
             </div>
-
-            <h3 style={{ margin: "0 0 7px" }}>
-              مشکل اتصال بروکر؟
-            </h3>
-
-            <p
-              style={{
-                color: "#64748b",
-                fontSize: "13px",
-                margin: 0,
-              }}
-            >
-              مشاهده تنظیمات اتصال بروکر
-            </p>
-          </Link>
-
-          <Link
-            href="/dashboard"
-            style={{
-              padding: "22px",
-              borderRadius: "22px",
-              background: "rgba(15,23,42,.72)",
-              border: "1px solid rgba(148,163,184,.12)",
-              color: "white",
-              textDecoration: "none",
-            }}
-          >
-            <div style={{ fontSize: "28px", marginBottom: "10px" }}>
-              🏠
+          ) : tickets.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-[#081220] p-10 text-center">
+              <div className="text-5xl">📬</div>
+              <p className="mt-4 font-bold text-slate-300">
+                هنوز تیکتی ثبت نکرده‌اید
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                در صورت نیاز از فرم ارسال درخواست استفاده کنید.
+              </p>
             </div>
+          ) : (
+            <div className="space-y-4">
+              {tickets.map((ticket) => (
+                <article
+                  key={ticket.id}
+                  className="rounded-2xl border border-white/5 bg-[#081220] p-5"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="font-bold text-white">
+                        {ticket.subject}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        {new Date(ticket.createdAt).toLocaleString(
+                          "fa-IR"
+                        )}
+                      </p>
+                    </div>
 
-            <h3 style={{ margin: "0 0 7px" }}>
-              بازگشت به داشبورد
-            </h3>
+                    <span
+                      className={`w-fit rounded-full px-3 py-1 text-xs ${
+                        ticket.status === "CLOSED"
+                          ? "bg-slate-400/10 text-slate-500"
+                          : ticket.status === "IN_PROGRESS"
+                            ? "bg-amber-400/10 text-amber-300"
+                            : "bg-emerald-400/10 text-emerald-300"
+                      }`}
+                    >
+                      {ticket.status === "CLOSED"
+                        ? "بسته شده"
+                        : ticket.status === "IN_PROGRESS"
+                          ? "در حال بررسی"
+                          : "باز"}
+                    </span>
+                  </div>
 
-            <p
-              style={{
-                color: "#64748b",
-                fontSize: "13px",
-                margin: 0,
-              }}
-            >
-              بازگشت به مرکز مدیریت حساب
-            </p>
-          </Link>
+                  <div className="mt-4 space-y-2">
+                    {ticket.messages.slice(-3).map((ticketMessage) => (
+                      <div
+                        key={ticketMessage.id}
+                        className={`rounded-xl p-3 text-sm leading-7 ${
+                          ticketMessage.senderType === "USER"
+                            ? "bg-cyan-400/5 text-slate-400"
+                            : "bg-emerald-400/5 text-emerald-200"
+                        }`}
+                      >
+                        {ticketMessage.message}
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
 
+        {/* Admin announcements */}
+        <section className="rounded-3xl border border-amber-400/10 bg-[#0b1525] p-5 shadow-xl sm:p-6">
+          <button
+            type="button"
+            onClick={() =>
+              setAnnouncementOpen((value) => !value)
+            }
+            className="flex w-full items-center justify-between text-right"
+          >
+            <div>
+              <h2 className="text-lg font-black">
+                مدیریت اعلامیه‌ها
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                فقط مدیر سایت می‌تواند اعلامیه رسمی منتشر کند.
+              </p>
+            </div>
+
+            <span className="rounded-xl bg-amber-400/10 px-4 py-2 text-xs text-amber-300">
+              {announcementOpen ? "بستن" : "باز کردن"}
+            </span>
+          </button>
+
+          {announcementOpen && (
+            <div className="mt-6 rounded-2xl border border-white/5 bg-[#081220] p-5">
+              <div className="grid gap-4">
+                <input
+                  value={announcementTitle}
+                  onChange={(event) =>
+                    setAnnouncementTitle(event.target.value)
+                  }
+                  placeholder="عنوان اعلامیه"
+                  className="w-full rounded-2xl border border-white/10 bg-[#07111f] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-amber-400/40"
+                />
+
+                <textarea
+                  value={announcementMessage}
+                  onChange={(event) =>
+                    setAnnouncementMessage(event.target.value)
+                  }
+                  placeholder="متن کامل اعلامیه..."
+                  rows={6}
+                  className="w-full resize-none rounded-2xl border border-white/10 bg-[#07111f] px-4 py-3 text-sm leading-7 text-white outline-none placeholder:text-slate-600 focus:border-amber-400/40"
+                />
+
+                <select
+                  value={announcementPriority}
+                  onChange={(event) =>
+                    setAnnouncementPriority(event.target.value)
+                  }
+                  className="rounded-2xl border border-white/10 bg-[#07111f] px-4 py-3 text-sm text-white outline-none"
+                >
+                  <option value="LOW">عادی</option>
+                  <option value="NORMAL">اطلاعیه</option>
+                  <option value="HIGH">مهم</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={publishAnnouncement}
+                  disabled={announcementLoading}
+                  className="rounded-2xl bg-amber-400 px-5 py-3.5 text-sm font-black text-[#1c1300] transition hover:bg-amber-300 disabled:opacity-50"
+                >
+                  {announcementLoading
+                    ? "در حال انتشار..."
+                    : "انتشار اعلامیه"}
+                </button>
+
+                {announcementResult && (
+                  <div className="rounded-xl bg-white/[0.03] p-3 text-sm text-slate-400">
+                    {announcementResult}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
