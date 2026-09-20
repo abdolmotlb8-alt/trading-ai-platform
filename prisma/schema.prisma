@@ -15,11 +15,12 @@ model User {
   role     String @default("USER")
   plan     String @default("FREE")
 
-  sessions       Session[]
-  supportTickets SupportTicket[]
-  tradingBots    TradingBot[]
-  tradingSignals TradingSignal[]
-  trades         Trade[]
+  sessions          Session[]
+  supportTickets    SupportTicket[]
+  tradingBots       TradingBot[]
+  tradingSignals    TradingSignal[]
+  trades            Trade[]
+  brokerConnections BrokerConnection[]
 
   newsSetting NewsSetting?
   newsAlerts  NewsAlert[]
@@ -36,6 +37,34 @@ model Session {
   expiresAt DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BrokerConnection {
+  id String @id @default(cuid())
+
+  userId String
+
+  brokerName    String
+  platform      String
+  server        String
+  accountNumber String
+
+  status String @default("DISCONNECTED")
+
+  isDemo   Boolean @default(true)
+  isActive Boolean @default(false)
+
+  lastConnectedAt DateTime?
+  lastCheckedAt   DateTime?
+  errorMessage    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }
 
 model SupportTicket {
@@ -75,11 +104,11 @@ model TradingBot {
 
   isActive Boolean @default(false)
 
-  executionMode String @default("MANUAL")
+  executionMode   String  @default("MANUAL")
   tradingApproval Boolean @default(false)
 
-  botStatus String @default("STOPPED")
-  stoppedReason String?
+  botStatus         String    @default("STOPPED")
+  stoppedReason     String?
   lastStateChangeAt DateTime?
 
   autoStopAfterWins   Int?
@@ -104,8 +133,8 @@ model TradingBot {
 
   dailyProfitStop    Float?
   dailyLossLimit     Float?
-  maxDailyStopLosses Int @default(3)
-  maxOpenTrades      Int @default(1)
+  maxDailyStopLosses Int   @default(3)
+  maxOpenTrades      Int   @default(1)
 
   buyEnabled  Boolean @default(true)
   sellEnabled Boolean @default(true)
