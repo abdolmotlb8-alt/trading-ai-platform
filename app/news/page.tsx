@@ -3,1409 +3,2228 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Importance = "HIGH" | "MEDIUM" | "LOW";
-type EventStatus = "WAITING" | "RELEASED" | "CANCELLED";
+type NewsStatus = "UPCOMING" | "RELEASED";
 
 type EconomicEvent = {
-  id: string;
+  id: number;
   time: string;
   date: string;
-  currency: string;
   country: string;
+  currency: string;
   flag: string;
-  event: string;
+  title: string;
+  description: string;
   importance: Importance;
+  status: NewsStatus;
   previous: string;
   forecast: string;
   actual: string;
-  status: EventStatus;
-  session: string;
-  symbolImpact: string[];
+  affected: string[];
 };
 
-const DEMO_EVENTS: EconomicEvent[] = [
+const EVENTS: EconomicEvent[] = [
   {
-    id: "1",
+    id: 1,
     time: "14:30",
     date: "امروز",
+    country: "United States",
     currency: "USD",
-    country: "آمریکا",
     flag: "🇺🇸",
-    event: "CPI - تورم مصرف‌کننده آمریکا",
+    title: "CPI - تورم مصرف‌کننده آمریکا",
+    description:
+      "شاخص مهم تورم مصرف‌کننده آمریکا که می‌تواند روی دلار، طلا و بازارهای مالی اثرگذار باشد.",
     importance: "HIGH",
-    previous: "3.4%",
-    forecast: "3.2%",
+    status: "UPCOMING",
+    previous: "2.7%",
+    forecast: "2.6%",
     actual: "—",
-    status: "WAITING",
-    session: "نیویورک",
-    symbolImpact: ["XAUUSD", "EURUSD", "USDJPY"],
+    affected: ["XAUUSD", "EURUSD", "USDJPY"],
   },
   {
-    id: "2",
+    id: 2,
     time: "16:00",
     date: "امروز",
+    country: "Euro Area",
     currency: "EUR",
-    country: "منطقه یورو",
     flag: "🇪🇺",
-    event: "تولید ناخالص داخلی (فصلی)",
+    title: "GDP - تولید ناخالص داخلی",
+    description:
+      "گزارش رشد اقتصادی منطقه یورو و یکی از داده‌های مهم برای ارزیابی وضعیت اقتصاد اروپا.",
     importance: "HIGH",
-    previous: "0.2%",
-    forecast: "0.3%",
+    status: "UPCOMING",
+    previous: "0.3%",
+    forecast: "0.4%",
     actual: "—",
-    status: "WAITING",
-    session: "لندن",
-    symbolImpact: ["EURUSD", "EURGBP"],
+    affected: ["EURUSD", "XAUUSD"],
   },
   {
-    id: "3",
+    id: 3,
     time: "17:30",
     date: "امروز",
+    country: "United Kingdom",
     currency: "GBP",
-    country: "بریتانیا",
     flag: "🇬🇧",
-    event: "نرخ بیکاری بریتانیا",
+    title: "نرخ بیکاری بریتانیا",
+    description:
+      "داده اشتغال بریتانیا که برای ارزیابی وضعیت بازار کار و سیاست پولی اهمیت دارد.",
     importance: "MEDIUM",
-    previous: "4.2%",
-    forecast: "4.1%",
+    status: "UPCOMING",
+    previous: "4.3%",
+    forecast: "4.2%",
     actual: "—",
-    status: "WAITING",
-    session: "لندن",
-    symbolImpact: ["GBPUSD", "EURGBP"],
+    affected: ["GBPUSD", "EURGBP"],
   },
   {
-    id: "4",
+    id: 4,
     time: "18:00",
     date: "امروز",
+    country: "United States",
     currency: "USD",
-    country: "آمریکا",
     flag: "🇺🇸",
-    event: "شاخص مدعیان بیکاری",
+    title: "Initial Jobless Claims",
+    description:
+      "آمار مدعیان بیکاری اولیه آمریکا و یکی از داده‌های مورد توجه بازار کار.",
     importance: "MEDIUM",
-    previous: "217K",
-    forecast: "218K",
+    status: "UPCOMING",
+    previous: "228K",
+    forecast: "225K",
     actual: "—",
-    status: "WAITING",
-    session: "نیویورک",
-    symbolImpact: ["XAUUSD", "EURUSD"],
+    affected: ["XAUUSD", "USDJPY", "EURUSD"],
   },
   {
-    id: "5",
+    id: 5,
     time: "19:00",
     date: "امروز",
+    country: "United States",
     currency: "USD",
-    country: "آمریکا",
     flag: "🇺🇸",
-    event: "سخنرانی عضو فدرال رزرو",
+    title: "سخنرانی عضو فدرال رزرو",
+    description:
+      "سخنرانی یک مقام فدرال رزرو که ممکن است شامل اظهارنظر درباره سیاست پولی باشد.",
     importance: "LOW",
+    status: "UPCOMING",
     previous: "—",
     forecast: "—",
     actual: "—",
-    status: "WAITING",
-    session: "نیویورک",
-    symbolImpact: ["XAUUSD", "EURUSD"],
+    affected: ["XAUUSD", "EURUSD"],
   },
   {
-    id: "6",
-    time: "22:45",
+    id: 6,
+    time: "10:00",
     date: "فردا",
-    currency: "NZD",
-    country: "نیوزیلند",
-    flag: "🇳🇿",
-    event: "نرخ بهره بانک مرکزی نیوزیلند",
-    importance: "HIGH",
-    previous: "5.25%",
-    forecast: "5.50%",
-    actual: "—",
-    status: "WAITING",
-    session: "آسیا",
-    symbolImpact: ["NZDUSD", "AUDNZD"],
-  },
-  {
-    id: "7",
-    time: "23:30",
-    date: "فردا",
+    country: "Japan",
     currency: "JPY",
-    country: "ژاپن",
     flag: "🇯🇵",
-    event: "شاخص قیمت تولیدکننده",
-    importance: "MEDIUM",
-    previous: "2.8%",
-    forecast: "2.6%",
+    title: "Consumer Confidence",
+    description:
+      "شاخص اعتماد مصرف‌کننده ژاپن.",
+    importance: "LOW",
+    status: "UPCOMING",
+    previous: "36.7",
+    forecast: "37.0",
     actual: "—",
-    status: "WAITING",
-    session: "آسیا",
-    symbolImpact: ["USDJPY", "EURJPY"],
+    affected: ["USDJPY"],
   },
   {
-    id: "8",
-    time: "01:00",
+    id: 7,
+    time: "12:00",
     date: "فردا",
-    currency: "CAD",
-    country: "کانادا",
-    flag: "🇨🇦",
-    event: "گزارش اشتغال کانادا",
-    importance: "HIGH",
-    previous: "-12.6K",
-    forecast: "15.0K",
+    country: "United Kingdom",
+    currency: "GBP",
+    flag: "🇬🇧",
+    title: "Retail Sales",
+    description:
+      "آمار خرده‌فروشی بریتانیا.",
+    importance: "MEDIUM",
+    status: "UPCOMING",
+    previous: "0.4%",
+    forecast: "0.3%",
     actual: "—",
-    status: "WAITING",
-    session: "نیویورک",
-    symbolImpact: ["USDCAD", "CADJPY"],
+    affected: ["GBPUSD", "EURGBP"],
+  },
+  {
+    id: 8,
+    time: "15:30",
+    date: "فردا",
+    country: "United States",
+    currency: "USD",
+    flag: "🇺🇸",
+    title: "Core Retail Sales",
+    description:
+      "داده خرده‌فروشی هسته آمریکا، بدون برخی اقلام پرنوسان.",
+    importance: "HIGH",
+    status: "UPCOMING",
+    previous: "0.5%",
+    forecast: "0.4%",
+    actual: "—",
+    affected: ["XAUUSD", "EURUSD", "USDJPY"],
   },
 ];
 
-const CURRENCIES = [
-  { code: "USD", flag: "🇺🇸", name: "دلار آمریکا" },
-  { code: "EUR", flag: "🇪🇺", name: "یورو" },
-  { code: "GBP", flag: "🇬🇧", name: "پوند انگلیس" },
-  { code: "JPY", flag: "🇯🇵", name: "ین ژاپن" },
-  { code: "CHF", flag: "🇨🇭", name: "فرانک سوئیس" },
-  { code: "CAD", flag: "🇨🇦", name: "دلار کانادا" },
-  { code: "AUD", flag: "🇦🇺", name: "دلار استرالیا" },
-  { code: "NZD", flag: "🇳🇿", name: "دلار نیوزیلند" },
-];
+const CURRENCIES = ["ALL", "USD", "EUR", "GBP", "JPY"];
 
-const SESSIONS = [
-  {
-    id: "آسیا",
-    icon: "🌏",
-    title: "سشن آسیا",
-    time: "00:00 - 09:00",
-  },
-  {
-    id: "لندن",
-    icon: "🇬🇧",
-    title: "سشن لندن",
-    time: "08:00 - 17:00",
-  },
-  {
-    id: "نیویورک",
-    icon: "🇺🇸",
-    title: "سشن نیویورک",
-    time: "13:00 - 22:00",
-  },
-];
+function formatCountdown(totalSeconds: number) {
+  const safe = Math.max(totalSeconds, 0);
+
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(
+    minutes
+  ).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 function importanceLabel(value: Importance) {
-  if (value === "HIGH") return "بالا";
-  if (value === "MEDIUM") return "متوسط";
-  return "پایین";
+  if (value === "HIGH") return "اهمیت بالا";
+  if (value === "MEDIUM") return "اهمیت متوسط";
+  return "اهمیت کم";
 }
 
-function statusLabel(value: EventStatus) {
-  if (value === "RELEASED") return "منتشر شده";
-  if (value === "CANCELLED") return "لغو شده";
-  return "در انتظار";
-}
-
-function formatCountdown(seconds: number) {
-  if (seconds <= 0) return "اکنون";
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
-    2,
-    "0"
-  )}:${String(secs).padStart(2, "0")}`;
+function importanceClass(value: Importance) {
+  if (value === "HIGH") return "high";
+  if (value === "MEDIUM") return "medium";
+  return "low";
 }
 
 export default function NewsPage() {
-  const [activeDate, setActiveDate] = useState("امروز");
-  const [selectedCurrency, setSelectedCurrency] = useState("ALL");
-  const [selectedImportance, setSelectedImportance] = useState("ALL");
-  const [selectedSession, setSelectedSession] = useState("ALL");
-  const [selectedStatus, setSelectedStatus] = useState("ALL");
+  const [selectedImportance, setSelectedImportance] =
+    useState<"ALL" | Importance>("ALL");
+
+  const [selectedCurrency, setSelectedCurrency] =
+    useState("ALL");
+
   const [search, setSearch] = useState("");
 
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [selectedEvent, setSelectedEvent] =
+    useState<EconomicEvent | null>(null);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newsFilter, setNewsFilter] = useState(true);
+  const [telegramAlerts, setTelegramAlerts] = useState(false);
+  const [marketRisk, setMarketRisk] = useState(true);
 
-  const [highImpact, setHighImpact] = useState(true);
-  const [mediumImpact, setMediumImpact] = useState(true);
-  const [lowImpact, setLowImpact] = useState(false);
-
-  const [telegramEnabled, setTelegramEnabled] = useState(false);
-  const [newsFilterEnabled, setNewsFilterEnabled] = useState(true);
-  const [marketRiskEnabled, setMarketRiskEnabled] = useState(true);
-
-  const [alert3h, setAlert3h] = useState(true);
-  const [alert1h, setAlert1h] = useState(true);
-  const [alert30m, setAlert30m] = useState(true);
-  const [alert15m, setAlert15m] = useState(true);
-  const [alert5m, setAlert5m] = useState(false);
-  const [alertReleased, setAlertReleased] = useState(true);
-
-  const [enabledSessions, setEnabledSessions] = useState<string[]>([
-    "آسیا",
-    "لندن",
-    "نیویورک",
-  ]);
-
-  const [enabledCurrencies, setEnabledCurrencies] = useState<string[]>([
-    "USD",
-    "EUR",
-    "GBP",
-    "JPY",
-    "CHF",
-    "CAD",
-    "AUD",
-    "NZD",
-  ]);
+  const [alert15, setAlert15] = useState(true);
+  const [alert30, setAlert30] = useState(true);
+  const [alert60, setAlert60] = useState(false);
+  const [alert180, setAlert180] = useState(false);
 
   const [countdown, setCountdown] = useState(2 * 3600 + 45 * 60 + 17);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("trading-ai-news-settings");
-
-    if (!saved) return;
-
-    try {
-      const data = JSON.parse(saved);
-
-      if (Array.isArray(data.enabledCurrencies)) {
-        setEnabledCurrencies(data.enabledCurrencies);
-      }
-
-      if (Array.isArray(data.enabledSessions)) {
-        setEnabledSessions(data.enabledSessions);
-      }
-
-      if (typeof data.highImpact === "boolean") {
-        setHighImpact(data.highImpact);
-      }
-
-      if (typeof data.mediumImpact === "boolean") {
-        setMediumImpact(data.mediumImpact);
-      }
-
-      if (typeof data.lowImpact === "boolean") {
-        setLowImpact(data.lowImpact);
-      }
-
-      if (typeof data.telegramEnabled === "boolean") {
-        setTelegramEnabled(data.telegramEnabled);
-      }
-
-      if (typeof data.newsFilterEnabled === "boolean") {
-        setNewsFilterEnabled(data.newsFilterEnabled);
-      }
-
-      if (typeof data.marketRiskEnabled === "boolean") {
-        setMarketRiskEnabled(data.marketRiskEnabled);
-      }
-
-      if (typeof data.alert3h === "boolean") setAlert3h(data.alert3h);
-      if (typeof data.alert1h === "boolean") setAlert1h(data.alert1h);
-      if (typeof data.alert30m === "boolean") setAlert30m(data.alert30m);
-      if (typeof data.alert15m === "boolean") setAlert15m(data.alert15m);
-      if (typeof data.alert5m === "boolean") setAlert5m(data.alert5m);
-      if (typeof data.alertReleased === "boolean") {
-        setAlertReleased(data.alertReleased);
-      }
-    } catch {
-      // Ignore invalid local settings.
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setCountdown((value) => (value > 0 ? value - 1 : 0));
+    const timer = setInterval(() => {
+      setCountdown((value) => {
+        if (value <= 0) return 0;
+        return value - 1;
+      });
     }, 1000);
 
-    return () => window.clearInterval(timer);
+    return () => clearInterval(timer);
   }, []);
 
-  const saveSettings = () => {
-    const settings = {
-      enabledCurrencies,
-      enabledSessions,
-      highImpact,
-      mediumImpact,
-      lowImpact,
-      telegramEnabled,
-      newsFilterEnabled,
-      marketRiskEnabled,
-      alert3h,
-      alert1h,
-      alert30m,
-      alert15m,
-      alert5m,
-      alertReleased,
-    };
-
-    window.localStorage.setItem(
-      "trading-ai-news-settings",
-      JSON.stringify(settings)
-    );
-
-    setSettingsOpen(false);
-  };
-
-  const toggleFavorite = (id: string) => {
-    setFavorites((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id]
-    );
-  };
-
-  const toggleCurrency = (currency: string) => {
-    setEnabledCurrencies((current) =>
-      current.includes(currency)
-        ? current.filter((item) => item !== currency)
-        : [...current, currency]
-    );
-  };
-
-  const toggleSession = (session: string) => {
-    setEnabledSessions((current) =>
-      current.includes(session)
-        ? current.filter((item) => item !== session)
-        : [...current, session]
-    );
-  };
-
   const filteredEvents = useMemo(() => {
-    return DEMO_EVENTS.filter((item) => {
-      const matchesDate =
-        activeDate === "همه" ||
-        item.date === activeDate ||
-        (activeDate === "این هفته" &&
-          ["امروز", "فردا"].includes(item.date));
+    const query = search.trim().toLowerCase();
+
+    return EVENTS.filter((event) => {
+      const matchesImportance =
+        selectedImportance === "ALL" ||
+        event.importance === selectedImportance;
 
       const matchesCurrency =
         selectedCurrency === "ALL" ||
-        item.currency === selectedCurrency;
-
-      const matchesImportance =
-        selectedImportance === "ALL" ||
-        item.importance === selectedImportance;
-
-      const matchesSession =
-        selectedSession === "ALL" ||
-        item.session === selectedSession;
-
-      const matchesStatus =
-        selectedStatus === "ALL" ||
-        item.status === selectedStatus;
-
-      const normalizedSearch = search.trim().toLowerCase();
+        event.currency === selectedCurrency;
 
       const matchesSearch =
-        !normalizedSearch ||
-        item.event.toLowerCase().includes(normalizedSearch) ||
-        item.currency.toLowerCase().includes(normalizedSearch) ||
-        item.country.toLowerCase().includes(normalizedSearch) ||
-        item.symbolImpact.some((symbol) =>
-          symbol.toLowerCase().includes(normalizedSearch)
-        );
-
-      const importanceEnabled =
-        (item.importance === "HIGH" && highImpact) ||
-        (item.importance === "MEDIUM" && mediumImpact) ||
-        (item.importance === "LOW" && lowImpact);
-
-      const currencyEnabled = enabledCurrencies.includes(item.currency);
-      const sessionEnabled = enabledSessions.includes(item.session);
+        !query ||
+        event.title.toLowerCase().includes(query) ||
+        event.currency.toLowerCase().includes(query) ||
+        event.country.toLowerCase().includes(query);
 
       return (
-        matchesDate &&
-        matchesCurrency &&
         matchesImportance &&
-        matchesSession &&
-        matchesStatus &&
-        matchesSearch &&
-        importanceEnabled &&
-        currencyEnabled &&
-        sessionEnabled
+        matchesCurrency &&
+        matchesSearch
       );
     });
-  }, [
-    activeDate,
-    selectedCurrency,
-    selectedImportance,
-    selectedSession,
-    selectedStatus,
-    search,
-    highImpact,
-    mediumImpact,
-    lowImpact,
-    enabledCurrencies,
-    enabledSessions,
-  ]);
+  }, [selectedImportance, selectedCurrency, search]);
 
-  const highEvents = DEMO_EVENTS.filter(
-    (item) => item.importance === "HIGH"
-  ).length;
-
-  const nextEvent = DEMO_EVENTS[0];
+  const nextImportantEvent =
+    EVENTS.find((event) => event.importance === "HIGH") ??
+    EVENTS[0];
 
   return (
-    <main
-      dir="rtl"
-      className="min-h-screen bg-[#020817] text-slate-100"
-    >
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.14),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.08),transparent_25%)]">
-        <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-5 lg:px-8 lg:py-7">
-          {/* Header */}
-          <header className="mb-5 rounded-3xl border border-white/10 bg-slate-950/75 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600/20 text-xl text-blue-400 ring-1 ring-blue-500/30">
-                    ◈
-                  </div>
-
-                  <div>
-                    <h1 className="text-xl font-black tracking-tight sm:text-2xl">
-                      اخبار و تقویم اقتصادی
-                    </h1>
-                    <p className="mt-1 text-xs text-slate-400 sm:text-sm">
-                      مرکز هوشمند اخبار، رویدادها و هشدارهای اقتصادی Trading AI
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-300">
-                  <span className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                  سیستم آماده
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSettingsOpen(true)}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:bg-white/10"
-                >
-                  ⚙ تنظیمات اخبار
-                </button>
-              </div>
-            </div>
-          </header>
-
-          {/* Top cards */}
-          <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl shadow-black/10 backdrop-blur-xl">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-sm text-slate-400">وضعیت بازار</span>
-                <span className="rounded-xl bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-400">
-                  LIVE
-                </span>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-[8px] border-amber-400/70 border-b-emerald-400 border-l-emerald-400">
-                  <span className="text-xs font-bold text-slate-300">
-                    62%
-                  </span>
-                </div>
-
-                <div>
-                  <p className="text-lg font-black text-amber-300">
-                    نوسان متوسط
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    ریسک قابل مدیریت
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-red-500/25 bg-gradient-to-br from-red-500/10 to-slate-950/80 p-5 shadow-xl shadow-red-950/10 backdrop-blur-xl">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-bold text-red-300">
-                  مهم‌ترین خبر بعدی
-                </span>
-
-                <span className="rounded-xl bg-red-500/15 px-2.5 py-1 text-xs font-bold text-red-300">
-                  HIGH
-                </span>
-              </div>
-
-              <div className="flex gap-3">
-                <span className="text-3xl">{nextEvent.flag}</span>
-
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-sm font-black text-white">
-                    {nextEvent.event}
-                  </p>
-
-                  <p className="mt-3 font-mono text-xl font-black text-red-300">
-                    {formatCountdown(countdown)}
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    تا زمان انتشار
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl backdrop-blur-xl">
-              <div className="mb-5 flex items-center justify-between">
-                <span className="text-sm text-slate-400">سشن فعال</span>
-                <span className="text-xl">🌍</span>
-              </div>
-
-              <p className="text-2xl font-black text-blue-300">
-                نیویورک
-              </p>
-
-              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                بازار فعال
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl backdrop-blur-xl">
-              <div className="mb-5 flex items-center justify-between">
-                <span className="text-sm text-slate-400">اخبار مهم امروز</span>
-                <span className="text-xl">🔥</span>
-              </div>
-
-              <p className="text-3xl font-black text-white">
-                {highEvents}
-              </p>
-
-              <p className="mt-2 text-xs text-slate-500">
-                رویداد با اهمیت بالا
-              </p>
-            </div>
-          </section>
-
-          {/* Main layout */}
-          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-            {/* Calendar */}
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-slate-950/70 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-6">
-              <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="text-xl font-black sm:text-2xl">
-                    تقویم اقتصادی
-                  </h2>
-                  <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                    رویدادهای اقتصادی بر اساس زمان، ارز، اهمیت و سشن
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs text-blue-300">
-                  {filteredEvents.length} رویداد نمایش داده می‌شود
-                </div>
-              </div>
-
-              {/* Date tabs */}
-              <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-                {["امروز", "فردا", "این هفته", "همه"].map((date) => (
-                  <button
-                    type="button"
-                    key={date}
-                    onClick={() => setActiveDate(date)}
-                    className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-bold transition ${
-                      activeDate === date
-                        ? "bg-blue-600 text-white shadow-lg shadow-blue-950/30"
-                        : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    {date}
-                  </button>
-                ))}
-              </div>
-
-              {/* Search */}
-              <div className="mb-5">
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                  <span className="text-slate-500">⌕</span>
-
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="جستجوی خبر، ارز، کشور یا نماد..."
-                    className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
-                  />
-
-                  {search && (
-                    <button
-                      type="button"
-                      onClick={() => setSearch("")}
-                      className="text-xs text-slate-500 hover:text-white"
-                    >
-                      پاک کردن
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Filters */}
-              <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <FilterSelect
-                  title="ارز"
-                  value={selectedCurrency}
-                  onChange={setSelectedCurrency}
-                  options={[
-                    ["ALL", "همه ارزها"],
-                    ...CURRENCIES.map((item) => [
-                      item.code,
-                      `${item.flag} ${item.code}`,
-                    ]),
-                  ]}
-                />
-
-                <FilterSelect
-                  title="اهمیت"
-                  value={selectedImportance}
-                  onChange={setSelectedImportance}
-                  options={[
-                    ["ALL", "همه اهمیت‌ها"],
-                    ["HIGH", "🔴 بالا"],
-                    ["MEDIUM", "🟠 متوسط"],
-                    ["LOW", "🟢 پایین"],
-                  ]}
-                />
-
-                <FilterSelect
-                  title="سشن"
-                  value={selectedSession}
-                  onChange={setSelectedSession}
-                  options={[
-                    ["ALL", "همه سشن‌ها"],
-                    ["آسیا", "🌏 آسیا"],
-                    ["لندن", "🇬🇧 لندن"],
-                    ["نیویورک", "🇺🇸 نیویورک"],
-                  ]}
-                />
-
-                <FilterSelect
-                  title="وضعیت"
-                  value={selectedStatus}
-                  onChange={setSelectedStatus}
-                  options={[
-                    ["ALL", "همه وضعیت‌ها"],
-                    ["WAITING", "در انتظار"],
-                    ["RELEASED", "منتشر شده"],
-                    ["CANCELLED", "لغو شده"],
-                  ]}
-                />
-              </div>
-
-              {/* Desktop table */}
-              <div className="hidden overflow-hidden rounded-2xl border border-white/10 lg:block">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[950px] text-right">
-                    <thead className="bg-white/[0.035] text-xs text-slate-500">
-                      <tr>
-                        <th className="px-4 py-4 font-bold">زمان</th>
-                        <th className="px-4 py-4 font-bold">کشور / ارز</th>
-                        <th className="px-4 py-4 font-bold">خبر</th>
-                        <th className="px-4 py-4 font-bold">اهمیت</th>
-                        <th className="px-4 py-4 font-bold">قبلی</th>
-                        <th className="px-4 py-4 font-bold">پیش‌بینی</th>
-                        <th className="px-4 py-4 font-bold">واقعی</th>
-                        <th className="px-4 py-4 font-bold">وضعیت</th>
-                        <th className="px-4 py-4 font-bold">★</th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="divide-y divide-white/[0.06]">
-                      {filteredEvents.map((item) => (
-                        <tr
-                          key={item.id}
-                          className="transition hover:bg-blue-500/[0.035]"
-                        >
-                          <td className="whitespace-nowrap px-4 py-5">
-                            <span className="font-mono text-sm font-bold text-white">
-                              {item.time}
-                            </span>
-                          </td>
-
-                          <td className="px-4 py-5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xl">{item.flag}</span>
-                              <div>
-                                <p className="text-sm font-bold text-white">
-                                  {item.currency}
-                                </p>
-                                <p className="text-[11px] text-slate-600">
-                                  {item.country}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="max-w-[280px] px-4 py-5">
-                            <p className="font-bold text-slate-200">
-                              {item.event}
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {item.symbolImpact.slice(0, 3).map((symbol) => (
-                                <span
-                                  key={symbol}
-                                  className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-500"
-                                >
-                                  {symbol}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-
-                          <td className="px-4 py-5">
-                            <ImportanceBadge
-                              value={item.importance}
-                            />
-                          </td>
-
-                          <td className="px-4 py-5 text-sm text-slate-400">
-                            {item.previous}
-                          </td>
-
-                          <td className="px-4 py-5 text-sm text-slate-300">
-                            {item.forecast}
-                          </td>
-
-                          <td className="px-4 py-5 text-sm font-bold text-white">
-                            {item.actual}
-                          </td>
-
-                          <td className="px-4 py-5">
-                            <StatusBadge value={item.status} />
-                          </td>
-
-                          <td className="px-4 py-5">
-                            <button
-                              type="button"
-                              onClick={() => toggleFavorite(item.id)}
-                              className={`text-xl transition ${
-                                favorites.includes(item.id)
-                                  ? "text-amber-400"
-                                  : "text-slate-700 hover:text-slate-300"
-                              }`}
-                            >
-                              ★
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Mobile cards */}
-              <div className="space-y-3 lg:hidden">
-                {filteredEvents.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.025] p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className="text-2xl">{item.flag}</span>
-
-                        <div className="min-w-0">
-                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-sm font-black text-white">
-                              {item.time}
-                            </span>
-
-                            <span className="text-xs text-slate-500">
-                              {item.currency}
-                            </span>
-                          </div>
-
-                          <p className="text-sm font-bold leading-6 text-slate-200">
-                            {item.event}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleFavorite(item.id)}
-                        className={`shrink-0 text-xl ${
-                          favorites.includes(item.id)
-                            ? "text-amber-400"
-                            : "text-slate-700"
-                        }`}
-                      >
-                        ★
-                      </button>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      <InfoMini
-                        label="اهمیت"
-                        value={
-                          <ImportanceBadge value={item.importance} />
-                        }
-                      />
-
-                      <InfoMini
-                        label="وضعیت"
-                        value={<StatusBadge value={item.status} />}
-                      />
-
-                      <InfoMini
-                        label="قبلی"
-                        value={item.previous}
-                      />
-
-                      <InfoMini
-                        label="پیش‌بینی"
-                        value={item.forecast}
-                      />
-
-                      <InfoMini
-                        label="واقعی"
-                        value={item.actual}
-                      />
-
-                      <InfoMini
-                        label="سشن"
-                        value={item.session}
-                      />
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {item.symbolImpact.map((symbol) => (
-                        <span
-                          key={symbol}
-                          className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] text-slate-500"
-                        >
-                          {symbol}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-
-                {filteredEvents.length === 0 && (
-                  <EmptyState />
-                )}
-              </div>
-
-              {filteredEvents.length === 0 && (
-                <div className="hidden lg:block">
-                  <EmptyState />
-                </div>
-              )}
-            </div>
-
-            {/* Sidebar */}
-            <aside className="space-y-5">
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl">
-                <div className="mb-5 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-black">فیلتر اخبار</h3>
-                    <p className="mt-1 text-xs text-slate-600">
-                      کنترل ورود خبر به سیستم تحلیل
-                    </p>
-                  </div>
-
-                  <Toggle
-                    enabled={newsFilterEnabled}
-                    onClick={() =>
-                      setNewsFilterEnabled((value) => !value)
-                    }
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <SwitchRow
-                    label="اهمیت بالا"
-                    dot="bg-red-400"
-                    enabled={highImpact}
-                    onClick={() => setHighImpact((value) => !value)}
-                  />
-
-                  <SwitchRow
-                    label="اهمیت متوسط"
-                    dot="bg-amber-400"
-                    enabled={mediumImpact}
-                    onClick={() => setMediumImpact((value) => !value)}
-                  />
-
-                  <SwitchRow
-                    label="اهمیت پایین"
-                    dot="bg-emerald-400"
-                    enabled={lowImpact}
-                    onClick={() => setLowImpact((value) => !value)}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl">
-                <div className="mb-5">
-                  <h3 className="font-black">ارزهای فعال</h3>
-                  <p className="mt-1 text-xs text-slate-600">
-                    فقط خبر ارزهای انتخاب‌شده نمایش داده شود
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {CURRENCIES.map((currency) => {
-                    const active = enabledCurrencies.includes(
-                      currency.code
-                    );
-
-                    return (
-                      <button
-                        type="button"
-                        key={currency.code}
-                        onClick={() => toggleCurrency(currency.code)}
-                        className={`flex items-center justify-between rounded-2xl border px-3 py-2.5 text-xs transition ${
-                          active
-                            ? "border-blue-500/30 bg-blue-500/10 text-white"
-                            : "border-white/10 bg-white/[0.025] text-slate-600"
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span>{currency.flag}</span>
-                          {currency.code}
-                        </span>
-
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            active
-                              ? "bg-emerald-400"
-                              : "bg-slate-700"
-                          }`}
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl">
-                <div className="mb-5">
-                  <h3 className="font-black">سشن‌های معاملاتی</h3>
-                  <p className="mt-1 text-xs text-slate-600">
-                    نمایش اخبار هر سشن
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  {SESSIONS.map((session) => {
-                    const active = enabledSessions.includes(session.id);
-
-                    return (
-                      <button
-                        type="button"
-                        key={session.id}
-                        onClick={() => toggleSession(session.id)}
-                        className={`flex w-full items-center justify-between rounded-2xl border p-3 text-right transition ${
-                          active
-                            ? "border-blue-500/25 bg-blue-500/10"
-                            : "border-white/10 bg-white/[0.02]"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl">
-                            {session.icon}
-                          </span>
-
-                          <div>
-                            <p className="text-sm font-bold text-slate-200">
-                              {session.title}
-                            </p>
-                            <p className="mt-1 text-[10px] text-slate-600">
-                              {session.time}
-                            </p>
-                          </div>
-                        </div>
-
-                        <span
-                          className={`h-2.5 w-2.5 rounded-full ${
-                            active
-                              ? "bg-emerald-400 shadow-lg shadow-emerald-500/40"
-                              : "bg-slate-700"
-                          }`}
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl">
-                <div className="mb-5">
-                  <h3 className="font-black">هشدار خبر</h3>
-                  <p className="mt-1 text-xs text-slate-600">
-                    زمان‌های ارسال هشدار
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <AlertRow
-                    label="۳ ساعت قبل"
-                    enabled={alert3h}
-                    onClick={() => setAlert3h((value) => !value)}
-                  />
-
-                  <AlertRow
-                    label="۱ ساعت قبل"
-                    enabled={alert1h}
-                    onClick={() => setAlert1h((value) => !value)}
-                  />
-
-                  <AlertRow
-                    label="۳۰ دقیقه قبل"
-                    enabled={alert30m}
-                    onClick={() => setAlert30m((value) => !value)}
-                  />
-
-                  <AlertRow
-                    label="۱۵ دقیقه قبل"
-                    enabled={alert15m}
-                    onClick={() => setAlert15m((value) => !value)}
-                  />
-
-                  <AlertRow
-                    label="۵ دقیقه قبل"
-                    enabled={alert5m}
-                    onClick={() => setAlert5m((value) => !value)}
-                  />
-
-                  <AlertRow
-                    label="هنگام انتشار"
-                    enabled={alertReleased}
-                    onClick={() =>
-                      setAlertReleased((value) => !value)
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl">
-                <h3 className="mb-4 font-black">اتصال‌ها</h3>
-
-                <div className="space-y-3">
-                  <ConnectionRow
-                    title="Telegram Alerts"
-                    icon="✈️"
-                    enabled={telegramEnabled}
-                    onClick={() =>
-                      setTelegramEnabled((value) => !value)
-                    }
-                  />
-
-                  <ConnectionRow
-                    title="News Filter"
-                    icon="🛡️"
-                    enabled={newsFilterEnabled}
-                    onClick={() =>
-                      setNewsFilterEnabled((value) => !value)
-                    }
-                  />
-
-                  <ConnectionRow
-                    title="Market Risk"
-                    icon="📊"
-                    enabled={marketRiskEnabled}
-                    onClick={() =>
-                      setMarketRiskEnabled((value) => !value)
-                    }
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={saveSettings}
-                  className="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3.5 text-sm font-black text-white shadow-xl shadow-blue-950/30 transition hover:bg-blue-500"
-                >
-                  💾 ذخیره تنظیمات
-                </button>
-              </div>
-            </aside>
-          </section>
-
-          {/* Lower cards */}
-          <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl backdrop-blur-xl">
-              <div className="mb-5 flex items-center justify-between">
-                <div>
-                  <h3 className="font-black">اخبار مهم اخیر</h3>
-                  <p className="mt-1 text-xs text-slate-600">
-                    مهم‌ترین رویدادهای قابل توجه
-                  </p>
-                </div>
-
-                <span className="text-xl">🔥</span>
-              </div>
-
-              <div className="space-y-3">
-                {DEMO_EVENTS.slice(0, 5).map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3"
-                  >
-                    <span className="text-xl">{item.flag}</span>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-slate-300">
-                        {item.event}
-                      </p>
-
-                      <p className="mt-1 text-[10px] text-slate-600">
-                        {item.time} • {item.currency}
-                      </p>
-                    </div>
-
-                    <ImportanceBadge value={item.importance} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl backdrop-blur-xl">
-              <div className="mb-5">
-                <h3 className="font-black">تأثیر احتمالی بر نمادها</h3>
-                <p className="mt-1 text-xs text-slate-600">
-                  نمادهای تحت تأثیر رویدادهای انتخاب‌شده
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                {[
-                  ["XAUUSD", "بالا", "w-[88%]", "bg-red-500"],
-                  ["EURUSD", "متوسط", "w-[66%]", "bg-amber-400"],
-                  ["GBPUSD", "متوسط", "w-[54%]", "bg-amber-400"],
-                  ["USDJPY", "کم", "w-[35%]", "bg-emerald-400"],
-                  ["AUDUSD", "کم", "w-[25%]", "bg-emerald-400"],
-                ].map(([symbol, level, width, color]) => (
-                  <div key={symbol}>
-                    <div className="mb-2 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-300">
-                        {symbol}
-                      </span>
-
-                      <span className="text-slate-500">{level}</span>
-                    </div>
-
-                    <div className="h-2 overflow-hidden rounded-full bg-white/5">
-                      <div
-                        className={`h-full rounded-full ${width} ${color}`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl backdrop-blur-xl">
-              <div className="mb-5">
-                <h3 className="font-black">تقویم هفتگی</h3>
-                <p className="mt-1 text-xs text-slate-600">
-                  تعداد رویدادهای مهم هر روز
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {[
-                  ["امروز", "دوشنبه", "8"],
-                  ["فردا", "سه‌شنبه", "7"],
-                  ["چهارشنبه", "چهارشنبه", "6"],
-                  ["پنج‌شنبه", "پنج‌شنبه", "5"],
-                  ["جمعه", "جمعه", "3"],
-                ].map(([day, title, count]) => (
-                  <div
-                    key={day}
-                    className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3"
-                  >
-                    <div>
-                      <p className="text-xs font-bold text-slate-300">
-                        {day}
-                      </p>
-                      <p className="mt-1 text-[10px] text-slate-600">
-                        {title}
-                      </p>
-                    </div>
-
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500/10 text-sm font-black text-blue-300">
-                      {count}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Footer status */}
-          <div className="mt-5 flex flex-col gap-3 rounded-3xl border border-white/10 bg-slate-950/60 p-4 text-xs text-slate-600 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              <span className="font-bold text-emerald-400">
-                سیستم آماده
+    <main dir="rtl" className="news-page">
+      <style jsx global>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          background: #030712;
+        }
+
+        body {
+          font-family:
+            Arial,
+            Tahoma,
+            sans-serif;
+        }
+
+        button,
+        input,
+        select {
+          font: inherit;
+        }
+
+        button {
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .news-page {
+          min-height: 100vh;
+          color: #f8fafc;
+          background:
+            radial-gradient(
+              circle at 85% 5%,
+              rgba(14, 165, 233, 0.14),
+              transparent 28%
+            ),
+            radial-gradient(
+              circle at 15% 30%,
+              rgba(99, 102, 241, 0.09),
+              transparent 25%
+            ),
+            linear-gradient(
+              135deg,
+              #020617 0%,
+              #07111f 48%,
+              #020617 100%
+            );
+          padding: 22px;
+        }
+
+        .news-shell {
+          width: 100%;
+          max-width: 1500px;
+          margin: 0 auto;
+        }
+
+        .topbar {
+          min-height: 76px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 18px;
+          padding: 15px 18px;
+          margin-bottom: 18px;
+          border: 1px solid rgba(148, 163, 184, 0.12);
+          border-radius: 24px;
+          background: rgba(7, 15, 28, 0.78);
+          backdrop-filter: blur(18px);
+          box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 210px;
+        }
+
+        .brand-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
+          display: grid;
+          place-items: center;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(34, 211, 238, 0.2),
+              rgba(59, 130, 246, 0.12)
+            );
+          border: 1px solid rgba(34, 211, 238, 0.3);
+          box-shadow: 0 0 25px rgba(34, 211, 238, 0.08);
+          font-size: 22px;
+        }
+
+        .brand strong {
+          display: block;
+          font-size: 17px;
+          letter-spacing: 0.2px;
+        }
+
+        .brand span {
+          display: block;
+          color: #64748b;
+          font-size: 11px;
+          margin-top: 4px;
+        }
+
+        .nav {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          flex: 1;
+        }
+
+        .nav-button {
+          border: 0;
+          color: #94a3b8;
+          background: transparent;
+          padding: 10px 13px;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .nav-button:hover,
+        .nav-button.active {
+          color: #67e8f9;
+          background: rgba(34, 211, 238, 0.08);
+        }
+
+        .top-actions {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+        }
+
+        .icon-button {
+          width: 42px;
+          height: 42px;
+          border-radius: 13px;
+          border: 1px solid rgba(148, 163, 184, 0.13);
+          background: rgba(15, 23, 42, 0.7);
+          color: #cbd5e1;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .icon-button:hover {
+          border-color: rgba(34, 211, 238, 0.35);
+          color: #67e8f9;
+        }
+
+        .status-pill {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 13px;
+          border-radius: 13px;
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.18);
+          color: #86efac;
+          font-size: 12px;
+          white-space: nowrap;
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #22c55e;
+          box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
+        }
+
+        .hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.85fr);
+          gap: 18px;
+          margin-bottom: 18px;
+        }
+
+        .hero-main,
+        .next-event {
+          position: relative;
+          overflow: hidden;
+          border-radius: 28px;
+          border: 1px solid rgba(148, 163, 184, 0.12);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(15, 23, 42, 0.92),
+              rgba(5, 15, 29, 0.9)
+            );
+          box-shadow: 0 20px 70px rgba(0, 0, 0, 0.25);
+        }
+
+        .hero-main {
+          padding: 30px;
+        }
+
+        .hero-main::before {
+          content: "";
+          position: absolute;
+          width: 300px;
+          height: 300px;
+          left: -120px;
+          top: -170px;
+          background: rgba(34, 211, 238, 0.1);
+          filter: blur(70px);
+          border-radius: 50%;
+        }
+
+        .eyebrow {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 7px 11px;
+          border-radius: 999px;
+          background: rgba(34, 211, 238, 0.08);
+          color: #67e8f9;
+          border: 1px solid rgba(34, 211, 238, 0.17);
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .hero-title {
+          position: relative;
+          margin: 17px 0 9px;
+          font-size: clamp(25px, 3vw, 38px);
+          line-height: 1.3;
+          letter-spacing: -0.7px;
+        }
+
+        .hero-description {
+          position: relative;
+          max-width: 720px;
+          color: #94a3b8;
+          line-height: 1.9;
+          font-size: 14px;
+          margin: 0;
+        }
+
+        .market-summary {
+          position: relative;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-top: 25px;
+        }
+
+        .summary-card {
+          min-height: 88px;
+          padding: 14px;
+          border-radius: 17px;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          background: rgba(15, 23, 42, 0.6);
+        }
+
+        .summary-label {
+          color: #64748b;
+          font-size: 11px;
+          margin-bottom: 10px;
+        }
+
+        .summary-value {
+          font-weight: 800;
+          font-size: 16px;
+        }
+
+        .summary-green {
+          color: #4ade80;
+        }
+
+        .summary-yellow {
+          color: #facc15;
+        }
+
+        .next-event {
+          padding: 24px;
+          background:
+            radial-gradient(
+              circle at 90% 10%,
+              rgba(239, 68, 68, 0.13),
+              transparent 38%
+            ),
+            linear-gradient(
+              145deg,
+              rgba(30, 41, 59, 0.95),
+              rgba(8, 15, 29, 0.96)
+            );
+        }
+
+        .event-label {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .danger-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          color: #fca5a5;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          padding: 7px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .event-country {
+          color: #94a3b8;
+          font-size: 12px;
+        }
+
+        .next-event h2 {
+          margin: 22px 0 8px;
+          font-size: 21px;
+          line-height: 1.5;
+        }
+
+        .event-subtitle {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.8;
+          min-height: 44px;
+        }
+
+        .countdown {
+          margin: 20px 0;
+          padding: 17px;
+          border-radius: 18px;
+          background: rgba(2, 6, 23, 0.55);
+          border: 1px solid rgba(239, 68, 68, 0.12);
+          text-align: center;
+        }
+
+        .countdown-label {
+          color: #64748b;
+          font-size: 11px;
+          margin-bottom: 7px;
+        }
+
+        .countdown-value {
+          direction: ltr;
+          font-size: 30px;
+          font-weight: 900;
+          letter-spacing: 2px;
+          color: #f8fafc;
+        }
+
+        .event-meta {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+        }
+
+        .tag {
+          padding: 6px 9px;
+          border-radius: 8px;
+          background: rgba(148, 163, 184, 0.08);
+          color: #cbd5e1;
+          font-size: 11px;
+        }
+
+        .tag.high {
+          color: #fca5a5;
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        .tag.currency {
+          color: #67e8f9;
+          background: rgba(34, 211, 238, 0.08);
+        }
+
+        .control-grid {
+          display: grid;
+          grid-template-columns: 1.3fr 1fr 1fr;
+          gap: 18px;
+          margin-bottom: 18px;
+        }
+
+        .panel {
+          border: 1px solid rgba(148, 163, 184, 0.11);
+          border-radius: 24px;
+          background: rgba(8, 17, 31, 0.8);
+          box-shadow: 0 18px 55px rgba(0, 0, 0, 0.18);
+        }
+
+        .control-panel {
+          padding: 19px;
+        }
+
+        .panel-title {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .panel-title h3 {
+          margin: 0;
+          font-size: 15px;
+        }
+
+        .panel-title span {
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .search-box {
+          position: relative;
+        }
+
+        .search-box input {
+          width: 100%;
+          height: 44px;
+          border-radius: 13px;
+          border: 1px solid rgba(148, 163, 184, 0.13);
+          outline: none;
+          background: rgba(15, 23, 42, 0.7);
+          color: #f8fafc;
+          padding: 0 43px 0 13px;
+        }
+
+        .search-box input:focus {
+          border-color: rgba(34, 211, 238, 0.4);
+          box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.05);
+        }
+
+        .search-icon {
+          position: absolute;
+          right: 14px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #64748b;
+        }
+
+        .filter-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+
+        .filter-button {
+          padding: 8px 11px;
+          border-radius: 10px;
+          border: 1px solid rgba(148, 163, 184, 0.11);
+          color: #94a3b8;
+          background: rgba(15, 23, 42, 0.65);
+          cursor: pointer;
+          font-size: 11px;
+          transition: 0.2s ease;
+        }
+
+        .filter-button:hover,
+        .filter-button.active {
+          color: #67e8f9;
+          border-color: rgba(34, 211, 238, 0.3);
+          background: rgba(34, 211, 238, 0.08);
+        }
+
+        .toggle-list {
+          display: grid;
+          gap: 9px;
+        }
+
+        .toggle-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 11px;
+          border-radius: 13px;
+          background: rgba(15, 23, 42, 0.52);
+          border: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .toggle-info strong {
+          display: block;
+          font-size: 12px;
+        }
+
+        .toggle-info span {
+          display: block;
+          color: #64748b;
+          font-size: 10px;
+          margin-top: 4px;
+        }
+
+        .switch {
+          position: relative;
+          width: 43px;
+          height: 24px;
+          flex: 0 0 auto;
+        }
+
+        .switch input {
+          display: none;
+        }
+
+        .slider {
+          position: absolute;
+          inset: 0;
+          cursor: pointer;
+          border-radius: 999px;
+          background: #1e293b;
+          transition: 0.2s ease;
+          border: 1px solid rgba(148, 163, 184, 0.14);
+        }
+
+        .slider::before {
+          content: "";
+          position: absolute;
+          width: 17px;
+          height: 17px;
+          top: 2px;
+          right: 3px;
+          border-radius: 50%;
+          background: #94a3b8;
+          transition: 0.2s ease;
+        }
+
+        .switch input:checked + .slider {
+          background: rgba(16, 185, 129, 0.25);
+          border-color: rgba(16, 185, 129, 0.35);
+        }
+
+        .switch input:checked + .slider::before {
+          transform: translateX(-18px);
+          background: #4ade80;
+          box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+        }
+
+        .calendar-layout {
+          display: grid;
+          grid-template-columns: minmax(0, 1.6fr) minmax(290px, 0.75fr);
+          gap: 18px;
+          margin-bottom: 18px;
+        }
+
+        .calendar-panel {
+          overflow: hidden;
+        }
+
+        .calendar-header {
+          padding: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.09);
+        }
+
+        .calendar-title h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+
+        .calendar-title p {
+          margin: 5px 0 0;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .date-controls {
+          display: flex;
+          gap: 7px;
+        }
+
+        .date-button {
+          padding: 8px 11px;
+          border-radius: 10px;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          color: #94a3b8;
+          background: rgba(15, 23, 42, 0.65);
+          cursor: pointer;
+          font-size: 11px;
+        }
+
+        .date-button.active {
+          color: #67e8f9;
+          border-color: rgba(34, 211, 238, 0.25);
+          background: rgba(34, 211, 238, 0.07);
+        }
+
+        .events {
+          display: grid;
+        }
+
+        .event-row {
+          display: grid;
+          grid-template-columns: 74px 48px minmax(180px, 1.6fr) 85px 80px 90px;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+          transition: 0.2s ease;
+        }
+
+        .event-row:hover {
+          background: rgba(34, 211, 238, 0.025);
+        }
+
+        .event-time {
+          direction: ltr;
+          color: #e2e8f0;
+          font-weight: 800;
+          font-size: 13px;
+        }
+
+        .event-flag {
+          font-size: 23px;
+          text-align: center;
+        }
+
+        .event-name strong {
+          display: block;
+          font-size: 13px;
+          line-height: 1.6;
+        }
+
+        .event-name span {
+          display: block;
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .impact {
+          display: inline-flex;
+          width: fit-content;
+          padding: 6px 8px;
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .impact.high {
+          color: #fca5a5;
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        .impact.medium {
+          color: #fde68a;
+          background: rgba(245, 158, 11, 0.1);
+        }
+
+        .impact.low {
+          color: #86efac;
+          background: rgba(34, 197, 94, 0.08);
+        }
+
+        .forecast {
+          color: #cbd5e1;
+          font-size: 11px;
+          direction: ltr;
+        }
+
+        .event-action {
+          display: flex;
+          justify-content: flex-start;
+        }
+
+        .details-button {
+          border: 1px solid rgba(34, 211, 238, 0.16);
+          color: #67e8f9;
+          background: rgba(34, 211, 238, 0.05);
+          border-radius: 9px;
+          padding: 7px 9px;
+          cursor: pointer;
+          font-size: 10px;
+        }
+
+        .side-stack {
+          display: grid;
+          gap: 18px;
+        }
+
+        .risk-panel {
+          padding: 21px;
+        }
+
+        .risk-score {
+          display: flex;
+          align-items: center;
+          gap: 17px;
+          margin: 18px 0;
+        }
+
+        .risk-circle {
+          width: 94px;
+          height: 94px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          background:
+            radial-gradient(
+              circle,
+              #07111f 56%,
+              transparent 57%
+            ),
+            conic-gradient(
+              #f59e0b 0deg,
+              #f59e0b 155deg,
+              #1e293b 155deg,
+              #1e293b 360deg
+            );
+          box-shadow: 0 0 30px rgba(245, 158, 11, 0.08);
+        }
+
+        .risk-circle strong {
+          font-size: 21px;
+        }
+
+        .risk-circle span {
+          font-size: 9px;
+          color: #64748b;
+          display: block;
+          text-align: center;
+        }
+
+        .risk-text strong {
+          display: block;
+          font-size: 16px;
+        }
+
+        .risk-text span {
+          display: block;
+          margin-top: 5px;
+          color: #94a3b8;
+          font-size: 11px;
+          line-height: 1.7;
+        }
+
+        .risk-bars {
+          display: grid;
+          gap: 11px;
+        }
+
+        .risk-bar-row {
+          display: grid;
+          grid-template-columns: 60px 1fr 38px;
+          gap: 9px;
+          align-items: center;
+          font-size: 10px;
+          color: #94a3b8;
+        }
+
+        .bar {
+          height: 7px;
+          border-radius: 999px;
+          background: #172033;
+          overflow: hidden;
+        }
+
+        .bar span {
+          display: block;
+          height: 100%;
+          border-radius: inherit;
+        }
+
+        .bar-yellow {
+          width: 72%;
+          background: #f59e0b;
+        }
+
+        .bar-red {
+          width: 52%;
+          background: #ef4444;
+        }
+
+        .bar-green {
+          width: 34%;
+          background: #22c55e;
+        }
+
+        .impact-panel {
+          padding: 20px;
+        }
+
+        .impact-list {
+          display: grid;
+          gap: 13px;
+        }
+
+        .impact-item {
+          display: grid;
+          grid-template-columns: 68px 1fr 42px;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .impact-symbol {
+          font-size: 11px;
+          font-weight: 800;
+          color: #cbd5e1;
+        }
+
+        .impact-track {
+          height: 8px;
+          border-radius: 999px;
+          background: #172033;
+          overflow: hidden;
+        }
+
+        .impact-fill {
+          height: 100%;
+          border-radius: inherit;
+        }
+
+        .fill-red {
+          width: 88%;
+          background: linear-gradient(
+            90deg,
+            #f97316,
+            #ef4444
+          );
+        }
+
+        .fill-orange {
+          width: 64%;
+          background: #f59e0b;
+        }
+
+        .fill-green {
+          width: 31%;
+          background: #22c55e;
+        }
+
+        .impact-value {
+          color: #94a3b8;
+          font-size: 10px;
+          text-align: left;
+        }
+
+        .bottom-grid {
+          display: grid;
+          grid-template-columns: 1.25fr 1fr 1fr;
+          gap: 18px;
+          margin-bottom: 18px;
+        }
+
+        .recent-panel,
+        .week-panel,
+        .settings-panel {
+          padding: 20px;
+        }
+
+        .recent-list,
+        .week-list {
+          display: grid;
+          gap: 8px;
+        }
+
+        .recent-item {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 11px;
+          border-radius: 13px;
+          background: rgba(15, 23, 42, 0.55);
+          border: 1px solid rgba(148, 163, 184, 0.07);
+        }
+
+        .recent-flag {
+          font-size: 19px;
+        }
+
+        .recent-content {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .recent-content strong {
+          display: block;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          font-size: 11px;
+        }
+
+        .recent-content span {
+          display: block;
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 9px;
+        }
+
+        .recent-time {
+          direction: ltr;
+          color: #94a3b8;
+          font-size: 10px;
+        }
+
+        .week-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 11px;
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.5);
+        }
+
+        .week-item strong {
+          font-size: 11px;
+        }
+
+        .week-item span {
+          color: #64748b;
+          font-size: 9px;
+          margin-top: 4px;
+          display: block;
+        }
+
+        .week-count {
+          width: 29px;
+          height: 29px;
+          display: grid;
+          place-items: center;
+          border-radius: 9px;
+          color: #67e8f9;
+          background: rgba(34, 211, 238, 0.08);
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .settings-list {
+          display: grid;
+          gap: 9px;
+        }
+
+        .setting-item {
+          padding: 11px;
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.52);
+          border: 1px solid rgba(148, 163, 184, 0.07);
+        }
+
+        .setting-item strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .setting-item span {
+          display: block;
+          color: #64748b;
+          font-size: 9px;
+          margin-top: 4px;
+        }
+
+        .footer-status {
+          padding: 16px 18px;
+          border-radius: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+          border: 1px solid rgba(148, 163, 184, 0.09);
+          background: rgba(8, 17, 31, 0.72);
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .footer-online {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #86efac;
+        }
+
+        .empty {
+          padding: 45px 20px;
+          text-align: center;
+          color: #64748b;
+          font-size: 13px;
+        }
+
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          display: grid;
+          place-items: center;
+          padding: 20px;
+          background: rgba(2, 6, 23, 0.75);
+          backdrop-filter: blur(10px);
+        }
+
+        .modal {
+          width: 100%;
+          max-width: 650px;
+          max-height: 90vh;
+          overflow: auto;
+          border-radius: 25px;
+          border: 1px solid rgba(34, 211, 238, 0.18);
+          background:
+            linear-gradient(
+              145deg,
+              #0b1728,
+              #050b15
+            );
+          box-shadow: 0 30px 100px rgba(0, 0, 0, 0.55);
+        }
+
+        .modal-header {
+          padding: 20px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 15px;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .modal-header h2 {
+          margin: 0;
+          font-size: 19px;
+          line-height: 1.5;
+        }
+
+        .modal-header p {
+          color: #64748b;
+          font-size: 11px;
+          margin: 5px 0 0;
+        }
+
+        .close-button {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          border: 1px solid rgba(148, 163, 184, 0.12);
+          color: #94a3b8;
+          background: rgba(15, 23, 42, 0.7);
+          cursor: pointer;
+        }
+
+        .modal-body {
+          padding: 20px;
+        }
+
+        .modal-description {
+          color: #94a3b8;
+          line-height: 1.9;
+          font-size: 13px;
+          margin: 0 0 18px;
+        }
+
+        .data-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 9px;
+          margin-bottom: 18px;
+        }
+
+        .data-card {
+          padding: 13px;
+          border-radius: 13px;
+          background: rgba(15, 23, 42, 0.65);
+          border: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .data-card span {
+          display: block;
+          color: #64748b;
+          font-size: 9px;
+          margin-bottom: 7px;
+        }
+
+        .data-card strong {
+          direction: ltr;
+          display: block;
+          font-size: 13px;
+        }
+
+        .affected-title {
+          font-size: 12px;
+          margin-bottom: 9px;
+        }
+
+        .affected-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+
+        .affected {
+          padding: 7px 9px;
+          border-radius: 9px;
+          background: rgba(34, 211, 238, 0.07);
+          border: 1px solid rgba(34, 211, 238, 0.12);
+          color: #67e8f9;
+          font-size: 10px;
+          direction: ltr;
+        }
+
+        @media (max-width: 1100px) {
+          .hero,
+          .calendar-layout {
+            grid-template-columns: 1fr;
+          }
+
+          .control-grid,
+          .bottom-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .bottom-grid .recent-panel {
+            grid-column: span 2;
+          }
+
+          .nav {
+            display: none;
+          }
+        }
+
+        @media (max-width: 780px) {
+          .news-page {
+            padding: 10px;
+          }
+
+          .topbar {
+            border-radius: 18px;
+            padding: 11px;
+          }
+
+          .brand {
+            min-width: auto;
+          }
+
+          .brand span,
+          .status-pill {
+            display: none;
+          }
+
+          .top-actions {
+            margin-right: auto;
+          }
+
+          .hero-main,
+          .next-event {
+            padding: 19px;
+            border-radius: 20px;
+          }
+
+          .market-summary {
+            grid-template-columns: 1fr;
+          }
+
+          .control-grid,
+          .bottom-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .bottom-grid .recent-panel {
+            grid-column: auto;
+          }
+
+          .event-row {
+            grid-template-columns: 52px 34px minmax(0, 1fr) 70px;
+            gap: 8px;
+            padding: 14px 12px;
+          }
+
+          .event-row > .forecast,
+          .event-row > .event-action {
+            display: none;
+          }
+
+          .event-name strong {
+            font-size: 11px;
+          }
+
+          .event-name span {
+            font-size: 9px;
+          }
+
+          .calendar-header {
+            align-items: flex-start;
+            flex-direction: column;
+            padding: 16px;
+          }
+
+          .date-controls {
+            width: 100%;
+            overflow-x: auto;
+          }
+
+          .date-button {
+            white-space: nowrap;
+          }
+
+          .footer-status {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .data-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
+      <div className="news-shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-icon">◈</div>
+
+            <div>
+              <strong>
+                Trading <span style={{ color: "#22d3ee" }}>AI</span>
+              </strong>
+              <span>
+                Economic Intelligence Center
               </span>
-              <span>•</span>
-              <span>News Engine</span>
-            </div>
-
-            <div className="flex flex-wrap gap-4">
-              <span>Economic Calendar</span>
-              <span>News Filter</span>
-              <span>Telegram Alerts</span>
             </div>
           </div>
-        </div>
+
+          <nav className="nav">
+            <button className="nav-button">
+              داشبورد
+            </button>
+
+            <button className="nav-button">
+              ربات‌ها
+            </button>
+
+            <button className="nav-button">
+              تحلیل AI
+            </button>
+
+            <button className="nav-button active">
+              اخبار
+            </button>
+
+            <button className="nav-button">
+              معاملات
+            </button>
+
+            <button className="nav-button">
+              پشتیبانی
+            </button>
+          </nav>
+
+          <div className="top-actions">
+            <div className="status-pill">
+              <span className="status-dot" />
+              سیستم آنلاین
+            </div>
+
+            <button className="icon-button">
+              🔔
+            </button>
+
+            <button className="icon-button">
+              ⚙
+            </button>
+          </div>
+        </header>
+
+        <section className="hero">
+          <div className="hero-main">
+            <div className="eyebrow">
+              ◉ تقویم اقتصادی هوشمند
+            </div>
+
+            <h1 className="hero-title">
+              اخبار و تقویم اقتصادی
+            </h1>
+
+            <p className="hero-description">
+              رویدادهای اقتصادی مهم بازار را در یک مرکز حرفه‌ای
+              دنبال کنید. اخبار مهم، سطح اهمیت، زمان انتشار،
+              پیش‌بینی و تأثیر احتمالی بر بازار را یکجا مشاهده کنید.
+            </p>
+
+            <div className="market-summary">
+              <div className="summary-card">
+                <div className="summary-label">
+                  وضعیت بازار
+                </div>
+
+                <div className="summary-value summary-yellow">
+                  نوسان متوسط
+                </div>
+              </div>
+
+              <div className="summary-card">
+                <div className="summary-label">
+                  سشن فعال
+                </div>
+
+                <div className="summary-value summary-green">
+                  London / New York
+                </div>
+              </div>
+
+              <div className="summary-card">
+                <div className="summary-label">
+                  وضعیت News Filter
+                </div>
+
+                <div className="summary-value summary-green">
+                  {newsFilter
+                    ? "فعال"
+                    : "غیرفعال"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="next-event">
+            <div className="event-label">
+              <span className="danger-badge">
+                ⚠ مهم‌ترین خبر بعدی
+              </span>
+
+              <span className="event-country">
+                {nextImportantEvent.flag}{" "}
+                {nextImportantEvent.currency}
+              </span>
+            </div>
+
+            <h2>
+              {nextImportantEvent.title}
+            </h2>
+
+            <div className="event-subtitle">
+              {nextImportantEvent.description}
+            </div>
+
+            <div className="countdown">
+              <div className="countdown-label">
+                زمان باقی‌مانده تا انتشار
+              </div>
+
+              <div className="countdown-value">
+                {formatCountdown(countdown)}
+              </div>
+            </div>
+
+            <div className="event-meta">
+              <span className="tag high">
+                HIGH
+              </span>
+
+              <span className="tag currency">
+                {nextImportantEvent.currency}
+              </span>
+
+              <span className="tag">
+                {nextImportantEvent.time}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="control-grid">
+          <div className="panel control-panel">
+            <div className="panel-title">
+              <h3>جستجو و فیلتر اخبار</h3>
+              <span>
+                {filteredEvents.length} رویداد
+              </span>
+            </div>
+
+            <div className="search-box">
+              <span className="search-icon">
+                ⌕
+              </span>
+
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="جستجوی خبر، ارز یا کشور..."
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                marginBottom: 9,
+                color: "#64748b",
+                fontSize: 10,
+              }}
+            >
+              سطح اهمیت
+            </div>
+
+            <div className="filter-row">
+              <button
+                className={`filter-button ${
+                  selectedImportance === "ALL"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setSelectedImportance("ALL")
+                }
+              >
+                همه
+              </button>
+
+              <button
+                className={`filter-button ${
+                  selectedImportance === "HIGH"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setSelectedImportance("HIGH")
+                }
+              >
+                🔴 بالا
+              </button>
+
+              <button
+                className={`filter-button ${
+                  selectedImportance === "MEDIUM"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setSelectedImportance("MEDIUM")
+                }
+              >
+                🟠 متوسط
+              </button>
+
+              <button
+                className={`filter-button ${
+                  selectedImportance === "LOW"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setSelectedImportance("LOW")
+                }
+              >
+                🟢 کم
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                marginBottom: 9,
+                color: "#64748b",
+                fontSize: 10,
+              }}
+            >
+              ارز
+            </div>
+
+            <div className="filter-row">
+              {CURRENCIES.map((currency) => (
+                <button
+                  key={currency}
+                  className={`filter-button ${
+                    selectedCurrency === currency
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setSelectedCurrency(currency)
+                  }
+                >
+                  {currency === "ALL"
+                    ? "همه ارزها"
+                    : currency}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel control-panel">
+            <div className="panel-title">
+              <h3>فیلترهای هوشمند</h3>
+              <span>Risk Control</span>
+            </div>
+
+            <div className="toggle-list">
+              <Toggle
+                title="News Filter"
+                description="کنترل معاملات در زمان اخبار مهم"
+                checked={newsFilter}
+                onChange={setNewsFilter}
+              />
+
+              <Toggle
+                title="Market Risk"
+                description="محاسبه ریسک بر اساس رویدادهای مهم"
+                checked={marketRisk}
+                onChange={setMarketRisk}
+              />
+
+              <Toggle
+                title="Telegram Alerts"
+                description="ارسال هشدارهای خبری به تلگرام"
+                checked={telegramAlerts}
+                onChange={setTelegramAlerts}
+              />
+            </div>
+          </div>
+
+          <div className="panel control-panel">
+            <div className="panel-title">
+              <h3>زمان‌بندی هشدار</h3>
+              <span>Alerts</span>
+            </div>
+
+            <div className="toggle-list">
+              <Toggle
+                title="۱۵ دقیقه قبل"
+                description="هشدار نزدیک به انتشار"
+                checked={alert15}
+                onChange={setAlert15}
+              />
+
+              <Toggle
+                title="۳۰ دقیقه قبل"
+                description="هشدار اولیه"
+                checked={alert30}
+                onChange={setAlert30}
+              />
+
+              <Toggle
+                title="۱ ساعت قبل"
+                description="آماده‌سازی زودتر"
+                checked={alert60}
+                onChange={setAlert60}
+              />
+
+              <Toggle
+                title="۳ ساعت قبل"
+                description="هشدار اولیه رویداد"
+                checked={alert180}
+                onChange={setAlert180}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="calendar-layout">
+          <div className="panel calendar-panel">
+            <div className="calendar-header">
+              <div className="calendar-title">
+                <h2>تقویم اقتصادی</h2>
+
+                <p>
+                  رویدادهای اقتصادی و داده‌های مهم بازار
+                </p>
+              </div>
+
+              <div className="date-controls">
+                <button className="date-button active">
+                  امروز
+                </button>
+
+                <button className="date-button">
+                  فردا
+                </button>
+
+                <button className="date-button">
+                  این هفته
+                </button>
+              </div>
+            </div>
+
+            <div className="events">
+              {filteredEvents.length === 0 ? (
+                <div className="empty">
+                  هیچ رویدادی با فیلترهای انتخاب‌شده پیدا نشد.
+                </div>
+              ) : (
+                filteredEvents.map((event) => (
+                  <div
+                    className="event-row"
+                    key={event.id}
+                  >
+                    <div className="event-time">
+                      {event.time}
+                    </div>
+
+                    <div className="event-flag">
+                      {event.flag}
+                    </div>
+
+                    <div className="event-name">
+                      <strong>
+                        {event.title}
+                      </strong>
+
+                      <span>
+                        {event.country} •{" "}
+                        {event.currency}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span
+                        className={`impact ${importanceClass(
+                          event.importance
+                        )}`}
+                      >
+                        {importanceLabel(
+                          event.importance
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="forecast">
+                      {event.forecast}
+                    </div>
+
+                    <div className="event-action">
+                      <button
+                        className="details-button"
+                        onClick={() =>
+                          setSelectedEvent(event)
+                        }
+                      >
+                        جزئیات
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="side-stack">
+            <div className="panel risk-panel">
+              <div className="panel-title">
+                <h3>ریسک خبری بازار</h3>
+                <span>Market Risk</span>
+              </div>
+
+              <div className="risk-score">
+                <div className="risk-circle">
+                  <div>
+                    <strong>58</strong>
+                    <span>از 100</span>
+                  </div>
+                </div>
+
+                <div className="risk-text">
+                  <strong>نوسان متوسط</strong>
+
+                  <span>
+                    چند رویداد مهم در ساعات آینده
+                    وجود دارد. کنترل News Filter
+                    توصیه می‌شود.
+                  </span>
+                </div>
+              </div>
+
+              <div className="risk-bars">
+                <div className="risk-bar-row">
+                  <span>USD</span>
+
+                  <div className="bar">
+                    <span className="bar-yellow" />
+                  </div>
+
+                  <span>72%</span>
+                </div>
+
+                <div className="risk-bar-row">
+                  <span>EUR</span>
+
+                  <div className="bar">
+                    <span className="bar-red" />
+                  </div>
+
+                  <span>52%</span>
+                </div>
+
+                <div className="risk-bar-row">
+                  <span>JPY</span>
+
+                  <div className="bar">
+                    <span className="bar-green" />
+                  </div>
+
+                  <span>34%</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="panel impact-panel">
+              <div className="panel-title">
+                <h3>تأثیر احتمالی بر بازار</h3>
+                <span>Watchlist</span>
+              </div>
+
+              <div className="impact-list">
+                <Impact
+                  symbol="XAUUSD"
+                  value="بالا"
+                  className="fill-red"
+                />
+
+                <Impact
+                  symbol="EURUSD"
+                  value="متوسط"
+                  className="fill-orange"
+                />
+
+                <Impact
+                  symbol="GBPUSD"
+                  value="متوسط"
+                  className="fill-orange"
+                />
+
+                <Impact
+                  symbol="USDJPY"
+                  value="کم"
+                  className="fill-green"
+                />
+
+                <Impact
+                  symbol="AUDUSD"
+                  value="کم"
+                  className="fill-green"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="bottom-grid">
+          <div className="panel recent-panel">
+            <div className="panel-title">
+              <h3>اخبار مهم اخیر</h3>
+              <span>Recent News</span>
+            </div>
+
+            <div className="recent-list">
+              {EVENTS.slice(0, 5).map((event) => (
+                <div
+                  className="recent-item"
+                  key={event.id}
+                >
+                  <div className="recent-flag">
+                    {event.flag}
+                  </div>
+
+                  <div className="recent-content">
+                    <strong>
+                      {event.title}
+                    </strong>
+
+                    <span>
+                      {event.currency} •{" "}
+                      {importanceLabel(
+                        event.importance
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="recent-time">
+                    {event.time}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel week-panel">
+            <div className="panel-title">
+              <h3>تقویم هفتگی</h3>
+              <span>Weekly Overview</span>
+            </div>
+
+            <div className="week-list">
+              <WeekDay
+                title="امروز"
+                date="رویدادهای مهم"
+                count="8"
+              />
+
+              <WeekDay
+                title="فردا"
+                date="رویدادهای مهم"
+                count="7"
+              />
+
+              <WeekDay
+                title="چهارشنبه"
+                date="رویدادهای مهم"
+                count="6"
+              />
+
+              <WeekDay
+                title="پنج‌شنبه"
+                date="رویدادهای مهم"
+                count="5"
+              />
+
+              <WeekDay
+                title="جمعه"
+                date="رویدادهای مهم"
+                count="3"
+              />
+            </div>
+          </div>
+
+          <div className="panel settings-panel">
+            <div className="panel-title">
+              <h3>وضعیت تنظیمات اخبار</h3>
+              <span>Settings</span>
+            </div>
+
+            <div className="settings-list">
+              <div className="setting-item">
+                <strong>
+                  News Filter
+                </strong>
+
+                <span>
+                  {newsFilter
+                    ? "فعال • کنترل ریسک خبری روشن است"
+                    : "غیرفعال"}
+                </span>
+              </div>
+
+              <div className="setting-item">
+                <strong>
+                  هشدار تلگرام
+                </strong>
+
+                <span>
+                  {telegramAlerts
+                    ? "فعال • ارسال اعلان روشن است"
+                    : "غیرفعال"}
+                </span>
+              </div>
+
+              <div className="setting-item">
+                <strong>
+                  هشدارهای فعال
+                </strong>
+
+                <span>
+                  {[
+                    alert15,
+                    alert30,
+                    alert60,
+                    alert180,
+                  ].filter(Boolean).length}{" "}
+                  زمان هشدار فعال
+                </span>
+              </div>
+
+              <div className="setting-item">
+                <strong>
+                  وضعیت ریسک
+                </strong>
+
+                <span>
+                  {marketRisk
+                    ? "محاسبه ریسک فعال"
+                    : "محاسبه ریسک خاموش"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer className="footer-status">
+          <div className="footer-online">
+            <span className="status-dot" />
+            موتور تحلیل اخبار آماده است
+          </div>
+
+          <div>
+            Trading AI • Economic Intelligence
+          </div>
+        </footer>
       </div>
 
-      {/* Settings modal */}
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/10 bg-[#07111f] p-5 shadow-2xl sm:p-7">
-            <div className="mb-6 flex items-start justify-between gap-4">
+      {selectedEvent && (
+        <div
+          className="modal-backdrop"
+          onClick={() =>
+            setSelectedEvent(null)
+          }
+        >
+          <div
+            className="modal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <div className="modal-header">
               <div>
-                <h2 className="text-xl font-black sm:text-2xl">
-                  تنظیمات کامل اخبار
+                <h2>
+                  {selectedEvent.flag}{" "}
+                  {selectedEvent.title}
                 </h2>
 
-                <p className="mt-2 text-xs leading-6 text-slate-500 sm:text-sm">
-                  تنظیم اهمیت خبر، ارزها، سشن‌ها، زمان هشدار و اتصال به
-                  سرویس‌های جانبی.
+                <p>
+                  {selectedEvent.country} •{" "}
+                  {selectedEvent.currency} •{" "}
+                  {selectedEvent.time}
                 </p>
               </div>
 
               <button
-                type="button"
-                onClick={() => setSettingsOpen(false)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                className="close-button"
+                onClick={() =>
+                  setSelectedEvent(null)
+                }
               >
-                ×
+                ✕
               </button>
             </div>
 
-            <div className="space-y-5">
-              <SettingsSection
-                title="سطح اهمیت خبر"
-                description="مشخص کنید کدام رویدادها وارد سیستم شوند."
-              >
-                <SwitchRow
-                  label="خبرهای با اهمیت بالا"
-                  dot="bg-red-400"
-                  enabled={highImpact}
-                  onClick={() => setHighImpact((value) => !value)}
-                />
+            <div className="modal-body">
+              <p className="modal-description">
+                {selectedEvent.description}
+              </p>
 
-                <SwitchRow
-                  label="خبرهای با اهمیت متوسط"
-                  dot="bg-amber-400"
-                  enabled={mediumImpact}
-                  onClick={() => setMediumImpact((value) => !value)}
-                />
+              <div className="data-grid">
+                <div className="data-card">
+                  <span>Previous</span>
+                  <strong>
+                    {selectedEvent.previous}
+                  </strong>
+                </div>
 
-                <SwitchRow
-                  label="خبرهای با اهمیت پایین"
-                  dot="bg-emerald-400"
-                  enabled={lowImpact}
-                  onClick={() => setLowImpact((value) => !value)}
-                />
-              </SettingsSection>
+                <div className="data-card">
+                  <span>Forecast</span>
+                  <strong>
+                    {selectedEvent.forecast}
+                  </strong>
+                </div>
 
-              <SettingsSection
-                title="زمان هشدار"
-                description="زمان‌های ارسال هشدار قبل و هنگام انتشار."
-              >
-                <AlertRow
-                  label="۳ ساعت قبل"
-                  enabled={alert3h}
-                  onClick={() => setAlert3h((value) => !value)}
-                />
+                <div className="data-card">
+                  <span>Actual</span>
+                  <strong>
+                    {selectedEvent.actual}
+                  </strong>
+                </div>
+              </div>
 
-                <AlertRow
-                  label="۱ ساعت قبل"
-                  enabled={alert1h}
-                  onClick={() => setAlert1h((value) => !value)}
-                />
+              <div className="affected-title">
+                نمادهای تحت تأثیر
+              </div>
 
-                <AlertRow
-                  label="۳۰ دقیقه قبل"
-                  enabled={alert30m}
-                  onClick={() => setAlert30m((value) => !value)}
-                />
-
-                <AlertRow
-                  label="۱۵ دقیقه قبل"
-                  enabled={alert15m}
-                  onClick={() => setAlert15m((value) => !value)}
-                />
-
-                <AlertRow
-                  label="۵ دقیقه قبل"
-                  enabled={alert5m}
-                  onClick={() => setAlert5m((value) => !value)}
-                />
-
-                <AlertRow
-                  label="هنگام انتشار خبر"
-                  enabled={alertReleased}
-                  onClick={() =>
-                    setAlertReleased((value) => !value)
-                  }
-                />
-              </SettingsSection>
-
-              <SettingsSection
-                title="سشن‌های معاملاتی"
-                description="اخبار مربوط به سشن‌های انتخابی نمایش داده می‌شوند."
-              >
-                {SESSIONS.map((session) => (
-                  <AlertRow
-                    key={session.id}
-                    label={`${session.icon} ${session.title} — ${session.time}`}
-                    enabled={enabledSessions.includes(session.id)}
-                    onClick={() => toggleSession(session.id)}
-                  />
-                ))}
-              </SettingsSection>
-
-              <SettingsSection
-                title="اتصال و فیلتر"
-                description="کنترل ارتباط سیستم اخبار با بخش‌های دیگر Trading AI."
-              >
-                <AlertRow
-                  label="News Filter برای ربات‌ها"
-                  enabled={newsFilterEnabled}
-                  onClick={() =>
-                    setNewsFilterEnabled((value) => !value)
-                  }
-                />
-
-                <AlertRow
-                  label="هشدار Telegram"
-                  enabled={telegramEnabled}
-                  onClick={() =>
-                    setTelegramEnabled((value) => !value)
-                  }
-                />
-
-                <AlertRow
-                  label="محاسبه وضعیت ریسک بازار"
-                  enabled={marketRiskEnabled}
-                  onClick={() =>
-                    setMarketRiskEnabled((value) => !value)
-                  }
-                />
-              </SettingsSection>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={saveSettings}
-                className="flex-1 rounded-2xl bg-blue-600 px-5 py-3.5 text-sm font-black text-white transition hover:bg-blue-500"
-              >
-                💾 ذخیره تنظیمات
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(false)}
-                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm font-bold text-slate-300 transition hover:bg-white/10"
-              >
-                انصراف
-              </button>
+              <div className="affected-list">
+                {selectedEvent.affected.map(
+                  (symbol) => (
+                    <span
+                      className="affected"
+                      key={symbol}
+                    >
+                      {symbol}
+                    </span>
+                  )
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1414,223 +2233,86 @@ export default function NewsPage() {
   );
 }
 
-function FilterSelect({
-  title,
-  value,
-  onChange,
-  options,
-}: {
-  title: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[][];
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-[11px] font-bold text-slate-600">
-        {title}
-      </span>
-
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-2xl border border-white/10 bg-[#07111f] px-3 py-3 text-xs font-bold text-slate-200 outline-none transition focus:border-blue-500/50"
-      >
-        {options.map(([optionValue, label]) => (
-          <option
-            key={optionValue}
-            value={optionValue}
-            className="bg-[#07111f]"
-          >
-            {label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function ImportanceBadge({ value }: { value: Importance }) {
-  const styles =
-    value === "HIGH"
-      ? "border-red-500/30 bg-red-500/15 text-red-300"
-      : value === "MEDIUM"
-      ? "border-amber-500/30 bg-amber-500/15 text-amber-300"
-      : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300";
-
-  return (
-    <span
-      className={`inline-flex whitespace-nowrap rounded-lg border px-2.5 py-1 text-[10px] font-black ${styles}`}
-    >
-      {importanceLabel(value)}
-    </span>
-  );
-}
-
-function StatusBadge({ value }: { value: EventStatus }) {
-  const styles =
-    value === "RELEASED"
-      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-      : value === "CANCELLED"
-      ? "border-red-500/30 bg-red-500/10 text-red-300"
-      : "border-blue-500/20 bg-blue-500/10 text-blue-300";
-
-  return (
-    <span
-      className={`inline-flex whitespace-nowrap rounded-lg border px-2.5 py-1 text-[10px] font-bold ${styles}`}
-    >
-      {statusLabel(value)}
-    </span>
-  );
-}
-
 function Toggle({
-  enabled,
-  onClick,
-}: {
-  enabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={enabled ? "فعال" : "غیرفعال"}
-      className={`relative h-7 w-12 rounded-full transition ${
-        enabled ? "bg-emerald-500" : "bg-slate-700"
-      }`}
-    >
-      <span
-        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-md transition ${
-          enabled ? "right-1" : "left-1"
-        }`}
-      />
-    </button>
-  );
-}
-
-function SwitchRow({
-  label,
-  dot,
-  enabled,
-  onClick,
-}: {
-  label: string;
-  dot: string;
-  enabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3 text-right transition hover:bg-white/[0.05]"
-    >
-      <span className="flex items-center gap-2 text-xs font-bold text-slate-300">
-        <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
-        {label}
-      </span>
-
-      <Toggle enabled={enabled} onClick={onClick} />
-    </button>
-  );
-}
-
-function AlertRow({
-  label,
-  enabled,
-  onClick,
-}: {
-  label: string;
-  enabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3 text-right transition hover:bg-white/[0.05]"
-    >
-      <span className="text-xs font-bold text-slate-300">{label}</span>
-      <Toggle enabled={enabled} onClick={onClick} />
-    </button>
-  );
-}
-
-function ConnectionRow({
-  title,
-  icon,
-  enabled,
-  onClick,
-}: {
-  title: string;
-  icon: string;
-  enabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3">
-      <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5">
-          {icon}
-        </span>
-
-        <span className="text-xs font-bold text-slate-300">
-          {title}
-        </span>
-      </div>
-
-      <Toggle enabled={enabled} onClick={onClick} />
-    </div>
-  );
-}
-
-function InfoMini({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-black/20 p-2.5">
-      <p className="mb-1 text-[9px] text-slate-600">{label}</p>
-      <div className="text-xs font-bold text-slate-300">{value}</div>
-    </div>
-  );
-}
-
-function SettingsSection({
   title,
   description,
-  children,
+  checked,
+  onChange,
 }: {
   title: string;
   description: string;
-  children: React.ReactNode;
+  checked: boolean;
+  onChange: (value: boolean) => void;
 }) {
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.025] p-4">
-      <h3 className="font-black text-slate-100">{title}</h3>
-      <p className="mt-1 mb-4 text-xs leading-5 text-slate-600">
-        {description}
-      </p>
+    <div className="toggle-row">
+      <div className="toggle-info">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </div>
 
-      <div className="space-y-2">{children}</div>
-    </section>
+      <label className="switch">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) =>
+            onChange(event.target.checked)
+          }
+        />
+
+        <span className="slider" />
+      </label>
+    </div>
   );
 }
 
-function EmptyState() {
+function Impact({
+  symbol,
+  value,
+  className,
+}: {
+  symbol: string;
+  value: string;
+  className: string;
+}) {
   return (
-    <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-      <div className="text-3xl">⌕</div>
-      <p className="mt-3 font-bold text-slate-300">
-        رویدادی با این فیلترها پیدا نشد
-      </p>
-      <p className="mt-2 text-xs text-slate-600">
-        فیلتر ارز، اهمیت، سشن یا جستجو را تغییر دهید.
-      </p>
+    <div className="impact-item">
+      <div className="impact-symbol">
+        {symbol}
+      </div>
+
+      <div className="impact-track">
+        <div
+          className={`impact-fill ${className}`}
+        />
+      </div>
+
+      <div className="impact-value">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function WeekDay({
+  title,
+  date,
+  count,
+}: {
+  title: string;
+  date: string;
+  count: string;
+}) {
+  return (
+    <div className="week-item">
+      <div>
+        <strong>{title}</strong>
+        <span>{date}</span>
+      </div>
+
+      <div className="week-count">
+        {count}
+      </div>
     </div>
   );
 }
