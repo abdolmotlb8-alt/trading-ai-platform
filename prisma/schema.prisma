@@ -75,9 +75,22 @@ model TradingBot {
 
   isActive Boolean @default(false)
 
+  executionMode String @default("MANUAL")
+  tradingApproval Boolean @default(false)
+
+  botStatus String @default("STOPPED")
+  stoppedReason String?
+  lastStateChangeAt DateTime?
+
+  autoStopAfterWins   Int?
+  autoStopAfterLosses Int?
+  autoStopAfterTrades Int?
+
+  stopBeforeNewsMinutes Int @default(0)
+
   lotMode     String @default("FIXED")
   lotSize     Float  @default(0.01)
-  riskPercent Float @default(1)
+  riskPercent Float  @default(1)
 
   takeProfit Float?
   stopLoss   Float?
@@ -91,8 +104,8 @@ model TradingBot {
 
   dailyProfitStop    Float?
   dailyLossLimit     Float?
-  maxDailyStopLosses Int   @default(3)
-  maxOpenTrades      Int   @default(1)
+  maxDailyStopLosses Int @default(3)
+  maxOpenTrades      Int @default(1)
 
   buyEnabled  Boolean @default(true)
   sellEnabled Boolean @default(true)
@@ -120,6 +133,8 @@ model TradingBot {
   @@index([userId])
   @@index([category])
   @@index([isActive])
+  @@index([botStatus])
+  @@index([executionMode])
 }
 
 model MarketCandle {
@@ -341,7 +356,7 @@ model NewsSetting {
 
   alertMinutes Json?
 
-  telegramEnabled Boolean @default(false)
+  telegramEnabled   Boolean @default(false)
   newsFilterEnabled Boolean @default(true)
   marketRiskEnabled Boolean @default(true)
 
