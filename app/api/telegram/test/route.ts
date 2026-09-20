@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
@@ -5,15 +6,34 @@ import { getSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type TelegramResponse = {
+type TelegramApiResponse<T> = {
   ok: boolean;
   description?: string;
-  result?: {
-    message_id?: number;
+  result?: T;
+};
+
+type TelegramBot = {
+  id: number;
+  is_bot: boolean;
+  first_name: string;
+  username?: string;
+};
+
+type TelegramMessage = {
+  message_id: number;
+  chat?: {
+    id: number;
+    title?: string;
     username?: string;
-    first_name?: string;
+    type?: string;
   };
 };
+
+function telegramError(
+  description?: string
+): string {
+  return description || "خطای نامشخص از طرف Telegram.";
+}
 
 export async function GET() {
   try {
@@ -50,16 +70,19 @@ export async function GET() {
       );
     }
 
-    // 3. دریافت تنظیمات Environment
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_SIGNAL_CHAT_ID;
+    // 3. دریافت Environment
+    const botToken =
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+
+    const chatId =
+      process.env.TELEGRAM_SIGNAL_CHAT_ID?.trim();
 
     if (!botToken) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "متغیر TELEGRAM_BOT_TOKEN در Environment تنظیم نشده است.",
+            "TELEGRAM_BOT_TOKEN در Environment تنظیم نشده است.",
         },
         { status: 500 }
       );
@@ -70,15 +93,18 @@ export async function GET() {
         {
           success: false,
           error:
-            "متغیر TELEGRAM_SIGNAL_CHAT_ID در Environment تنظیم نشده است.",
+            "TELEGRAM_SIGNAL_CHAT_ID در Environment تنظیم نشده است.",
         },
         { status: 500 }
       );
     }
 
-    // 4. بررسی اتصال ربات به Telegram
+    const telegramUrl =
+      `https://api.telegram.org/bot${botToken}`;
+
+    // 4. بررسی اعتبار ربات
     const botResponse = await fetch(
-      `https://api.telegram.org/bot${botToken}/getMe`,
+      `${telegramUrl}/getMe`,
       {
         method: "GET",
         cache: "no-store",
@@ -86,41 +112,42 @@ export async function GET() {
     );
 
     const botInfo =
-      (await botResponse.json()) as TelegramResponse;
+      (await botResponse.json()) as TelegramApiResponse<TelegramBot>;
 
-    if (!botResponse.ok || !botInfo.ok) {
+    if (!botResponse.ok || !botInfo.ok || !botInfo.result) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            botInfo.description ||
-            "توکن ربات تلگرام معتبر نیست.",
+          error: telegramError(botInfo.description),
         },
         { status: 502 }
       );
     }
 
-    // 5. آماده‌سازی پیام آزمایشی
-    const botUsername =
-      botInfo.result?.username || "Unknown";
+    const bot = botInfo.result;
 
+    const botUsername = bot.username
+      ? `@${bot.username}`
+      : bot.first_name;
+
+    // 5. ساخت پیام آزمایشی
     const message = [
       "🤖 Trading AI Platform",
       "",
       "✅ اتصال تلگرام با موفقیت آزمایش شد.",
       "",
-      `📡 Bot: @${botUsername}`,
+      `📡 ربات: ${botUsername}`,
       "📢 نوع پیام: آزمایشی",
-      "",
-      "🔐 وضعیت امنیت: تأیید اولیه انجام شد.",
       "📊 وضعیت سرویس: فعال",
+      "",
+      "🔐 بررسی امنیت اولیه انجام شد.",
       "",
       "⚠️ این پیام فقط برای آزمایش اتصال است.",
     ].join("\n");
 
-    // 6. ارسال پیام به کانال یا چت مشخص‌شده
-    const telegramResponse = await fetch(
-      `https://api.telegram.org/bot${botToken}/sendMessage`,
+    // 6. ارسال پیام به کانال
+    const sendResponse = await fetch(
+      `${telegramUrl}/sendMessage`,
       {
         method: "POST",
         headers: {
@@ -135,22 +162,24 @@ export async function GET() {
       }
     );
 
-    const telegramData =
-      (await telegramResponse.json()) as TelegramResponse;
+    const sendData =
+      (await sendResponse.json()) as TelegramApiResponse<TelegramMessage>;
 
     // 7. بررسی نتیجه ارسال
-    if (!telegramResponse.ok || !telegramData.ok) {
+    if (
+      !sendResponse.ok ||
+      !sendData.ok ||
+      !sendData.result
+    ) {
       console.error(
         "Telegram sendMessage error:",
-        telegramData
+        sendData
       );
 
       return NextResponse.json(
         {
           success: false,
-          error:
-            telegramData.description ||
-            "ارسال پیام به تلگرام ناموفق بود.",
+          error: telegramError(sendData.description),
         },
         { status: 502 }
       );
@@ -159,20 +188,21 @@ export async function GET() {
     // 8. پاسخ موفقیت
     return NextResponse.json({
       success: true,
-      message: "پیام آزمایشی با موفقیت ارسال شد.",
+      message: "پیام آزمایشی با موفقیت به تلگرام ارسال شد.",
       bot: botUsername,
-      chatId: chatId,
-      telegramMessageId:
-        telegramData.result?.message_id || null,
+      telegramMessageId: sendData.result.message_id,
     });
   } catch (error) {
-    console.error("Telegram connection error:", error);
+    console.error(
+      "Telegram connection error:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
         error:
-          "خطای داخلی سرور هنگام اتصال به تلگرام رخ داد.",
+          "ارتباط با Telegram برقرار نشد. لاگ‌های Render را بررسی کنید.",
       },
       { status: 500 }
     );
