@@ -1,833 +1,1203 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
 
-"use client";
+export default async function DashboardPage() {
+  const session = await getSession();
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Activity,
-  ArrowLeft,
-  ArrowRight,
-  BarChart3,
-  Bell,
-  Bot,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleHelp,
-  Clock3,
-  Globe,
-  LayoutDashboard,
-  LineChart,
-  LogOut,
-  Menu,
-  Moon,
-  Newspaper,
-  Palette,
-  PanelLeft,
-  Plus,
-  RefreshCw,
-  Search,
-  Settings,
-  ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
-  Sun,
-  Telegram,
-  TrendingDown,
-  TrendingUp,
-  UserRound,
-  Wallet,
-  X,
-  Zap,
-} from "lucide-react";
-
-type BotItem = {
-  id?: string | number;
-  name?: string;
-  symbol?: string;
-  status?: string;
-  isActive?: boolean;
-  active?: boolean;
-  telegramEnabled?: boolean;
-  strategy?: string;
-};
-
-type Language = "fa" | "en";
-
-const translations = {
-  fa: {
-    dashboard: "داشبورد",
-    overview: "نمای کلی",
-    market: "بازار",
-    aiAnalysis: "تحلیل هوشمند AI",
-    bots: "ربات‌های معاملاتی",
-    news: "اخبار بازار",
-    telegram: "اتصال تلگرام",
-    settings: "تنظیمات",
-    support: "پشتیبانی",
-    account: "حساب کاربری",
-    logout: "خروج از حساب",
-    welcome: "خوش آمدید",
-    overviewText: "مرکز مدیریت هوشمند معاملات و ربات‌های شما",
-    activeBots: "ربات‌های فعال",
-    totalBots: "مجموع ربات‌ها",
-    telegramStatus: "وضعیت تلگرام",
-    connected: "متصل",
-    disconnected: "متصل نیست",
-    marketStatus: "وضعیت بازار",
-    online: "آنلاین",
-    quickAccess: "دسترسی سریع",
-    manageBots: "مدیریت ربات‌ها",
-    manageBotsText: "ساخت و مدیریت ربات‌های معاملاتی",
-    marketChart: "نمودار بازار",
-    marketChartText: "بررسی روند و قیمت دارایی‌ها",
-    aiTools: "ابزارهای هوشمند",
-    aiToolsText: "تحلیل بازار با هوش مصنوعی",
-    latestNews: "آخرین اخبار",
-    latestNewsText: "اخبار و رویدادهای بازار",
-    systemStatus: "وضعیت سیستم",
-    systemStatusText: "بررسی اتصال سرویس‌ها",
-    view: "مشاهده",
-    refresh: "به‌روزرسانی",
-    search: "جست‌وجو...",
-    light: "روشن",
-    dark: "تاریک",
-    language: "زبان",
-    noBots: "هنوز رباتی ثبت نشده است",
-    createBot: "ساخت ربات جدید",
-    realData: "داده‌های متصل به سیستم",
-  },
-  en: {
-    dashboard: "Dashboard",
-    overview: "Overview",
-    market: "Market",
-    aiAnalysis: "AI Analysis",
-    bots: "Trading Bots",
-    news: "Market News",
-    telegram: "Telegram",
-    settings: "Settings",
-    support: "Support",
-    account: "Account",
-    logout: "Log out",
-    welcome: "Welcome",
-    overviewText: "Your intelligent trading and bot management center",
-    activeBots: "Active Bots",
-    totalBots: "Total Bots",
-    telegramStatus: "Telegram Status",
-    connected: "Connected",
-    disconnected: "Disconnected",
-    marketStatus: "Market Status",
-    online: "Online",
-    quickAccess: "Quick Access",
-    manageBots: "Manage Bots",
-    manageBotsText: "Create and manage trading bots",
-    marketChart: "Market Chart",
-    marketChartText: "Review market prices and trends",
-    aiTools: "AI Tools",
-    aiToolsText: "Analyze markets with AI",
-    latestNews: "Latest News",
-    latestNewsText: "Market news and events",
-    systemStatus: "System Status",
-    systemStatusText: "Check service connections",
-    view: "View",
-    refresh: "Refresh",
-    search: "Search...",
-    light: "Light",
-    dark: "Dark",
-    language: "Language",
-    noBots: "No bots have been created yet",
-    createBot: "Create New Bot",
-    realData: "Connected system data",
-  },
-};
-
-export default function DashboardPage() {
-  const [language, setLanguage] = useState<Language>("fa");
-  const [darkMode, setDarkMode] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activePage, setActivePage] = useState("dashboard");
-  const [bots, setBots] = useState<BotItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const isFa = language === "fa";
-  const t = translations[language];
-
-  const direction = isFa ? "rtl" : "ltr";
-
-  const activeBots = useMemo(
-    () =>
-      bots.filter(
-        (bot) => bot.isActive === true || bot.active === true
-      ).length,
-    [bots]
-  );
-
-  async function loadBots() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await fetch("/api/bots", {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Unable to load bots");
-      }
-
-      const data = await response.json();
-
-      const receivedBots = Array.isArray(data)
-        ? data
-        : Array.isArray(data.bots)
-        ? data.bots
-        : Array.isArray(data.data)
-        ? data.data
-        : [];
-
-      setBots(receivedBots);
-    } catch {
-      setError(
-        isFa
-          ? "دریافت اطلاعات ربات‌ها ناموفق بود."
-          : "Failed to load bot information."
-      );
-    } finally {
-      setLoading(false);
-    }
+  if (!session) {
+    redirect("/login");
   }
 
-  useEffect(() => {
-    loadBots();
-  }, []);
+  const user = await prisma.user.findUnique({
+    where: {
+      id: session.userId,
+    },
+  });
 
-  function navigateTo(path: string) {
-    window.location.href = path;
+  if (!user) {
+    redirect("/login");
   }
-
-  function logout() {
-    window.location.href = "/api/auth/signout";
-  }
-
-  const menuItems = [
-    {
-      id: "dashboard",
-      label: t.dashboard,
-      icon: LayoutDashboard,
-      path: "/dashboard",
-    },
-    {
-      id: "market",
-      label: t.market,
-      icon: LineChart,
-      path: "/market",
-    },
-    {
-      id: "ai",
-      label: t.aiAnalysis,
-      icon: Sparkles,
-      path: "/ai-analysis",
-    },
-    {
-      id: "bots",
-      label: t.bots,
-      icon: Bot,
-      path: "/bots",
-    },
-    {
-      id: "news",
-      label: t.news,
-      icon: Newspaper,
-      path: "/news",
-    },
-    {
-      id: "telegram",
-      label: t.telegram,
-      icon: Bell,
-      path: "/settings/telegram",
-    },
-    {
-      id: "settings",
-      label: t.settings,
-      icon: Settings,
-      path: "/settings",
-    },
-  ];
-
-  const quickCards = [
-    {
-      title: t.manageBots,
-      description: t.manageBotsText,
-      icon: Bot,
-      href: "/bots",
-      iconClass: "text-cyan-400",
-    },
-    {
-      title: t.marketChart,
-      description: t.marketChartText,
-      icon: BarChart3,
-      href: "/market",
-      iconClass: "text-emerald-400",
-    },
-    {
-      title: t.aiTools,
-      description: t.aiToolsText,
-      icon: Sparkles,
-      href: "/ai-analysis",
-      iconClass: "text-violet-400",
-    },
-    {
-      title: t.latestNews,
-      description: t.latestNewsText,
-      icon: Newspaper,
-      href: "/news",
-      iconClass: "text-amber-400",
-    },
-  ];
 
   return (
-    <main
-      dir={direction}
-      className={
-        darkMode
-          ? "min-h-screen bg-[#050d1a] text-white"
-          : "min-h-screen bg-slate-100 text-slate-900"
-      }
-    >
-      <div className="flex min-h-screen">
-        {sidebarOpen && (
-          <button
-            aria-label="Close sidebar"
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 z-30 bg-black/60 lg:hidden"
-          />
-        )}
+    <main dir="rtl" className="dashboard-page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
 
-        <aside
-          className={`fixed inset-y-0 z-40 w-72 transform border-e transition-transform duration-300 lg:static lg:translate-x-0 ${
-            isFa ? "right-0" : "left-0"
-          } ${
-            sidebarOpen
-              ? "translate-x-0"
-              : isFa
-              ? "translate-x-full"
-              : "-translate-x-full"
-          } ${
-            darkMode
-              ? "border-white/10 bg-[#081525]"
-              : "border-slate-200 bg-white"
-          }`}
-        >
-          <div className="flex h-full flex-col p-5">
-            <div className="mb-8 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-cyan-400/10 p-3">
-                  <Zap className="text-cyan-400" size={25} />
-                </div>
+        .dashboard-page {
+          min-height: 100vh;
+          padding: 24px;
+          background:
+            radial-gradient(circle at 85% 0%, rgba(6,182,212,.14), transparent 28%),
+            radial-gradient(circle at 5% 80%, rgba(37,99,235,.12), transparent 30%),
+            #06111f;
+          color: #f8fafc;
+          font-family: Arial, Tahoma, sans-serif;
+        }
 
-                <div>
-                  <h1 className="text-lg font-black tracking-wide">
-                    Trading AI
-                  </h1>
-                  <p className="text-xs text-slate-400">Smart Trading Platform</p>
-                </div>
+        .dashboard-wrapper {
+          width: min(1480px, 100%);
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: 255px minmax(0, 1fr);
+          gap: 24px;
+          direction: ltr;
+        }
+
+        .sidebar,
+        .main-content {
+          direction: rtl;
+        }
+
+        /* ================= SIDEBAR ================= */
+
+        .sidebar {
+          min-height: calc(100vh - 48px);
+          height: fit-content;
+          position: sticky;
+          top: 24px;
+          padding: 20px;
+          border-radius: 26px;
+          background: rgba(8, 20, 35, .94);
+          border: 1px solid rgba(148,163,184,.12);
+          box-shadow: 0 25px 70px rgba(0,0,0,.25);
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 4px 4px 22px;
+          text-decoration: none;
+          color: white;
+          border-bottom: 1px solid rgba(148,163,184,.1);
+        }
+
+        .brand-icon {
+          width: 46px;
+          height: 46px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 15px;
+          background: linear-gradient(135deg,#06b6d4,#2563eb);
+          font-weight: 900;
+          box-shadow: 0 12px 30px rgba(6,182,212,.22);
+        }
+
+        .brand-title {
+          font-size: 18px;
+          font-weight: 900;
+        }
+
+        .brand-subtitle {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .menu-title {
+          margin: 25px 8px 12px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .menu {
+          display: grid;
+          gap: 7px;
+        }
+
+        .menu a {
+          min-height: 47px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 0 13px;
+          border-radius: 14px;
+          color: #94a3b8;
+          text-decoration: none;
+          font-size: 12px;
+          font-weight: 700;
+          transition: .2s;
+        }
+
+        .menu a:hover {
+          color: white;
+          background: rgba(255,255,255,.045);
+        }
+
+        .menu a.active {
+          color: #67e8f9;
+          background: linear-gradient(
+            135deg,
+            rgba(6,182,212,.13),
+            rgba(37,99,235,.08)
+          );
+          border: 1px solid rgba(34,211,238,.16);
+          box-shadow: 0 8px 25px rgba(6,182,212,.06);
+        }
+
+        .menu-icon {
+          width: 30px;
+          height: 30px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 9px;
+          background: rgba(255,255,255,.035);
+          font-size: 15px;
+        }
+
+        .support-box {
+          margin-top: 25px;
+          padding: 16px;
+          border-radius: 18px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(6,182,212,.12),
+              rgba(37,99,235,.07)
+            );
+          border: 1px solid rgba(34,211,238,.13);
+        }
+
+        .support-box strong {
+          display: block;
+          font-size: 13px;
+        }
+
+        .support-box p {
+          margin: 9px 0 13px;
+          color: #7f91a8;
+          font-size: 10px;
+          line-height: 2;
+        }
+
+        .support-button {
+          display: block;
+          padding: 10px;
+          border-radius: 11px;
+          text-align: center;
+          color: #67e8f9;
+          background: rgba(34,211,238,.07);
+          border: 1px solid rgba(34,211,238,.1);
+          font-size: 10px;
+          font-weight: 700;
+          text-decoration: none;
+        }
+
+        /* ================= MAIN ================= */
+
+        .main-content {
+          min-width: 0;
+        }
+
+        .topbar {
+          min-height: 76px;
+          margin-bottom: 20px;
+          padding: 16px 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 18px;
+          border-radius: 22px;
+          background: rgba(8,20,35,.9);
+          border: 1px solid rgba(148,163,184,.12);
+        }
+
+        .top-title {
+          font-size: 20px;
+          font-weight: 900;
+        }
+
+        .top-subtitle {
+          margin-top: 6px;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .user-area {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+        }
+
+        .status {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 10px 13px;
+          border-radius: 12px;
+          background: rgba(34,197,94,.07);
+          color: #86efac;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #22c55e;
+          box-shadow: 0 0 10px rgba(34,197,94,.7);
+        }
+
+        .user-avatar {
+          width: 44px;
+          height: 44px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 14px;
+          background: linear-gradient(135deg,#0e7490,#1d4ed8);
+          font-weight: 900;
+        }
+
+        /* ================= WELCOME ================= */
+
+        .welcome {
+          position: relative;
+          overflow: hidden;
+          margin-bottom: 20px;
+          padding: 30px;
+          border-radius: 27px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(8,47,73,.88),
+              rgba(8,20,35,.96)
+            );
+          border: 1px solid rgba(34,211,238,.14);
+        }
+
+        .welcome::before {
+          content: "";
+          position: absolute;
+          width: 260px;
+          height: 260px;
+          left: -100px;
+          top: -130px;
+          border-radius: 50%;
+          background: rgba(34,211,238,.08);
+          filter: blur(25px);
+        }
+
+        .welcome-content {
+          position: relative;
+          z-index: 1;
+        }
+
+        .welcome-label {
+          display: inline-flex;
+          padding: 8px 13px;
+          border-radius: 999px;
+          color: #67e8f9;
+          background: rgba(34,211,238,.07);
+          border: 1px solid rgba(34,211,238,.13);
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .welcome h1 {
+          margin: 17px 0 9px;
+          font-size: clamp(26px,3vw,38px);
+          line-height: 1.4;
+        }
+
+        .welcome p {
+          max-width: 760px;
+          margin: 0;
+          color: #94a3b8;
+          font-size: 13px;
+          line-height: 2.1;
+        }
+
+        /* ================= STATS ================= */
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 15px;
+          margin-bottom: 26px;
+        }
+
+        .stat {
+          min-width: 0;
+          padding: 20px;
+          border-radius: 20px;
+          background: rgba(8,20,35,.88);
+          border: 1px solid rgba(148,163,184,.11);
+        }
+
+        .stat-icon {
+          width: 42px;
+          height: 42px;
+          margin-bottom: 16px;
+          display: grid;
+          place-items: center;
+          border-radius: 13px;
+          background: rgba(34,211,238,.08);
+          color: #22d3ee;
+          font-size: 18px;
+        }
+
+        .stat-label {
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .stat-value {
+          margin-top: 7px;
+          font-size: 19px;
+          font-weight: 900;
+          overflow-wrap: anywhere;
+        }
+
+        .green {
+          color: #4ade80;
+        }
+
+        .cyan {
+          color: #22d3ee;
+        }
+
+        .orange {
+          color: #fbbf24;
+        }
+
+        /* ================= SECTION HEADER ================= */
+
+        .section-header {
+          margin: 28px 0 14px;
+          padding: 0 3px;
+        }
+
+        .section-header h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+
+        .section-header p {
+          margin: 6px 0 0;
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.8;
+        }
+
+        /* ================= FEATURE CARDS ================= */
+
+        .quick-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 15px;
+        }
+
+        .quick-card {
+          min-width: 0;
+          min-height: 205px;
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          border-radius: 21px;
+          background: rgba(8,20,35,.88);
+          border: 1px solid rgba(148,163,184,.11);
+          text-decoration: none;
+          color: white;
+          transition: .2s;
+        }
+
+        .quick-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(34,211,238,.28);
+          background: rgba(11,28,47,.96);
+        }
+
+        .quick-icon {
+          width: 46px;
+          height: 46px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 14px;
+          background: rgba(34,211,238,.08);
+          color: #22d3ee;
+          font-size: 20px;
+        }
+
+        .quick-card h3 {
+          margin: 17px 0 8px;
+          font-size: 14px;
+          line-height: 1.6;
+        }
+
+        .quick-card p {
+          margin: 0;
+          color: #718198;
+          font-size: 10px;
+          line-height: 2;
+        }
+
+        .quick-arrow {
+          margin-top: auto;
+          padding-top: 16px;
+          color: #22d3ee;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        /* ================= LOWER PANELS ================= */
+
+        .bottom-grid {
+          display: grid;
+          grid-template-columns: 1.35fr 1fr;
+          gap: 15px;
+          margin-top: 20px;
+        }
+
+        .panel {
+          min-width: 0;
+          padding: 23px;
+          border-radius: 22px;
+          background: rgba(8,20,35,.88);
+          border: 1px solid rgba(148,163,184,.11);
+        }
+
+        .panel-title-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+          margin-bottom: 18px;
+        }
+
+        .panel h2 {
+          margin: 0;
+          font-size: 16px;
+        }
+
+        .panel-description {
+          margin: 6px 0 0;
+          color: #64748b;
+          font-size: 10px;
+          line-height: 1.8;
+        }
+
+        .panel-badge {
+          flex-shrink: 0;
+          padding: 8px 10px;
+          border-radius: 10px;
+          color: #67e8f9;
+          background: rgba(34,211,238,.07);
+          font-size: 9px;
+        }
+
+        .account-grid {
+          display: grid;
+          grid-template-columns: repeat(2,1fr);
+          gap: 11px;
+        }
+
+        .account-item {
+          min-width: 0;
+          padding: 15px;
+          border-radius: 15px;
+          background: rgba(255,255,255,.025);
+          border: 1px solid rgba(255,255,255,.05);
+        }
+
+        .account-item span {
+          display: block;
+          color: #64748b;
+          font-size: 9px;
+        }
+
+        .account-item strong {
+          display: block;
+          margin-top: 8px;
+          color: #e2e8f0;
+          font-size: 12px;
+          overflow-wrap: anywhere;
+        }
+
+        .feature-list {
+          display: grid;
+          gap: 10px;
+        }
+
+        .feature {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 13px;
+          border-radius: 15px;
+          background: rgba(255,255,255,.025);
+          border: 1px solid rgba(255,255,255,.05);
+        }
+
+        .feature-icon {
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: rgba(34,211,238,.07);
+          font-size: 15px;
+        }
+
+        .feature strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .feature span {
+          display: block;
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 9px;
+        }
+
+        /* ================= QUICK INFO ================= */
+
+        .info-section {
+          margin-top: 20px;
+          padding: 22px;
+          border-radius: 22px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(6,182,212,.07),
+              rgba(37,99,235,.04)
+            );
+          border: 1px solid rgba(34,211,238,.1);
+        }
+
+        .info-title {
+          margin: 0 0 16px;
+          font-size: 15px;
+        }
+
+        .info-grid {
+          display: grid;
+          grid-template-columns: repeat(3,1fr);
+          gap: 12px;
+        }
+
+        .info-card {
+          min-width: 0;
+          padding: 15px;
+          border-radius: 15px;
+          background: rgba(5,15,28,.65);
+          border: 1px solid rgba(148,163,184,.08);
+        }
+
+        .info-card strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .info-card span {
+          display: block;
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 9px;
+          line-height: 1.8;
+        }
+
+        /* ================= TABLET ================= */
+
+        @media (max-width: 1150px) {
+          .dashboard-wrapper {
+            grid-template-columns: 220px minmax(0,1fr);
+          }
+
+          .stats,
+          .quick-grid {
+            grid-template-columns: repeat(2,1fr);
+          }
+
+          .bottom-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* ================= MOBILE ================= */
+
+        @media (max-width: 800px) {
+          .dashboard-page {
+            padding: 12px;
+          }
+
+          .dashboard-wrapper {
+            display: block;
+          }
+
+          .sidebar {
+            display: none;
+          }
+
+          .topbar {
+            min-height: auto;
+            padding: 15px;
+            border-radius: 18px;
+          }
+
+          .top-title {
+            font-size: 16px;
+          }
+
+          .top-subtitle {
+            line-height: 1.8;
+          }
+
+          .status {
+            display: none;
+          }
+
+          .user-avatar {
+            width: 40px;
+            height: 40px;
+          }
+
+          .welcome {
+            padding: 23px;
+            border-radius: 21px;
+          }
+
+          .welcome h1 {
+            font-size: 25px;
+          }
+
+          .stats,
+          .quick-grid {
+            grid-template-columns: repeat(2,1fr);
+          }
+
+          .quick-card {
+            min-height: 190px;
+          }
+
+          .info-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .stats,
+          .quick-grid,
+          .account-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .welcome h1 {
+            font-size: 23px;
+          }
+
+          .welcome p {
+            font-size: 11px;
+          }
+
+          .stat {
+            padding: 18px;
+          }
+
+          .quick-card {
+            min-height: 175px;
+          }
+
+          .panel,
+          .info-section {
+            padding: 18px;
+          }
+
+          .panel-title-row {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+        }
+      `}</style>
+
+      <div className="dashboard-wrapper">
+
+        {/* SIDEBAR */}
+
+        <aside className="sidebar">
+
+          <Link href="/" className="brand">
+            <div className="brand-icon">AI</div>
+
+            <div>
+              <div className="brand-title">
+                Trading AI
               </div>
 
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="rounded-lg p-2 hover:bg-white/10 lg:hidden"
-              >
-                <X size={20} />
-              </button>
+              <div className="brand-subtitle">
+                Smart Trading Platform
+              </div>
             </div>
+          </Link>
 
-            <p className="mb-3 px-3 text-xs font-bold uppercase tracking-widest text-slate-500">
-              {isFa ? "منوی اصلی" : "Main Menu"}
+          <div className="menu-title">
+            منوی اصلی
+          </div>
+
+          <nav className="menu">
+
+            <Link href="/dashboard" className="active">
+              <span className="menu-icon">🏠</span>
+              <span>داشبورد</span>
+            </Link>
+
+            <Link href="/market">
+              <span className="menu-icon">📊</span>
+              <span>بازار و نمودار</span>
+            </Link>
+
+            <Link href="/bots">
+              <span className="menu-icon">🤖</span>
+              <span>ربات‌های معاملاتی</span>
+            </Link>
+
+            <Link href="/ai-analysis">
+              <span className="menu-icon">🧠</span>
+              <span>تحلیل هوشمند AI</span>
+            </Link>
+
+            <Link href="/news">
+              <span className="menu-icon">📰</span>
+              <span>اخبار بازار</span>
+            </Link>
+
+            <Link href="/broker">
+              <span className="menu-icon">🔗</span>
+              <span>اتصال بروکر</span>
+            </Link>
+
+            <Link href="/economic">
+              <span className="menu-icon">🌍</span>
+              <span>تقویم اقتصادی</span>
+            </Link>
+
+            <Link href="/courses">
+              <span className="menu-icon">🎓</span>
+              <span>آموزش</span>
+            </Link>
+
+            <Link href="/payments">
+              <span className="menu-icon">💳</span>
+              <span>کیف پول و پرداخت</span>
+            </Link>
+
+            <Link href="/support">
+              <span className="menu-icon">🎧</span>
+              <span>پشتیبانی</span>
+            </Link>
+
+          </nav>
+
+          <div className="support-box">
+
+            <strong>
+              🎧 مرکز پشتیبانی
+            </strong>
+
+            <p>
+              برای سوالات و مشکلات خود می‌توانید
+              از مرکز پشتیبانی Trading AI استفاده کنید.
             </p>
 
-            <nav className="space-y-2">
-              {menuItems.map((item) => {
-                const Icon = item.icon;
-                const selected = activePage === item.id;
+            <Link href="/support" className="support-button">
+              ورود به پشتیبانی
+            </Link>
 
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => navigateTo(item.path)}
-                    className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                      selected
-                        ? "bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/10"
-                        : darkMode
-                        ? "text-slate-300 hover:bg-white/5 hover:text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                    }`}
-                  >
-                    <Icon size={19} />
-                    <span>{item.label}</span>
-                    {selected && (
-                      <ChevronLeft
-                        className={isFa ? "mr-auto" : "ml-auto"}
-                        size={16}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="mt-auto space-y-2">
-              <button
-                onClick={() => navigateTo("/support")}
-                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm ${
-                  darkMode
-                    ? "text-slate-300 hover:bg-white/5"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <CircleHelp size={19} />
-                {t.support}
-              </button>
-
-              <button
-                onClick={() => navigateTo("/settings")}
-                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm ${
-                  darkMode
-                    ? "text-slate-300 hover:bg-white/5"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <Settings size={19} />
-                {t.settings}
-              </button>
-
-              <button
-                onClick={logout}
-                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm text-rose-400 hover:bg-rose-400/10"
-              >
-                <LogOut size={19} />
-                {t.logout}
-              </button>
-
-              <div
-                className={`mt-4 rounded-2xl border p-4 ${
-                  darkMode
-                    ? "border-white/10 bg-white/[0.03]"
-                    : "border-slate-200 bg-slate-50"
-                }`}
-              >
-                <div className="mb-2 flex items-center gap-2">
-                  <ShieldCheck className="text-emerald-400" size={18} />
-                  <span className="text-xs font-bold">
-                    {isFa ? "امنیت حساب" : "Account Security"}
-                  </span>
-                </div>
-                <p className="text-xs leading-6 text-slate-400">
-                  {isFa
-                    ? "اطلاعات حساب از طریق نشست ورود فعلی مدیریت می‌شود."
-                    : "Your account is managed through the current login session."}
-                </p>
-              </div>
-            </div>
           </div>
+
         </aside>
 
-        <section className="min-w-0 flex-1">
-          <header
-            className={`sticky top-0 z-20 border-b backdrop-blur-xl ${
-              darkMode
-                ? "border-white/10 bg-[#050d1a]/80"
-                : "border-slate-200 bg-white/80"
-            }`}
-          >
-            <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-10">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="rounded-xl p-2 hover:bg-white/10 lg:hidden"
-                >
-                  <Menu size={22} />
-                </button>
+        {/* MAIN */}
 
-                <div className="hidden items-center gap-2 rounded-xl border border-white/10 px-3 py-2 sm:flex">
-                  <Search size={17} className="text-slate-400" />
-                  <input
-                    placeholder={t.search}
-                    className={`w-36 bg-transparent text-sm outline-none ${
-                      darkMode ? "text-white" : "text-slate-900"
-                    }`}
-                  />
-                </div>
+        <section className="main-content">
+
+          {/* TOPBAR */}
+
+          <header className="topbar">
+
+            <div>
+              <div className="top-title">
+                داشبورد Trading AI
               </div>
 
-              <div className="flex items-center gap-2 sm:gap-4">
-                <button
-                  onClick={() => setLanguage(isFa ? "en" : "fa")}
-                  className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-bold"
-                >
-                  <Globe size={17} />
-                  {isFa ? "EN" : "FA"}
-                </button>
-
-                <button
-                  onClick={() => setDarkMode(!darkMode)}
-                  className="rounded-xl border border-white/10 p-2.5"
-                  aria-label="Toggle theme"
-                >
-                  {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
-
-                <button
-                  className="relative rounded-xl border border-white/10 p-2.5"
-                  aria-label="Notifications"
-                >
-                  <Bell size={18} />
-                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-cyan-400" />
-                </button>
-
-                <div className="hidden items-center gap-2 sm:flex">
-                  <div className="rounded-xl bg-cyan-400/10 p-2">
-                    <UserRound className="text-cyan-400" size={20} />
-                  </div>
-                  <div className="text-end">
-                    <p className="text-xs font-bold">
-                      {isFa ? "حساب کاربری" : "User Account"}
-                    </p>
-                    <p className="text-[10px] text-slate-400">FREE PLAN</p>
-                  </div>
-                </div>
+              <div className="top-subtitle">
+                مرکز مدیریت حساب و ابزارهای معاملاتی
               </div>
             </div>
+
+            <div className="user-area">
+
+              <div className="status">
+                <span className="status-dot" />
+                سیستم فعال است
+              </div>
+
+              <div className="user-avatar">
+                {user.name?.charAt(0)?.toUpperCase() || "U"}
+              </div>
+
+            </div>
+
           </header>
 
-          <div className="p-4 sm:p-6 lg:p-10">
-            <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-              <div>
-                <div className="mb-3 flex items-center gap-2 text-xs text-cyan-400">
-                  <Activity size={15} />
-                  <span>{t.realData}</span>
-                </div>
+          {/* WELCOME */}
 
-                <h2 className="text-3xl font-black tracking-tight sm:text-4xl">
-                  {t.welcome} 👋
-                </h2>
+          <section className="welcome">
 
-                <p className="mt-3 text-sm text-slate-400">
-                  {t.overviewText}
-                </p>
-              </div>
+            <div className="welcome-content">
 
-              <button
-                onClick={loadBots}
-                disabled={loading}
-                className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-bold hover:bg-white/5 disabled:opacity-50"
-              >
-                <RefreshCw
-                  size={17}
-                  className={loading ? "animate-spin" : ""}
-                />
-                {t.refresh}
-              </button>
-            </div>
-
-            <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                title={t.activeBots}
-                value={loading ? "—" : String(activeBots)}
-                icon={<Bot size={22} />}
-                iconClass="text-cyan-400"
-                darkMode={darkMode}
-              />
-
-              <StatCard
-                title={t.totalBots}
-                value={loading ? "—" : String(bots.length)}
-                icon={<Activity size={22} />}
-                iconClass="text-violet-400"
-                darkMode={darkMode}
-              />
-
-              <StatCard
-                title={t.telegramStatus}
-                value={t.disconnected}
-                icon={<Bell size={22} />}
-                iconClass="text-amber-400"
-                darkMode={darkMode}
-                small
-              />
-
-              <StatCard
-                title={t.marketStatus}
-                value={t.online}
-                icon={<LineChart size={22} />}
-                iconClass="text-emerald-400"
-                darkMode={darkMode}
-                small
-              />
-            </div>
-
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-xl font-black">{t.quickAccess}</h3>
-              <span className="text-xs text-slate-500">
-                {isFa ? "دسترسی سریع به بخش‌ها" : "Navigate your workspace"}
+              <span className="welcome-label">
+                ✦ حساب شما فعال است
               </span>
+
+              <h1>
+                سلام {user.name} 👋
+              </h1>
+
+              <p>
+                به پنل حرفه‌ای Trading AI خوش آمدید.
+                از اینجا می‌توانید بازار، ربات‌ها،
+                تحلیل هوشمند، اخبار و سایر ابزارهای
+                معاملاتی خود را مدیریت کنید.
+              </p>
+
             </div>
 
-            <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {quickCards.map((card) => {
-                const Icon = card.icon;
+          </section>
 
-                return (
-                  <button
-                    key={card.title}
-                    onClick={() => navigateTo(card.href)}
-                    className={`group rounded-3xl border p-5 text-start transition hover:-translate-y-1 ${
-                      darkMode
-                        ? "border-white/10 bg-[#0a1a2d] hover:border-cyan-400/40"
-                        : "border-slate-200 bg-white hover:border-cyan-400"
-                    }`}
-                  >
-                    <div className="mb-6 flex items-center justify-between">
-                      <div
-                        className={`rounded-2xl bg-white/5 p-3 ${card.iconClass}`}
-                      >
-                        <Icon size={24} />
-                      </div>
-                      {isFa ? (
-                        <ArrowLeft
-                          size={17}
-                          className="text-slate-500 transition group-hover:text-cyan-400"
-                        />
-                      ) : (
-                        <ArrowRight
-                          size={17}
-                          className="text-slate-500 transition group-hover:text-cyan-400"
-                        />
-                      )}
-                    </div>
+          {/* STATS */}
 
-                    <h4 className="mb-2 font-bold">{card.title}</h4>
-                    <p className="text-xs leading-6 text-slate-400">
-                      {card.description}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+          <section className="stats">
 
-            <div className="grid gap-6 xl:grid-cols-3">
-              <div
-                className={`rounded-3xl border p-6 xl:col-span-2 ${
-                  darkMode
-                    ? "border-white/10 bg-[#0a1a2d]"
-                    : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-black">{t.bots}</h3>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {isFa
-                        ? "اطلاعات دریافت‌شده از API ربات‌ها"
-                        : "Information loaded from the bots API"}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() => navigateTo("/bots")}
-                    className="rounded-xl bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-400"
-                  >
-                    {t.view}
-                  </button>
-                </div>
-
-                {error && (
-                  <div className="mb-4 rounded-2xl bg-rose-400/10 p-4 text-sm text-rose-400">
-                    {error}
-                  </div>
-                )}
-
-                {loading ? (
-                  <div className="flex items-center justify-center py-12 text-slate-400">
-                    <RefreshCw className="me-2 animate-spin" size={18} />
-                    Loading...
-                  </div>
-                ) : bots.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 py-10 text-center">
-                    <Bot className="mx-auto mb-3 text-slate-500" size={35} />
-                    <p className="text-sm text-slate-400">{t.noBots}</p>
-                    <button
-                      onClick={() => navigateTo("/bots")}
-                      className="mt-4 inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 text-xs font-bold text-slate-950"
-                    >
-                      <Plus size={16} />
-                      {t.createBot}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {bots.slice(0, 5).map((bot, index) => {
-                      const enabled =
-                        bot.isActive === true || bot.active === true;
-
-                      return (
-                        <div
-                          key={String(bot.id ?? index)}
-                          className={`flex items-center justify-between rounded-2xl border p-4 ${
-                            darkMode
-                              ? "border-white/5 bg-white/[0.025]"
-                              : "border-slate-100 bg-slate-50"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="rounded-xl bg-cyan-400/10 p-3">
-                              <Bot className="text-cyan-400" size={20} />
-                            </div>
-
-                            <div>
-                              <p className="text-sm font-bold">
-                                {bot.name || `Bot ${index + 1}`}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-400">
-                                {bot.symbol || bot.strategy || "Trading Bot"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <span
-                            className={`rounded-full px-3 py-1 text-[10px] font-bold ${
-                              enabled
-                                ? "bg-emerald-400/10 text-emerald-400"
-                                : "bg-slate-400/10 text-slate-400"
-                            }`}
-                          >
-                            {enabled
-                              ? isFa
-                                ? "فعال"
-                                : "Active"
-                              : isFa
-                              ? "غیرفعال"
-                              : "Inactive"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div
-                className={`rounded-3xl border p-6 ${
-                  darkMode
-                    ? "border-white/10 bg-[#0a1a2d]"
-                    : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="mb-6 flex items-center gap-3">
-                  <div className="rounded-xl bg-emerald-400/10 p-3">
-                    <ShieldCheck className="text-emerald-400" size={21} />
-                  </div>
-                  <div>
-                    <h3 className="font-black">{t.systemStatus}</h3>
-                    <p className="text-xs text-slate-400">
-                      {t.systemStatusText}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <StatusRow
-                    label={isFa ? "رابط کاربری" : "User Interface"}
-                    status={isFa ? "فعال" : "Operational"}
-                    color="bg-emerald-400"
-                  />
-
-                  <StatusRow
-                    label={isFa ? "API ربات‌ها" : "Bots API"}
-                    status={loading ? "..." : "Connected"}
-                    color="bg-cyan-400"
-                  />
-
-                  <StatusRow
-                    label={isFa ? "اتصال تلگرام" : "Telegram API"}
-                    status={isFa ? "نیازمند بررسی" : "Needs verification"}
-                    color="bg-amber-400"
-                  />
-
-                  <StatusRow
-                    label={isFa ? "داده بازار" : "Market Data"}
-                    status={isFa ? "نیازمند اتصال" : "Needs integration"}
-                    color="bg-amber-400"
-                  />
-                </div>
-
-                <button
-                  onClick={() => navigateTo("/settings")}
-                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-xs font-bold hover:bg-white/5"
-                >
-                  <Settings size={16} />
-                  {t.settings}
-                </button>
+            <div className="stat">
+              <div className="stat-icon">✓</div>
+              <div className="stat-label">وضعیت حساب</div>
+              <div className="stat-value green">
+                فعال
               </div>
             </div>
+
+            <div className="stat">
+              <div className="stat-icon">◆</div>
+              <div className="stat-label">پلن فعلی</div>
+              <div className="stat-value cyan">
+                {user.plan}
+              </div>
+            </div>
+
+            <div className="stat">
+              <div className="stat-icon">🤖</div>
+              <div className="stat-label">ربات‌های فعال</div>
+              <div className="stat-value">
+                0
+              </div>
+            </div>
+
+            <div className="stat">
+              <div className="stat-icon">🔗</div>
+              <div className="stat-label">اتصال بروکر</div>
+              <div className="stat-value orange">
+                متصل نیست
+              </div>
+            </div>
+
+          </section>
+
+          {/* QUICK ACCESS */}
+
+          <div className="section-header">
+
+            <h2>
+              دسترسی سریع
+            </h2>
+
+            <p>
+              مهم‌ترین بخش‌های Trading AI در کارت‌های جداگانه
+            </p>
+
           </div>
+
+          <section className="quick-grid">
+
+            <Link href="/market" className="quick-card">
+
+              <div className="quick-icon">
+                📊
+              </div>
+
+              <h3>
+                بازار و نمودار
+              </h3>
+
+              <p>
+                مشاهده بازارها، قیمت‌ها و نمودارهای معاملاتی
+              </p>
+
+              <div className="quick-arrow">
+                ورود به بازار ←
+              </div>
+
+            </Link>
+
+            <Link href="/bots" className="quick-card">
+
+              <div className="quick-icon">
+                🤖
+              </div>
+
+              <h3>
+                ربات‌های معاملاتی
+              </h3>
+
+              <p>
+                ساخت و مدیریت ربات‌های هوشمند معاملاتی
+              </p>
+
+              <div className="quick-arrow">
+                مدیریت ربات‌ها ←
+              </div>
+
+            </Link>
+
+            <Link href="/ai-analysis" className="quick-card">
+
+              <div className="quick-icon">
+                🧠
+              </div>
+
+              <h3>
+                تحلیل هوشمند AI
+              </h3>
+
+              <p>
+                بررسی بازار با ابزارهای تحلیل هوش مصنوعی
+              </p>
+
+              <div className="quick-arrow">
+                مشاهده تحلیل ←
+              </div>
+
+            </Link>
+
+            <Link href="/news" className="quick-card">
+
+              <div className="quick-icon">
+                📰
+              </div>
+
+              <h3>
+                اخبار بازار
+              </h3>
+
+              <p>
+                مشاهده اخبار مهم و اطلاعات مرتبط با بازار
+              </p>
+
+              <div className="quick-arrow">
+                مشاهده اخبار ←
+              </div>
+
+            </Link>
+
+          </section>
+
+          {/* ACCOUNT + DEVELOPMENT */}
+
+          <section className="bottom-grid">
+
+            <div className="panel">
+
+              <div className="panel-title-row">
+
+                <div>
+                  <h2>
+                    اطلاعات حساب
+                  </h2>
+
+                  <p className="panel-description">
+                    مشخصات حساب کاربری شما
+                  </p>
+                </div>
+
+                <span className="panel-badge">
+                  حساب فعال
+                </span>
+
+              </div>
+
+              <div className="account-grid">
+
+                <div className="account-item">
+                  <span>نام کاربر</span>
+                  <strong>{user.name}</strong>
+                </div>
+
+                <div className="account-item">
+                  <span>ایمیل</span>
+                  <strong>{user.email}</strong>
+                </div>
+
+                <div className="account-item">
+                  <span>نوع حساب</span>
+                  <strong>{user.plan}</strong>
+                </div>
+
+                <div className="account-item">
+                  <span>سطح دسترسی</span>
+                  <strong>{user.role}</strong>
+                </div>
+
+              </div>
+
+            </div>
+
+            <div className="panel">
+
+              <div className="panel-title-row">
+
+                <div>
+                  <h2>
+                    امکانات پلتفرم
+                  </h2>
+
+                  <p className="panel-description">
+                    وضعیت قابلیت‌های Trading AI
+                  </p>
+                </div>
+
+              </div>
+
+              <div className="feature-list">
+
+                <div className="feature">
+                  <div className="feature-icon">
+                    📈
+                  </div>
+
+                  <div>
+                    <strong>
+                      چارت بازار
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
+                  </div>
+                </div>
+
+                <div className="feature">
+                  <div className="feature-icon">
+                    🤖
+                  </div>
+
+                  <div>
+                    <strong>
+                      ربات خودکار
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
+                  </div>
+                </div>
+
+                <div className="feature">
+                  <div className="feature-icon">
+                    🔗
+                  </div>
+
+                  <div>
+                    <strong>
+                      اتصال بروکر
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
+                  </div>
+                </div>
+
+                <div className="feature">
+                  <div className="feature-icon">
+                    🧠
+                  </div>
+
+                  <div>
+                    <strong>
+                      تحلیل پیشرفته AI
+                    </strong>
+
+                    <span>
+                      آماده توسعه
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+          </section>
+
+          {/* PLATFORM INFO */}
+
+          <section className="info-section">
+
+            <h2 className="info-title">
+              راهنمای سریع
+            </h2>
+
+            <div className="info-grid">
+
+              <Link href="/bots" className="info-card">
+                <strong>
+                  🤖 مدیریت ربات‌ها
+                </strong>
+
+                <span>
+                  مشاهده و مدیریت ربات‌های معاملاتی
+                </span>
+              </Link>
+
+              <Link href="/broker" className="info-card">
+                <strong>
+                  🔗 اتصال بروکر
+                </strong>
+
+                <span>
+                  مدیریت اتصال حساب معاملاتی
+                </span>
+              </Link>
+
+              <Link href="/support" className="info-card">
+                <strong>
+                  🎧 پشتیبانی
+                </strong>
+
+                <span>
+                  دریافت راهنمایی و ارسال درخواست
+                </span>
+              </Link>
+
+            </div>
+
+          </section>
+
         </section>
+
       </div>
     </main>
-  );
-}
-
-function StatCard({
-  title,
-  value,
-  icon,
-  iconClass,
-  darkMode,
-  small = false,
-}: {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  iconClass: string;
-  darkMode: boolean;
-  small?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-3xl border p-5 ${
-        darkMode
-          ? "border-white/10 bg-[#0a1a2d]"
-          : "border-slate-200 bg-white"
-      }`}
-    >
-      <div className="mb-6 flex items-center justify-between">
-        <p className="text-xs font-semibold text-slate-400">{title}</p>
-        <div className={`rounded-xl bg-white/5 p-3 ${iconClass}`}>{icon}</div>
-      </div>
-
-      <p className={small ? "text-xl font-black" : "text-3xl font-black"}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function StatusRow({
-  label,
-  status,
-  color,
-}: {
-  label: string;
-  status: string;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${color}`} />
-        <span className="text-xs text-slate-400">{label}</span>
-      </div>
-      <span className="text-[10px] font-bold text-slate-300">{status}</span>
-    </div>
   );
 }
