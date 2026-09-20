@@ -21,6 +21,9 @@ model User {
   tradingSignals TradingSignal[]
   trades         Trade[]
 
+  newsSetting NewsSetting?
+  newsAlerts  NewsAlert[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -70,47 +73,11 @@ model TradingBot {
   timeframe  String?
   marketType String?
 
-  // =========================
-  // Main Bot State
-  // =========================
-
   isActive Boolean @default(false)
-
-  // MANUAL / AUTO
-  executionMode String @default("MANUAL")
-
-  // User must explicitly approve trading
-  tradingApproval Boolean @default(false)
-
-  // READY / ACTIVE / PAUSED / STOPPED
-  botStatus String @default("READY")
-
-  stoppedReason String?
-
-  lastStateChangeAt DateTime?
-
-  // =========================
-  // Automatic Stop Rules
-  // =========================
-
-  autoStopAfterWins   Int?
-  autoStopAfterLosses Int?
-  autoStopAfterTrades Int?
-
-  // Stop opening new trades before important news
-  stopBeforeNewsMinutes Int @default(15)
-
-  // =========================
-  // Trade Size / Risk
-  // =========================
 
   lotMode     String @default("FIXED")
   lotSize     Float  @default(0.01)
-  riskPercent Float  @default(1)
-
-  // =========================
-  // TP / SL
-  // =========================
+  riskPercent Float @default(1)
 
   takeProfit Float?
   stopLoss   Float?
@@ -122,18 +89,10 @@ model TradingBot {
   breakEven        Boolean @default(false)
   breakEvenTrigger Float?
 
-  // =========================
-  // Daily Risk Limits
-  // =========================
-
   dailyProfitStop    Float?
   dailyLossLimit     Float?
-  maxDailyStopLosses Int @default(3)
-  maxOpenTrades      Int @default(1)
-
-  // =========================
-  // Execution Controls
-  // =========================
+  maxDailyStopLosses Int   @default(3)
+  maxOpenTrades      Int   @default(1)
 
   buyEnabled  Boolean @default(true)
   sellEnabled Boolean @default(true)
@@ -144,28 +103,12 @@ model TradingBot {
   sessionFilter Boolean @default(true)
   newsFilter    Boolean @default(true)
 
-  // =========================
-  // Analysis Controls
-  // =========================
-
   signalThreshold  Int @default(80)
   minConfirmations Int @default(5)
 
-  // =========================
-  // Telegram
-  // =========================
-
   telegramEnabled Boolean @default(false)
 
-  // =========================
-  // Advanced Configuration
-  // =========================
-
   analysisConfig Json?
-
-  // =========================
-  // Relations
-  // =========================
 
   user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   signals TradingSignal[]
@@ -177,8 +120,6 @@ model TradingBot {
   @@index([userId])
   @@index([category])
   @@index([isActive])
-  @@index([botStatus])
-  @@index([executionMode])
 }
 
 model MarketCandle {
@@ -345,4 +286,122 @@ model Trade {
   @@index([symbol])
   @@index([status])
   @@index([openedAt])
+}
+
+model EconomicEvent {
+  id String @id @default(cuid())
+
+  externalId String? @unique
+
+  country  String?
+  currency String?
+
+  event    String
+  category String?
+
+  importance Int @default(1)
+
+  eventTime DateTime
+
+  previous String?
+  forecast String?
+  actual   String?
+
+  unit String?
+
+  status String @default("SCHEDULED")
+
+  source    String  @default("TRADING_ECONOMICS")
+  sourceUrl String?
+
+  rawData Json?
+
+  alerts NewsAlert[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventTime])
+  @@index([importance])
+  @@index([currency])
+  @@index([status])
+  @@index([country])
+}
+
+model NewsSetting {
+  id String @id @default(cuid())
+
+  userId String @unique
+
+  highImpact   Boolean @default(true)
+  mediumImpact Boolean @default(true)
+  lowImpact    Boolean @default(false)
+
+  currencies Json?
+
+  alertMinutes Json?
+
+  telegramEnabled Boolean @default(false)
+  newsFilterEnabled Boolean @default(true)
+  marketRiskEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NewsAlert {
+  id String @id @default(cuid())
+
+  userId  String
+  eventId String
+
+  alertType String
+
+  scheduledFor DateTime
+
+  status String @default("PENDING")
+
+  sentAt DateTime?
+
+  errorMessage String?
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event EconomicEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  deliveries NewsDelivery[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, eventId, alertType])
+  @@index([userId])
+  @@index([eventId])
+  @@index([scheduledFor])
+  @@index([status])
+}
+
+model NewsDelivery {
+  id String @id @default(cuid())
+
+  alertId String
+
+  channel     String
+  destination String
+
+  status String @default("PENDING")
+
+  messageId String?
+
+  errorMessage String?
+
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+
+  alert NewsAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([alertId])
+  @@index([channel])
+  @@index([status])
 }
