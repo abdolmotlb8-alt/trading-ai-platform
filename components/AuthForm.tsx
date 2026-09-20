@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import {
+  FormEvent,
+  useState,
+} from "react";
 
 type AuthMode = "login" | "register";
 
@@ -14,23 +16,24 @@ type UserData = {
 };
 
 type ApiResponse = {
+  success?: boolean;
   message?: string;
   user?: UserData;
 };
 
 export default function AuthForm() {
-  const router = useRouter();
-
   const [mode, setMode] = useState<AuthMode>("login");
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<
     "success" | "error" | ""
   >("");
+
   const [loading, setLoading] = useState(false);
 
   function clearMessage() {
@@ -39,25 +42,42 @@ export default function AuthForm() {
   }
 
   function changeMode(nextMode: AuthMode) {
+    if (loading) return;
+
     setMode(nextMode);
     setName("");
     setPassword("");
     clearMessage();
   }
 
-  function validateForm() {
+  function showError(errorMessage: string) {
+    setMessage(errorMessage);
+    setMessageType("error");
+  }
+
+  function showSuccess(successMessage: string) {
+    setMessage(successMessage);
+    setMessageType("success");
+  }
+
+  function validateForm(): string {
+    const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
 
-    if (mode === "register" && name.trim().length < 2) {
+    if (mode === "register" && cleanName.length < 2) {
       return "لطفاً نام معتبر وارد کنید.";
     }
 
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      return "لطفاً ایمیل معتبر وارد کنید.";
+    if (!cleanEmail) {
+      return "لطفاً ایمیل خود را وارد کنید.";
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return "فرمت ایمیل صحیح نیست.";
     }
 
     if (!password) {
-      return "رمز عبور را وارد کنید.";
+      return "لطفاً رمز عبور را وارد کنید.";
     }
 
     if (mode === "register" && password.length < 8) {
@@ -67,7 +87,9 @@ export default function AuthForm() {
     return "";
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
 
     if (loading) return;
@@ -77,87 +99,106 @@ export default function AuthForm() {
     const validationError = validateForm();
 
     if (validationError) {
-      setMessage(validationError);
-      setMessageType("error");
+      showError(validationError);
       return;
     }
 
     setLoading(true);
 
-    const url =
+    const cleanEmail = email.trim().toLowerCase();
+
+    const endpoint =
       mode === "register"
         ? "/api/register"
         : "/api/auth/login";
 
-    const body =
+    const requestBody =
       mode === "register"
         ? {
             name: name.trim(),
-            email: email.trim().toLowerCase(),
+            email: cleanEmail,
             password,
           }
         : {
-            email: email.trim().toLowerCase(),
+            email: cleanEmail,
             password,
-            rememberMe,
           };
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         credentials: "include",
-        body: JSON.stringify(body),
+        cache: "no-store",
+        body: JSON.stringify(requestBody),
       });
 
-      const contentType = response.headers.get("content-type");
+      const contentType =
+        response.headers.get("content-type") || "";
 
       let data: ApiResponse = {};
 
-      if (contentType?.includes("application/json")) {
-        data = await response.json();
+      if (contentType.includes("application/json")) {
+        try {
+          data = (await response.json()) as ApiResponse;
+        } catch {
+          showError("پاسخ سرور قابل پردازش نیست.");
+          return;
+        }
+      } else {
+        showError(
+          `پاسخ نامعتبر از سرور دریافت شد. کد: ${response.status}`
+        );
+        return;
       }
 
-      if (!response.ok) {
-        setMessage(
+      if (!response.ok || data.success === false) {
+        showError(
           data.message ||
-            `عملیات انجام نشد. کد خطا: ${response.status}`
+            `عملیات ناموفق بود. کد خطا: ${response.status}`
         );
-        setMessageType("error");
         return;
       }
 
       if (mode === "register") {
-        setMessage(
-          "ثبت‌نام با موفقیت انجام شد. اکنون وارد حساب خود شوید."
+        showSuccess(
+          data.message ||
+            "ثبت‌نام موفق بود. اکنون وارد حساب خود شوید."
         );
-        setMessageType("success");
+
         setMode("login");
+        setName("");
         setPassword("");
         return;
       }
 
-      if (response.ok && data.user) {
-        setMessage("ورود با موفقیت انجام شد.");
-        setMessageType("success");
+      if (mode === "login") {
+        if (!data.success || !data.user) {
+          showError(
+            "ورود تأیید نشد؛ اطلاعات پاسخ سرور ناقص است."
+          );
+          return;
+        }
 
-        router.replace("/dashboard");
-        router.refresh();
-        return;
+        showSuccess("ورود موفق بود. در حال انتقال...");
+
+        /*
+         * انتقال کامل صفحه باعث می‌شود:
+         * 1. کوکی Session توسط مرورگر ذخیره شود.
+         * 2. صفحه Dashboard از سمت سرور دوباره درخواست شود.
+         * 3. وضعیت احراز هویت تازه خوانده شود.
+         */
+        window.location.assign("/dashboard");
       }
-
-      setMessage("پاسخ نامعتبر از سرور دریافت شد.");
-      setMessageType("error");
     } catch (error) {
-      console.error("AUTH FORM ERROR:", error);
+      console.error("AUTH_FORM_ERROR:", error);
 
-      setMessage(
-        "ارتباط با سرور برقرار نشد. وضعیت سرور و دیتابیس را بررسی کنید."
+      showError(
+        "ارتباط با سرور برقرار نشد. اتصال اینترنت و وضعیت سرور را بررسی کنید."
       );
-      setMessageType("error");
     } finally {
       setLoading(false);
     }
@@ -179,7 +220,7 @@ export default function AuthForm() {
           background:
             linear-gradient(
               145deg,
-              rgba(8, 30, 52, .96),
+              rgba(8, 30, 52, .97),
               rgba(3, 15, 30, .99)
             );
           border: 1px solid rgba(34, 211, 238, .18);
@@ -214,6 +255,14 @@ export default function AuthForm() {
           color: #fff;
           background: linear-gradient(135deg, #06b6d4, #2563eb);
           box-shadow: 0 8px 22px rgba(6, 182, 212, .18);
+        }
+
+        .auth-tab:disabled,
+        .submit-button:disabled,
+        .password-toggle:disabled,
+        .switch-button:disabled {
+          cursor: not-allowed;
+          opacity: .6;
         }
 
         .form-header {
@@ -289,6 +338,7 @@ export default function AuthForm() {
           font-size: 12px;
           direction: rtl;
           transition: .2s;
+          box-sizing: border-box;
         }
 
         .auth-input:focus {
@@ -299,6 +349,11 @@ export default function AuthForm() {
 
         .auth-input::placeholder {
           color: #475569;
+        }
+
+        .auth-input:disabled {
+          opacity: .65;
+          cursor: not-allowed;
         }
 
         .password-toggle {
@@ -312,37 +367,6 @@ export default function AuthForm() {
           background: transparent;
           cursor: pointer;
           font-size: 15px;
-        }
-
-        .form-options {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .remember-label {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          color: #94a3b8;
-          font-size: 10px;
-          cursor: pointer;
-        }
-
-        .remember-label input {
-          width: 14px;
-          height: 14px;
-          accent-color: #06b6d4;
-          cursor: pointer;
-        }
-
-        .forgot-link {
-          color: #22d3ee;
-          font-size: 10px;
-          text-decoration: none;
-          opacity: .65;
-          cursor: not-allowed;
         }
 
         .submit-button {
@@ -366,11 +390,6 @@ export default function AuthForm() {
           box-shadow: 0 18px 38px rgba(34, 211, 238, .22);
         }
 
-        .submit-button:disabled {
-          opacity: .6;
-          cursor: wait;
-        }
-
         .message {
           min-height: 20px;
           margin: 0;
@@ -392,9 +411,10 @@ export default function AuthForm() {
           align-items: center;
           justify-content: center;
           gap: 7px;
-          margin-top: 8px;
+          margin-top: 20px;
           color: #64748b;
           font-size: 9px;
+          text-align: center;
         }
 
         .switch-box {
@@ -481,7 +501,11 @@ export default function AuthForm() {
           </p>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form
+          className="auth-form"
+          onSubmit={handleSubmit}
+          noValidate
+        >
           {mode === "register" && (
             <div className="field">
               <label htmlFor="auth-name">نام کاربر</label>
@@ -496,7 +520,9 @@ export default function AuthForm() {
                   name="name"
                   placeholder="نام خود را وارد کنید"
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) =>
+                    setName(event.target.value)
+                  }
                   autoComplete="name"
                   disabled={loading}
                   required
@@ -518,7 +544,9 @@ export default function AuthForm() {
                 name="email"
                 placeholder="example@email.com"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
                 autoComplete="email"
                 disabled={loading}
                 required
@@ -540,7 +568,9 @@ export default function AuthForm() {
                 name="password"
                 placeholder="رمز عبور خود را وارد کنید"
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) =>
+                  setPassword(event.target.value)
+                }
                 autoComplete={
                   mode === "login"
                     ? "current-password"
@@ -554,7 +584,9 @@ export default function AuthForm() {
               <button
                 type="button"
                 className="password-toggle"
-                onClick={() => setShowPassword((value) => !value)}
+                onClick={() =>
+                  setShowPassword((value) => !value)
+                }
                 aria-label={
                   showPassword
                     ? "مخفی کردن رمز عبور"
@@ -566,27 +598,6 @@ export default function AuthForm() {
               </button>
             </div>
           </div>
-
-          {mode === "login" && (
-            <div className="form-options">
-              <label className="remember-label">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(event) =>
-                    setRememberMe(event.target.checked)
-                  }
-                  disabled={loading}
-                />
-
-                مرا به خاطر بسپار
-              </label>
-
-              <span className="forgot-link" title="به‌زودی فعال می‌شود">
-                فراموشی رمز عبور
-              </span>
-            </div>
-          )}
 
           <button
             type="submit"
@@ -624,7 +635,9 @@ export default function AuthForm() {
             type="button"
             className="switch-button"
             onClick={() =>
-              changeMode(mode === "login" ? "register" : "login")
+              changeMode(
+                mode === "login" ? "register" : "login"
+              )
             }
             disabled={loading}
           >
