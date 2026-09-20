@@ -1,320 +1,252 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+
+type AuthMode = "login" | "register";
+
+type UserData = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  plan: string;
+};
+
+type ApiResponse = {
+  message?: string;
+  user?: UserData;
+};
 
 export default function AuthForm() {
   const router = useRouter();
 
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [message, setMessage] = useState("");
-  const [user, setUser] = useState<any>(null);
+  const [messageType, setMessageType] = useState<
+    "success" | "error" | ""
+  >("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit() {
+  function clearMessage() {
+    setMessage("");
+    setMessageType("");
+  }
+
+  function changeMode(nextMode: AuthMode) {
+    setMode(nextMode);
+    setName("");
+    setPassword("");
+    clearMessage();
+  }
+
+  function validateForm() {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (mode === "register" && name.trim().length < 2) {
+      return "لطفاً نام معتبر وارد کنید.";
+    }
+
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      return "لطفاً ایمیل معتبر وارد کنید.";
+    }
+
+    if (!password) {
+      return "رمز عبور را وارد کنید.";
+    }
+
+    if (mode === "register" && password.length < 8) {
+      return "رمز عبور باید حداقل ۸ کاراکتر باشد.";
+    }
+
+    return "";
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (loading) return;
+
+    clearMessage();
+
+    const validationError = validateForm();
+
+    if (validationError) {
+      setMessage(validationError);
+      setMessageType("error");
+      return;
+    }
+
+    setLoading(true);
+
+    const url =
+      mode === "register"
+        ? "/api/register"
+        : "/api/auth/login";
+
+    const body =
+      mode === "register"
+        ? {
+            name: name.trim(),
+            email: email.trim().toLowerCase(),
+            password,
+          }
+        : {
+            email: email.trim().toLowerCase(),
+            password,
+            rememberMe,
+          };
+
     try {
-      setLoading(true);
-      setMessage("");
-
-      const url =
-        mode === "register"
-          ? "/api/register"
-          : "/api/auth/login";
-
-      const body =
-        mode === "register"
-          ? {
-              name,
-              email,
-              password,
-            }
-          : {
-              email,
-              password,
-            };
-
       const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/json",
         },
+        credentials: "include",
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get("content-type");
 
-      setMessage(data.message || "خطای نامشخص");
+      let data: ApiResponse = {};
+
+      if (contentType?.includes("application/json")) {
+        data = await response.json();
+      }
+
+      if (!response.ok) {
+        setMessage(
+          data.message ||
+            `عملیات انجام نشد. کد خطا: ${response.status}`
+        );
+        setMessageType("error");
+        return;
+      }
+
+      if (mode === "register") {
+        setMessage(
+          "ثبت‌نام با موفقیت انجام شد. اکنون وارد حساب خود شوید."
+        );
+        setMessageType("success");
+        setMode("login");
+        setPassword("");
+        return;
+      }
 
       if (response.ok && data.user) {
-        setUser(data.user);
+        setMessage("ورود با موفقیت انجام شد.");
+        setMessageType("success");
 
-        if (mode === "login") {
-          router.push("/dashboard");
-        }
+        router.replace("/dashboard");
+        router.refresh();
+        return;
       }
-    } catch (error) {
-      console.error("AUTH ERROR:", error);
 
-      setMessage("خطا در ارتباط با سرور");
+      setMessage("پاسخ نامعتبر از سرور دریافت شد.");
+      setMessageType("error");
+    } catch (error) {
+      console.error("AUTH FORM ERROR:", error);
+
+      setMessage(
+        "ارتباط با سرور برقرار نشد. وضعیت سرور و دیتابیس را بررسی کنید."
+      );
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
   }
 
-  function switchMode() {
-    setMode(mode === "login" ? "register" : "login");
-    setMessage("");
-    setUser(null);
-  }
-
   return (
     <section dir="rtl" className="auth-page">
       <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
         .auth-page {
           width: 100%;
-          min-height: calc(100vh - 90px);
-          padding: 35px 22px 55px;
-          background:
-            radial-gradient(
-              circle at 15% 20%,
-              rgba(6,182,212,.13),
-              transparent 30%
-            ),
-            radial-gradient(
-              circle at 85% 80%,
-              rgba(37,99,235,.12),
-              transparent 32%
-            ),
-            #020b18;
           color: #f8fafc;
           font-family: Arial, Tahoma, sans-serif;
         }
 
-        .auth-container {
-          width: min(1250px, 100%);
-          min-height: 720px;
-          margin: 0 auto;
-          display: grid;
-          grid-template-columns: 1fr 520px;
-          gap: 30px;
-          align-items: stretch;
-        }
-
-        /* ================= LEFT ================= */
-
-        .auth-intro {
-          position: relative;
-          overflow: hidden;
-          min-width: 0;
-          padding: 55px 45px;
-          border-radius: 30px;
-          border: 1px solid rgba(34,211,238,.12);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(7,30,52,.9),
-              rgba(3,13,27,.96)
-            );
-          box-shadow: 0 30px 90px rgba(0,0,0,.28);
-        }
-
-        .auth-intro::before {
-          content: "";
-          position: absolute;
-          width: 380px;
-          height: 380px;
-          left: -170px;
-          top: -170px;
-          border-radius: 50%;
-          background: rgba(6,182,212,.09);
-          filter: blur(40px);
-        }
-
-        .auth-intro-content {
-          position: relative;
-          z-index: 2;
-        }
-
-        .brand-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 16px;
-          border-radius: 999px;
-          color: #67e8f9;
-          background: rgba(6,182,212,.08);
-          border: 1px solid rgba(34,211,238,.16);
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .intro-title {
-          margin: 27px 0 15px;
-          font-size: clamp(35px, 4vw, 57px);
-          line-height: 1.25;
-          font-weight: 900;
-        }
-
-        .intro-title span {
-          color: #22d3ee;
-        }
-
-        .intro-text {
-          max-width: 590px;
-          margin: 0;
-          color: #94a3b8;
-          font-size: 14px;
-          line-height: 2.2;
-        }
-
-        .benefits {
-          display: grid;
-          gap: 15px;
-          margin-top: 35px;
-        }
-
-        .benefit {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding: 13px;
-          border-radius: 17px;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(148,163,184,.07);
-        }
-
-        .benefit-icon {
-          width: 48px;
-          height: 48px;
-          flex-shrink: 0;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          color: #22d3ee;
-          background: rgba(6,182,212,.08);
-          border: 1px solid rgba(34,211,238,.12);
-          font-size: 21px;
-        }
-
-        .benefit strong {
-          display: block;
-          font-size: 13px;
-        }
-
-        .benefit span {
-          display: block;
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 10px;
-          line-height: 1.8;
-        }
-
-        .robot-area {
-          position: absolute;
-          left: 10px;
-          bottom: -5px;
-          width: min(470px, 72%);
-          z-index: 1;
-          pointer-events: none;
-        }
-
-        .robot-area img {
-          width: 100%;
-          display: block;
-          opacity: .9;
-          filter:
-            drop-shadow(0 0 25px rgba(6,182,212,.15));
-        }
-
-        /* ================= FORM CARD ================= */
-
         .auth-card {
-          min-width: 0;
-          align-self: center;
+          width: 100%;
           padding: 30px;
-          border-radius: 30px;
+          border-radius: 28px;
           background:
             linear-gradient(
               145deg,
-              rgba(8,30,52,.94),
-              rgba(3,15,30,.98)
+              rgba(8, 30, 52, .96),
+              rgba(3, 15, 30, .99)
             );
-          border: 1px solid rgba(34,211,238,.2);
+          border: 1px solid rgba(34, 211, 238, .18);
           box-shadow:
-            0 30px 90px rgba(0,0,0,.35),
-            0 0 45px rgba(6,182,212,.05);
+            0 25px 80px rgba(0, 0, 0, .35),
+            0 0 35px rgba(6, 182, 212, .04);
         }
 
         .auth-tabs {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 5px;
+          gap: 6px;
           padding: 5px;
-          margin-bottom: 30px;
+          margin-bottom: 28px;
           border-radius: 15px;
-          background: rgba(255,255,255,.035);
+          background: rgba(255, 255, 255, .04);
         }
 
         .auth-tab {
-          min-height: 46px;
+          min-height: 45px;
           border: 0;
           border-radius: 11px;
-          background: transparent;
           color: #64748b;
+          background: transparent;
           cursor: pointer;
-          font-family: inherit;
+          font: inherit;
           font-size: 12px;
           font-weight: 800;
         }
 
         .auth-tab.active {
-          color: #ffffff;
-          background: linear-gradient(
-            135deg,
-            #06b6d4,
-            #2563eb
-          );
-          box-shadow: 0 8px 25px rgba(6,182,212,.2);
+          color: #fff;
+          background: linear-gradient(135deg, #06b6d4, #2563eb);
+          box-shadow: 0 8px 22px rgba(6, 182, 212, .18);
         }
 
         .form-header {
-          margin-bottom: 25px;
+          margin-bottom: 24px;
         }
 
-        .form-header-icon {
-          width: 46px;
-          height: 46px;
+        .form-icon {
+          width: 48px;
+          height: 48px;
           display: grid;
           place-items: center;
-          margin-bottom: 15px;
+          margin-bottom: 14px;
           border-radius: 14px;
           color: #22d3ee;
-          background: rgba(6,182,212,.08);
-          border: 1px solid rgba(34,211,238,.12);
-          font-size: 21px;
+          background: rgba(6, 182, 212, .09);
+          border: 1px solid rgba(34, 211, 238, .13);
+          font-size: 22px;
         }
 
         .form-header h1 {
           margin: 0;
-          font-size: 24px;
-          line-height: 1.6;
+          font-size: 23px;
+          line-height: 1.8;
         }
 
         .form-header p {
-          margin: 7px 0 0;
-          color: #64748b;
+          margin: 6px 0 0;
+          color: #718198;
           font-size: 11px;
-          line-height: 1.9;
+          line-height: 2;
         }
 
-        .form {
+        .auth-form {
           display: grid;
           gap: 16px;
         }
@@ -326,46 +258,60 @@ export default function AuthForm() {
 
         .field label {
           color: #cbd5e1;
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 700;
         }
 
-        .input-wrap {
+        .input-wrapper {
           position: relative;
         }
 
-        .input-icon {
+        .field-icon {
           position: absolute;
-          right: 15px;
           top: 50%;
+          right: 15px;
           transform: translateY(-50%);
           color: #64748b;
           font-size: 16px;
           pointer-events: none;
         }
 
-        .input {
+        .auth-input {
           width: 100%;
           height: 54px;
-          padding: 0 45px 0 15px;
+          padding: 0 45px 0 48px;
+          border: 1px solid rgba(148, 163, 184, .15);
           border-radius: 14px;
-          border: 1px solid rgba(148,163,184,.15);
           outline: none;
-          background: rgba(255,255,255,.035);
-          color: #ffffff;
-          font-family: inherit;
+          color: #fff;
+          background: rgba(255, 255, 255, .035);
+          font: inherit;
           font-size: 12px;
+          direction: rtl;
           transition: .2s;
         }
 
-        .input::placeholder {
+        .auth-input:focus {
+          border-color: rgba(34, 211, 238, .65);
+          background: rgba(6, 182, 212, .04);
+          box-shadow: 0 0 0 3px rgba(34, 211, 238, .07);
+        }
+
+        .auth-input::placeholder {
           color: #475569;
         }
 
-        .input:focus {
-          border-color: rgba(34,211,238,.55);
-          background: rgba(6,182,212,.035);
-          box-shadow: 0 0 0 3px rgba(34,211,238,.07);
+        .password-toggle {
+          position: absolute;
+          top: 50%;
+          left: 13px;
+          transform: translateY(-50%);
+          padding: 5px;
+          border: 0;
+          color: #94a3b8;
+          background: transparent;
+          cursor: pointer;
+          font-size: 15px;
         }
 
         .form-options {
@@ -373,116 +319,94 @@ export default function AuthForm() {
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          margin-top: -2px;
         }
 
-        .remember {
+        .remember-label {
           display: flex;
           align-items: center;
           gap: 7px;
-          color: #64748b;
+          color: #94a3b8;
           font-size: 10px;
+          cursor: pointer;
         }
 
-        .remember input {
-          accent-color: #22d3ee;
+        .remember-label input {
+          width: 14px;
+          height: 14px;
+          accent-color: #06b6d4;
+          cursor: pointer;
         }
 
-        .forgot {
+        .forgot-link {
           color: #22d3ee;
           font-size: 10px;
           text-decoration: none;
+          opacity: .65;
+          cursor: not-allowed;
         }
 
         .submit-button {
           width: 100%;
-          height: 55px;
-          margin-top: 5px;
+          min-height: 55px;
+          margin-top: 3px;
           border: 0;
           border-radius: 15px;
-          background: linear-gradient(
-            135deg,
-            #22d3ee,
-            #0ea5e9
-          );
           color: #02111f;
+          background: linear-gradient(135deg, #22d3ee, #0ea5e9);
+          box-shadow: 0 14px 32px rgba(34, 211, 238, .15);
           cursor: pointer;
-          font-family: inherit;
+          font: inherit;
           font-size: 13px;
           font-weight: 900;
-          box-shadow: 0 15px 35px rgba(34,211,238,.16);
           transition: .2s;
         }
 
-        .submit-button:hover {
+        .submit-button:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 18px 40px rgba(34,211,238,.22);
+          box-shadow: 0 18px 38px rgba(34, 211, 238, .22);
         }
 
         .submit-button:disabled {
           opacity: .6;
           cursor: wait;
-          transform: none;
         }
 
         .message {
-          min-height: 18px;
+          min-height: 20px;
           margin: 0;
           text-align: center;
-          color: #67e8f9;
-          font-size: 10px;
-          line-height: 1.8;
+          font-size: 11px;
+          line-height: 1.9;
         }
 
-        .divider {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin: 4px 0;
-          color: #475569;
-          font-size: 10px;
+        .message.success {
+          color: #4ade80;
         }
 
-        .divider::before,
-        .divider::after {
-          content: "";
-          flex: 1;
-          height: 1px;
-          background: rgba(148,163,184,.1);
+        .message.error {
+          color: #fb7185;
         }
 
-        .social-buttons {
-          display: grid;
-          gap: 10px;
-        }
-
-        .social-button {
-          height: 47px;
+        .security-note {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 10px;
-          border-radius: 13px;
-          color: #cbd5e1;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(148,163,184,.1);
-          font-size: 11px;
+          gap: 7px;
+          margin-top: 8px;
+          color: #64748b;
+          font-size: 9px;
         }
 
-        .social-button span {
-          font-size: 16px;
-        }
-
-        .register-box {
-          margin-top: 18px;
-          padding: 17px;
+        .switch-box {
+          margin-top: 20px;
+          padding: 16px;
+          border: 1px solid rgba(34, 211, 238, .08);
           border-radius: 16px;
-          background: rgba(6,182,212,.035);
-          border: 1px solid rgba(34,211,238,.08);
           text-align: center;
+          background: rgba(6, 182, 212, .035);
         }
 
-        .register-box p {
+        .switch-box p {
           margin: 0 0 9px;
           color: #64748b;
           font-size: 10px;
@@ -490,459 +414,226 @@ export default function AuthForm() {
 
         .switch-button {
           border: 0;
-          background: transparent;
           color: #22d3ee;
+          background: transparent;
           cursor: pointer;
-          font-family: inherit;
+          font: inherit;
           font-size: 11px;
           font-weight: 800;
         }
 
-        .user-result {
-          margin-top: 15px;
-          padding: 15px;
-          border-radius: 15px;
-          background: rgba(34,197,94,.05);
-          border: 1px solid rgba(34,197,94,.1);
-        }
-
-        .user-result h3 {
-          margin: 0 0 8px;
-          font-size: 12px;
-        }
-
-        .user-result p {
-          margin: 4px 0;
-          color: #94a3b8;
-          font-size: 10px;
-        }
-
-        /* ================= RESPONSIVE ================= */
-
-        @media (max-width: 1000px) {
-          .auth-container {
-            grid-template-columns: 1fr;
-            max-width: 620px;
-          }
-
-          .auth-intro {
-            min-height: 500px;
-            padding: 40px 30px;
-          }
-
-          .robot-area {
-            width: 330px;
-          }
-        }
-
         @media (max-width: 600px) {
-          .auth-page {
-            min-height: 100vh;
-            padding: 18px 12px 35px;
-          }
-
-          .auth-container {
-            gap: 16px;
-          }
-
-          .auth-intro {
-            min-height: 450px;
-            padding: 28px 22px;
-            border-radius: 23px;
-          }
-
-          .intro-title {
-            font-size: 34px;
-          }
-
-          .intro-text {
-            font-size: 11px;
-          }
-
-          .benefits {
-            gap: 9px;
-            margin-top: 23px;
-          }
-
-          .benefit {
-            padding: 9px;
-            gap: 10px;
-          }
-
-          .benefit-icon {
-            width: 40px;
-            height: 40px;
-            font-size: 17px;
-          }
-
-          .benefit strong {
-            font-size: 11px;
-          }
-
-          .benefit span {
-            font-size: 8px;
-          }
-
-          .robot-area {
-            width: 260px;
-            left: -10px;
-            bottom: -5px;
-          }
-
           .auth-card {
             padding: 21px;
             border-radius: 23px;
           }
 
-          .auth-tabs {
-            margin-bottom: 23px;
-          }
-
           .form-header h1 {
-            font-size: 21px;
+            font-size: 20px;
           }
         }
       `}</style>
 
-      <div className="auth-container">
+      <div className="auth-card">
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={
+              mode === "login"
+                ? "auth-tab active"
+                : "auth-tab"
+            }
+            onClick={() => changeMode("login")}
+            disabled={loading}
+          >
+            ورود به حساب
+          </button>
 
-        {/* INTRODUCTION */}
-
-        <div className="auth-intro">
-
-          <div className="auth-intro-content">
-
-            <div className="brand-badge">
-              ✦ پلتفرم هوشمند معاملات
-            </div>
-
-            <h2 className="intro-title">
-              به <span>Trading AI</span>
-              <br />
-              خوش آمدید
-            </h2>
-
-            <p className="intro-text">
-              با قدرت هوش مصنوعی، تحلیل‌های دقیق و
-              ابزارهای حرفه‌ای بازار، تجربه‌ای مدرن
-              برای مدیریت معاملات خود داشته باشید.
-            </p>
-
-            <div className="benefits">
-
-              <div className="benefit">
-                <div className="benefit-icon">
-                  📈
-                </div>
-
-                <div>
-                  <strong>
-                    تحلیل هوشمند بازار
-                  </strong>
-
-                  <span>
-                    بررسی داده‌های بازار با ابزارهای هوش مصنوعی
-                  </span>
-                </div>
-              </div>
-
-              <div className="benefit">
-                <div className="benefit-icon">
-                  🤖
-                </div>
-
-                <div>
-                  <strong>
-                    ربات‌های معاملاتی
-                  </strong>
-
-                  <span>
-                    مدیریت و توسعه ابزارهای خودکار معاملاتی
-                  </span>
-                </div>
-              </div>
-
-              <div className="benefit">
-                <div className="benefit-icon">
-                  🛡️
-                </div>
-
-                <div>
-                  <strong>
-                    امنیت حساب
-                  </strong>
-
-                  <span>
-                    مدیریت امن حساب و اطلاعات کاربری
-                  </span>
-                </div>
-              </div>
-
-              <div className="benefit">
-                <div className="benefit-icon">
-                  🎓
-                </div>
-
-                <div>
-                  <strong>
-                    آموزش و پشتیبانی
-                  </strong>
-
-                  <span>
-                    دسترسی به آموزش‌ها و مرکز پشتیبانی
-                  </span>
-                </div>
-              </div>
-
-            </div>
-
-          </div>
-
-          <div className="robot-area">
-            <img
-              src="/trading-ai-robot.png"
-              alt="Trading AI Robot"
-            />
-          </div>
-
+          <button
+            type="button"
+            className={
+              mode === "register"
+                ? "auth-tab active"
+                : "auth-tab"
+            }
+            onClick={() => changeMode("register")}
+            disabled={loading}
+          >
+            ثبت‌نام
+          </button>
         </div>
 
-        {/* AUTH CARD */}
-
-        <div className="auth-card">
-
-          <div className="auth-tabs">
-
-            <button
-              type="button"
-              className={
-                mode === "login"
-                  ? "auth-tab active"
-                  : "auth-tab"
-              }
-              onClick={() => {
-                setMode("login");
-                setMessage("");
-                setUser(null);
-              }}
-            >
-              ورود به حساب
-            </button>
-
-            <button
-              type="button"
-              className={
-                mode === "register"
-                  ? "auth-tab active"
-                  : "auth-tab"
-              }
-              onClick={() => {
-                setMode("register");
-                setMessage("");
-                setUser(null);
-              }}
-            >
-              ثبت نام
-            </button>
-
+        <div className="form-header">
+          <div className="form-icon">
+            {mode === "login" ? "🔐" : "✦"}
           </div>
 
-          <div className="form-header">
+          <h1>
+            {mode === "login"
+              ? "ورود به حساب کاربری"
+              : "ساخت حساب جدید"}
+          </h1>
 
-            <div className="form-header-icon">
-              {mode === "login" ? "♙" : "✦"}
-            </div>
+          <p>
+            {mode === "login"
+              ? "برای ورود به پنل Trading AI اطلاعات خود را وارد کنید."
+              : "برای شروع کار با Trading AI حساب کاربری بسازید."}
+          </p>
+        </div>
 
-            <h1>
-              {mode === "login"
-                ? "ورود به حساب کاربری"
-                : "ساخت حساب جدید"}
-            </h1>
-
-            <p>
-              {mode === "login"
-                ? "برای دسترسی به امکانات Trading AI وارد حساب خود شوید."
-                : "حساب خود را بسازید و به امکانات Trading AI دسترسی پیدا کنید."}
-            </p>
-
-          </div>
-
-          <div className="form">
-
-            {mode === "register" && (
-              <div className="field">
-
-                <label>
-                  نام کاربر
-                </label>
-
-                <div className="input-wrap">
-
-                  <span className="input-icon">
-                    👤
-                  </span>
-
-                  <input
-                    className="input"
-                    type="text"
-                    placeholder="نام خود را وارد کنید"
-                    value={name}
-                    onChange={(e) =>
-                      setName(e.target.value)
-                    }
-                  />
-
-                </div>
-
-              </div>
-            )}
-
+        <form className="auth-form" onSubmit={handleSubmit}>
+          {mode === "register" && (
             <div className="field">
+              <label htmlFor="auth-name">نام کاربر</label>
 
-              <label>
-                ایمیل
-              </label>
-
-              <div className="input-wrap">
-
-                <span className="input-icon">
-                  ✉
-                </span>
+              <div className="input-wrapper">
+                <span className="field-icon">👤</span>
 
                 <input
-                  className="input"
-                  type="email"
-                  placeholder="ایمیل خود را وارد کنید"
-                  value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
+                  id="auth-name"
+                  className="auth-input"
+                  type="text"
+                  name="name"
+                  placeholder="نام خود را وارد کنید"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  autoComplete="name"
+                  disabled={loading}
+                  required
                 />
-
               </div>
-
-            </div>
-
-            <div className="field">
-
-              <label>
-                رمز عبور
-              </label>
-
-              <div className="input-wrap">
-
-                <span className="input-icon">
-                  🔒
-                </span>
-
-                <input
-                  className="input"
-                  type="password"
-                  placeholder="رمز عبور خود را وارد کنید"
-                  value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                />
-
-              </div>
-
-            </div>
-
-            {mode === "login" && (
-              <div className="form-options">
-
-                <label className="remember">
-                  <input type="checkbox" />
-                  مرا به خاطر بسپار
-                </label>
-
-                <span className="forgot">
-                  رمز عبور را فراموش کرده‌اید؟
-                </span>
-
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="submit-button"
-              onClick={handleSubmit}
-              disabled={loading}
-            >
-              {loading
-                ? "در حال بررسی..."
-                : mode === "login"
-                ? "ورود به حساب  ←"
-                : "ساخت حساب  ←"}
-            </button>
-
-            <p className="message">
-              {message}
-            </p>
-
-            <div className="divider">
-              یا
-            </div>
-
-            <div className="social-buttons">
-
-              <div className="social-button">
-                <span>G</span>
-                ورود با گوگل
-              </div>
-
-              <div className="social-button">
-                <span>✈</span>
-                ورود با تلگرام
-              </div>
-
-            </div>
-
-            <div className="register-box">
-
-              <p>
-                {mode === "login"
-                  ? "هنوز حساب کاربری ندارید؟"
-                  : "قبلاً حساب ساخته‌اید؟"}
-              </p>
-
-              <button
-                type="button"
-                className="switch-button"
-                onClick={switchMode}
-              >
-                {mode === "login"
-                  ? "ساخت حساب جدید  →"
-                  : "ورود به حساب  →"}
-              </button>
-
-            </div>
-
-          </div>
-
-          {user && (
-            <div className="user-result">
-
-              <h3>
-                خوش آمدید {user.name}
-              </h3>
-
-              <p>
-                نقش: {user.role}
-              </p>
-
-              <p>
-                پلن: {user.plan}
-              </p>
-
             </div>
           )}
 
+          <div className="field">
+            <label htmlFor="auth-email">ایمیل</label>
+
+            <div className="input-wrapper">
+              <span className="field-icon">✉️</span>
+
+              <input
+                id="auth-email"
+                className="auth-input"
+                type="email"
+                name="email"
+                placeholder="example@email.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                disabled={loading}
+                required
+                dir="ltr"
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="auth-password">رمز عبور</label>
+
+            <div className="input-wrapper">
+              <span className="field-icon">🔒</span>
+
+              <input
+                id="auth-password"
+                className="auth-input"
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="رمز عبور خود را وارد کنید"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete={
+                  mode === "login"
+                    ? "current-password"
+                    : "new-password"
+                }
+                disabled={loading}
+                required
+                dir="ltr"
+              />
+
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((value) => !value)}
+                aria-label={
+                  showPassword
+                    ? "مخفی کردن رمز عبور"
+                    : "نمایش رمز عبور"
+                }
+                disabled={loading}
+              >
+                {showPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
+          </div>
+
+          {mode === "login" && (
+            <div className="form-options">
+              <label className="remember-label">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) =>
+                    setRememberMe(event.target.checked)
+                  }
+                  disabled={loading}
+                />
+
+                مرا به خاطر بسپار
+              </label>
+
+              <span className="forgot-link" title="به‌زودی فعال می‌شود">
+                فراموشی رمز عبور
+              </span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="submit-button"
+            disabled={loading}
+          >
+            {loading
+              ? "در حال پردازش..."
+              : mode === "login"
+              ? "ورود به حساب ←"
+              : "ساخت حساب ←"}
+          </button>
+
+          <p
+            className={`message ${messageType}`}
+            role="status"
+            aria-live="polite"
+          >
+            {message}
+          </p>
+        </form>
+
+        <div className="security-note">
+          🛡️ اطلاعات حساب شما از طریق اتصال امن ارسال می‌شود.
         </div>
 
-      </div>
+        <div className="switch-box">
+          <p>
+            {mode === "login"
+              ? "هنوز حساب کاربری ندارید؟"
+              : "قبلاً حساب ساخته‌اید؟"}
+          </p>
 
+          <button
+            type="button"
+            className="switch-button"
+            onClick={() =>
+              changeMode(mode === "login" ? "register" : "login")
+            }
+            disabled={loading}
+          >
+            {mode === "login"
+              ? "ساخت حساب جدید →"
+              : "ورود به حساب →"}
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
