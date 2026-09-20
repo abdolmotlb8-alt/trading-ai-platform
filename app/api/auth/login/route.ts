@@ -32,16 +32,6 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "فرمت ایمیل صحیح نیست",
-        },
-        { status: 400 }
-      );
-    }
-
     const user = await prisma.user.findUnique({
       where: {
         email,
@@ -58,12 +48,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordMatch = await bcrypt.compare(
+    if (!user.password) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "اطلاعات رمز عبور حساب ناقص است",
+        },
+        { status: 500 }
+      );
+    }
+
+    const isPasswordCorrect = await bcrypt.compare(
       password,
       user.password
     );
 
-    if (!passwordMatch) {
+    if (!isPasswordCorrect) {
       return NextResponse.json(
         {
           success: false,
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       );
     }
 
-    let currentRole = user.role;
+    let role = user.role;
 
     if (
       email === ADMIN_EMAIL.toLowerCase() &&
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
         },
       });
 
-      currentRole = updatedUser.role;
+      role = updatedUser.role;
     }
 
     await createSession(user.id);
@@ -101,23 +101,32 @@ export async function POST(request: Request) {
           id: user.id,
           name: user.name,
           email: user.email,
-          role: currentRole,
+          role,
           plan: user.plan,
         },
       },
       { status: 200 }
     );
-  } catch (error) {
-    console.error("LOGIN_ERROR:", error);
+  } catch (error: unknown) {
+    console.error("LOGIN ERROR:", error);
+
+    let errorMessage = "خطای داخلی سرور هنگام ورود";
+
+    if (error instanceof Error) {
+      console.error("LOGIN ERROR MESSAGE:", error.message);
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Unknown login error";
+    }
 
     return NextResponse.json(
       {
         success: false,
-        message:
-          process.env.NODE_ENV === "development" &&
-          error instanceof Error
-            ? error.message
-            : "خطای داخلی سرور هنگام ورود",
+        message: errorMessage,
       },
       { status: 500 }
     );
