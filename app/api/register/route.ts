@@ -1,53 +1,97 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
-import { createSession } from "@/lib/session";
+
+import prisma from "@/lib/prisma";
+
+export const runtime = "nodejs";
+
+type RegisterData = {
+  name?: string;
+  email?: string;
+  password?: string;
+};
+
+async function readRequestBody(
+  request: Request
+): Promise<RegisterData> {
+  const bodyText = await request.text();
+
+  if (!bodyText.trim()) {
+    return {};
+  }
+
+  const contentType = request.headers.get("content-type") || "";
+
+  // پردازش JSON
+  if (contentType.includes("application/json")) {
+    try {
+      return JSON.parse(bodyText) as RegisterData;
+    } catch {
+      // در صورت خراب بودن JSON، فرم معمولی بررسی می‌شود.
+    }
+  }
+
+  // پردازش فرم معمولی
+  const formData = new URLSearchParams(bodyText);
+
+  return {
+    name: formData.get("name") || undefined,
+    email: formData.get("email") || undefined,
+    password: formData.get("password") || undefined,
+  };
+}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const data = await readRequestBody(request);
 
-    const name = String(body.name ?? "").trim();
-    const email = String(body.email ?? "").trim().toLowerCase();
-    const password = String(body.password ?? "");
+    const name =
+      typeof data.name === "string"
+        ? data.name.trim()
+        : "";
+
+    const email =
+      typeof data.email === "string"
+        ? data.email.trim().toLowerCase()
+        : "";
+
+    const password =
+      typeof data.password === "string"
+        ? data.password
+        : "";
 
     if (!name || !email || !password) {
       return NextResponse.json(
-        { message: "نام، ایمیل و رمز عبور الزامی هستند" },
-        { status: 400 }
-      );
-    }
-
-    if (name.length < 2) {
-      return NextResponse.json(
-        { message: "نام باید حداقل ۲ کاراکتر باشد" },
-        { status: 400 }
-      );
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { message: "فرمت ایمیل صحیح نیست" },
+        {
+          success: false,
+          message: "نام، ایمیل و رمز عبور الزامی هستند",
+        },
         { status: 400 }
       );
     }
 
     if (password.length < 8) {
       return NextResponse.json(
-        { message: "رمز عبور باید حداقل ۸ کاراکتر باشد" },
+        {
+          success: false,
+          message: "رمز عبور باید حداقل ۸ کاراکتر باشد",
+        },
         { status: 400 }
       );
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: {
+        email,
+      },
     });
 
     if (existingUser) {
       return NextResponse.json(
-        { message: "این ایمیل قبلاً ثبت شده است" },
+        {
+          success: false,
+          message: "این ایمیل قبلاً ثبت‌نام کرده است",
+        },
         { status: 409 }
       );
     }
@@ -64,12 +108,11 @@ export async function POST(request: Request) {
       },
     });
 
-    await createSession(user.id);
-
     return NextResponse.json(
       {
         success: true,
-        message: "ثبت‌نام با موفقیت انجام شد",
+        message:
+          "ثبت‌نام با موفقیت انجام شد. اکنون وارد حساب خود شوید.",
         user: {
           id: user.id,
           name: user.name,
@@ -81,10 +124,13 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("REGISTER_ERROR:", error);
+    console.error("REGISTER ERROR:", error);
 
     return NextResponse.json(
-      { message: "خطای داخلی سرور. دوباره تلاش کنید" },
+      {
+        success: false,
+        message: "خطای داخلی سرور هنگام ثبت‌نام",
+      },
       { status: 500 }
     );
   }
