@@ -1,7 +1,13 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+
+const nf = (n: number) =>
+  new Intl.NumberFormat("fa-IR", {
+    maximumFractionDigits: 2,
+  }).format(n);
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -14,1190 +20,1277 @@ export default async function DashboardPage() {
     where: {
       id: session.userId,
     },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      plan: true,
+      createdAt: true,
+    },
   });
 
   if (!user) {
     redirect("/login");
   }
 
+  const [
+    bots,
+    activeBots,
+    openTrades,
+    signals,
+    closedTrades,
+  ] = await Promise.all([
+    prisma.tradingBot.count({
+      where: {
+        userId: user.id,
+      },
+    }),
+
+    prisma.tradingBot.count({
+      where: {
+        userId: user.id,
+        isActive: true,
+      },
+    }),
+
+    prisma.trade.count({
+      where: {
+        userId: user.id,
+        status: "OPEN",
+      },
+    }),
+
+    prisma.tradingSignal.count({
+      where: {
+        userId: user.id,
+      },
+    }),
+
+    prisma.trade.findMany({
+      where: {
+        userId: user.id,
+        status: "CLOSED",
+        profitLoss: {
+          not: null,
+        },
+      },
+      select: {
+        profitLoss: true,
+      },
+    }),
+  ]);
+
+  const pnl = closedTrades.reduce(
+    (sum, trade) => sum + (trade.profitLoss ?? 0),
+    0
+  );
+
+  const formattedJoinDate = new Intl.DateTimeFormat("fa-IR").format(
+    user.createdAt
+  );
+
   return (
-    <main dir="rtl" className="dashboard-page">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .dashboard-page {
-          min-height: 100vh;
-          padding: 24px;
-          background:
-            radial-gradient(circle at 85% 0%, rgba(6,182,212,.14), transparent 28%),
-            radial-gradient(circle at 5% 80%, rgba(37,99,235,.12), transparent 30%),
-            #06111f;
-          color: #f8fafc;
-          font-family: Arial, Tahoma, sans-serif;
-        }
-
-        .dashboard-wrapper {
-          width: min(1480px, 100%);
-          margin: 0 auto;
-          display: grid;
-          grid-template-columns: 255px minmax(0, 1fr);
-          gap: 24px;
-          direction: ltr;
-        }
-
-        .sidebar,
-        .main-content {
-          direction: rtl;
-        }
-
-        /* ================= SIDEBAR ================= */
-
-        .sidebar {
-          min-height: calc(100vh - 48px);
-          height: fit-content;
-          position: sticky;
-          top: 24px;
-          padding: 20px;
-          border-radius: 26px;
-          background: rgba(8, 20, 35, .94);
-          border: 1px solid rgba(148,163,184,.12);
-          box-shadow: 0 25px 70px rgba(0,0,0,.25);
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 4px 4px 22px;
-          text-decoration: none;
-          color: white;
-          border-bottom: 1px solid rgba(148,163,184,.1);
-        }
-
-        .brand-icon {
-          width: 46px;
-          height: 46px;
-          flex-shrink: 0;
-          display: grid;
-          place-items: center;
-          border-radius: 15px;
-          background: linear-gradient(135deg,#06b6d4,#2563eb);
-          font-weight: 900;
-          box-shadow: 0 12px 30px rgba(6,182,212,.22);
-        }
-
-        .brand-title {
-          font-size: 18px;
-          font-weight: 900;
-        }
-
-        .brand-subtitle {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 10px;
-        }
-
-        .menu-title {
-          margin: 25px 8px 12px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .menu {
-          display: grid;
-          gap: 7px;
-        }
-
-        .menu a {
-          min-height: 47px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 0 13px;
-          border-radius: 14px;
-          color: #94a3b8;
-          text-decoration: none;
-          font-size: 12px;
-          font-weight: 700;
-          transition: .2s;
-        }
-
-        .menu a:hover {
-          color: white;
-          background: rgba(255,255,255,.045);
-        }
-
-        .menu a.active {
-          color: #67e8f9;
-          background: linear-gradient(
-            135deg,
-            rgba(6,182,212,.13),
-            rgba(37,99,235,.08)
-          );
-          border: 1px solid rgba(34,211,238,.16);
-          box-shadow: 0 8px 25px rgba(6,182,212,.06);
-        }
-
-        .menu-icon {
-          width: 30px;
-          height: 30px;
-          flex-shrink: 0;
-          display: grid;
-          place-items: center;
-          border-radius: 9px;
-          background: rgba(255,255,255,.035);
-          font-size: 15px;
-        }
-
-        .support-box {
-          margin-top: 25px;
-          padding: 16px;
-          border-radius: 18px;
-          background:
-            linear-gradient(
-              135deg,
-              rgba(6,182,212,.12),
-              rgba(37,99,235,.07)
-            );
-          border: 1px solid rgba(34,211,238,.13);
-        }
-
-        .support-box strong {
-          display: block;
-          font-size: 13px;
-        }
-
-        .support-box p {
-          margin: 9px 0 13px;
-          color: #7f91a8;
-          font-size: 10px;
-          line-height: 2;
-        }
-
-        .support-button {
-          display: block;
-          padding: 10px;
-          border-radius: 11px;
-          text-align: center;
-          color: #67e8f9;
-          background: rgba(34,211,238,.07);
-          border: 1px solid rgba(34,211,238,.1);
-          font-size: 10px;
-          font-weight: 700;
-          text-decoration: none;
-        }
-
-        /* ================= MAIN ================= */
-
-        .main-content {
-          min-width: 0;
-        }
-
-        .topbar {
-          min-height: 76px;
-          margin-bottom: 20px;
-          padding: 16px 20px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-          border-radius: 22px;
-          background: rgba(8,20,35,.9);
-          border: 1px solid rgba(148,163,184,.12);
-        }
-
-        .top-title {
-          font-size: 20px;
-          font-weight: 900;
-        }
-
-        .top-subtitle {
-          margin-top: 6px;
-          color: #64748b;
-          font-size: 11px;
-        }
-
-        .user-area {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-        }
-
-        .status {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 10px 13px;
-          border-radius: 12px;
-          background: rgba(34,197,94,.07);
-          color: #86efac;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .status-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 10px rgba(34,197,94,.7);
-        }
-
-        .user-avatar {
-          width: 44px;
-          height: 44px;
-          flex-shrink: 0;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          background: linear-gradient(135deg,#0e7490,#1d4ed8);
-          font-weight: 900;
-        }
-
-        /* ================= WELCOME ================= */
-
-        .welcome {
-          position: relative;
-          overflow: hidden;
-          margin-bottom: 20px;
-          padding: 30px;
-          border-radius: 27px;
-          background:
-            linear-gradient(
-              135deg,
-              rgba(8,47,73,.88),
-              rgba(8,20,35,.96)
-            );
-          border: 1px solid rgba(34,211,238,.14);
-        }
-
-        .welcome::before {
-          content: "";
-          position: absolute;
-          width: 260px;
-          height: 260px;
-          left: -100px;
-          top: -130px;
-          border-radius: 50%;
-          background: rgba(34,211,238,.08);
-          filter: blur(25px);
-        }
-
-        .welcome-content {
-          position: relative;
-          z-index: 1;
-        }
-
-        .welcome-label {
-          display: inline-flex;
-          padding: 8px 13px;
-          border-radius: 999px;
-          color: #67e8f9;
-          background: rgba(34,211,238,.07);
-          border: 1px solid rgba(34,211,238,.13);
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .welcome h1 {
-          margin: 17px 0 9px;
-          font-size: clamp(26px,3vw,38px);
-          line-height: 1.4;
-        }
-
-        .welcome p {
-          max-width: 760px;
-          margin: 0;
-          color: #94a3b8;
-          font-size: 13px;
-          line-height: 2.1;
-        }
-
-        /* ================= STATS ================= */
-
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 15px;
-          margin-bottom: 26px;
-        }
-
-        .stat {
-          min-width: 0;
-          padding: 20px;
-          border-radius: 20px;
-          background: rgba(8,20,35,.88);
-          border: 1px solid rgba(148,163,184,.11);
-        }
-
-        .stat-icon {
-          width: 42px;
-          height: 42px;
-          margin-bottom: 16px;
-          display: grid;
-          place-items: center;
-          border-radius: 13px;
-          background: rgba(34,211,238,.08);
-          color: #22d3ee;
-          font-size: 18px;
-        }
-
-        .stat-label {
-          color: #64748b;
-          font-size: 10px;
-        }
-
-        .stat-value {
-          margin-top: 7px;
-          font-size: 19px;
-          font-weight: 900;
-          overflow-wrap: anywhere;
-        }
-
-        .green {
-          color: #4ade80;
-        }
-
-        .cyan {
-          color: #22d3ee;
-        }
-
-        .orange {
-          color: #fbbf24;
-        }
-
-        /* ================= SECTION HEADER ================= */
-
-        .section-header {
-          margin: 28px 0 14px;
-          padding: 0 3px;
-        }
-
-        .section-header h2 {
-          margin: 0;
-          font-size: 18px;
-        }
-
-        .section-header p {
-          margin: 6px 0 0;
-          color: #64748b;
-          font-size: 11px;
-          line-height: 1.8;
-        }
-
-        /* ================= FEATURE CARDS ================= */
-
-        .quick-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 15px;
-        }
-
-        .quick-card {
-          min-width: 0;
-          min-height: 205px;
-          padding: 20px;
-          display: flex;
-          flex-direction: column;
-          border-radius: 21px;
-          background: rgba(8,20,35,.88);
-          border: 1px solid rgba(148,163,184,.11);
-          text-decoration: none;
-          color: white;
-          transition: .2s;
-        }
-
-        .quick-card:hover {
-          transform: translateY(-3px);
-          border-color: rgba(34,211,238,.28);
-          background: rgba(11,28,47,.96);
-        }
-
-        .quick-icon {
-          width: 46px;
-          height: 46px;
-          flex-shrink: 0;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          background: rgba(34,211,238,.08);
-          color: #22d3ee;
-          font-size: 20px;
-        }
-
-        .quick-card h3 {
-          margin: 17px 0 8px;
-          font-size: 14px;
-          line-height: 1.6;
-        }
-
-        .quick-card p {
-          margin: 0;
-          color: #718198;
-          font-size: 10px;
-          line-height: 2;
-        }
-
-        .quick-arrow {
-          margin-top: auto;
-          padding-top: 16px;
-          color: #22d3ee;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        /* ================= LOWER PANELS ================= */
-
-        .bottom-grid {
-          display: grid;
-          grid-template-columns: 1.35fr 1fr;
-          gap: 15px;
-          margin-top: 20px;
-        }
-
-        .panel {
-          min-width: 0;
-          padding: 23px;
-          border-radius: 22px;
-          background: rgba(8,20,35,.88);
-          border: 1px solid rgba(148,163,184,.11);
-        }
-
-        .panel-title-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          margin-bottom: 18px;
-        }
-
-        .panel h2 {
-          margin: 0;
-          font-size: 16px;
-        }
-
-        .panel-description {
-          margin: 6px 0 0;
-          color: #64748b;
-          font-size: 10px;
-          line-height: 1.8;
-        }
-
-        .panel-badge {
-          flex-shrink: 0;
-          padding: 8px 10px;
-          border-radius: 10px;
-          color: #67e8f9;
-          background: rgba(34,211,238,.07);
-          font-size: 9px;
-        }
-
-        .account-grid {
-          display: grid;
-          grid-template-columns: repeat(2,1fr);
-          gap: 11px;
-        }
-
-        .account-item {
-          min-width: 0;
-          padding: 15px;
-          border-radius: 15px;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.05);
-        }
-
-        .account-item span {
-          display: block;
-          color: #64748b;
-          font-size: 9px;
-        }
-
-        .account-item strong {
-          display: block;
-          margin-top: 8px;
-          color: #e2e8f0;
-          font-size: 12px;
-          overflow-wrap: anywhere;
-        }
-
-        .feature-list {
-          display: grid;
-          gap: 10px;
-        }
-
-        .feature {
-          min-width: 0;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 13px;
-          border-radius: 15px;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.05);
-        }
-
-        .feature-icon {
-          width: 38px;
-          height: 38px;
-          flex-shrink: 0;
-          display: grid;
-          place-items: center;
-          border-radius: 11px;
-          background: rgba(34,211,238,.07);
-          font-size: 15px;
-        }
-
-        .feature strong {
-          display: block;
-          font-size: 11px;
-        }
-
-        .feature span {
-          display: block;
-          margin-top: 4px;
-          color: #64748b;
-          font-size: 9px;
-        }
-
-        /* ================= QUICK INFO ================= */
-
-        .info-section {
-          margin-top: 20px;
-          padding: 22px;
-          border-radius: 22px;
-          background:
-            linear-gradient(
-              135deg,
-              rgba(6,182,212,.07),
-              rgba(37,99,235,.04)
-            );
-          border: 1px solid rgba(34,211,238,.1);
-        }
-
-        .info-title {
-          margin: 0 0 16px;
-          font-size: 15px;
-        }
-
-        .info-grid {
-          display: grid;
-          grid-template-columns: repeat(3,1fr);
-          gap: 12px;
-        }
-
-        .info-card {
-          min-width: 0;
-          padding: 15px;
-          border-radius: 15px;
-          background: rgba(5,15,28,.65);
-          border: 1px solid rgba(148,163,184,.08);
-        }
-
-        .info-card strong {
-          display: block;
-          font-size: 11px;
-        }
-
-        .info-card span {
-          display: block;
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 9px;
-          line-height: 1.8;
-        }
-
-        /* ================= TABLET ================= */
-
-        @media (max-width: 1150px) {
-          .dashboard-wrapper {
-            grid-template-columns: 220px minmax(0,1fr);
-          }
-
-          .stats,
-          .quick-grid {
-            grid-template-columns: repeat(2,1fr);
-          }
-
-          .bottom-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        /* ================= MOBILE ================= */
-
-        @media (max-width: 800px) {
-          .dashboard-page {
-            padding: 12px;
-          }
-
-          .dashboard-wrapper {
-            display: block;
-          }
-
-          .sidebar {
-            display: none;
-          }
-
-          .topbar {
-            min-height: auto;
-            padding: 15px;
-            border-radius: 18px;
-          }
-
-          .top-title {
-            font-size: 16px;
-          }
-
-          .top-subtitle {
-            line-height: 1.8;
-          }
-
-          .status {
-            display: none;
-          }
-
-          .user-avatar {
-            width: 40px;
-            height: 40px;
-          }
-
-          .welcome {
-            padding: 23px;
-            border-radius: 21px;
-          }
-
-          .welcome h1 {
-            font-size: 25px;
-          }
-
-          .stats,
-          .quick-grid {
-            grid-template-columns: repeat(2,1fr);
-          }
-
-          .quick-card {
-            min-height: 190px;
-          }
-
-          .info-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 520px) {
-          .stats,
-          .quick-grid,
-          .account-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .welcome h1 {
-            font-size: 23px;
-          }
-
-          .welcome p {
-            font-size: 11px;
-          }
-
-          .stat {
-            padding: 18px;
-          }
-
-          .quick-card {
-            min-height: 175px;
-          }
-
-          .panel,
-          .info-section {
-            padding: 18px;
-          }
-
-          .panel-title-row {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-        }
-      `}</style>
-
-      <div className="dashboard-wrapper">
-
-        {/* SIDEBAR */}
-
-        <aside className="sidebar">
-
+    <main dir="rtl" className="ta">
+      <style>{css}</style>
+
+      <div className="shell">
+        <aside className="side">
           <Link href="/" className="brand">
-            <div className="brand-icon">AI</div>
+            <b>AI</b>
 
-            <div>
-              <div className="brand-title">
-                Trading AI
-              </div>
-
-              <div className="brand-subtitle">
-                Smart Trading Platform
-              </div>
-            </div>
+            <span>
+              <strong>Trading AI</strong>
+              <small>Smart Trading Platform</small>
+            </span>
           </Link>
 
-          <div className="menu-title">
-            منوی اصلی
-          </div>
+          <p className="caption">منوی اصلی</p>
 
-          <nav className="menu">
-
-            <Link href="/dashboard" className="active">
-              <span className="menu-icon">🏠</span>
-              <span>داشبورد</span>
-            </Link>
-
-            <Link href="/market">
-              <span className="menu-icon">📊</span>
-              <span>بازار و نمودار</span>
-            </Link>
-
-            <Link href="/bots">
-              <span className="menu-icon">🤖</span>
-              <span>ربات‌های معاملاتی</span>
-            </Link>
-
-            <Link href="/ai-analysis">
-              <span className="menu-icon">🧠</span>
-              <span>تحلیل هوشمند AI</span>
-            </Link>
-
-            <Link href="/news">
-              <span className="menu-icon">📰</span>
-              <span>اخبار بازار</span>
-            </Link>
-
-            <Link href="/broker">
-              <span className="menu-icon">🔗</span>
-              <span>اتصال بروکر</span>
-            </Link>
-
-            <Link href="/economic">
-              <span className="menu-icon">🌍</span>
-              <span>تقویم اقتصادی</span>
-            </Link>
-
-            <Link href="/courses">
-              <span className="menu-icon">🎓</span>
-              <span>آموزش</span>
-            </Link>
-
-            <Link href="/payments">
-              <span className="menu-icon">💳</span>
-              <span>کیف پول و پرداخت</span>
-            </Link>
-
-            <Link href="/support">
-              <span className="menu-icon">🎧</span>
-              <span>پشتیبانی</span>
-            </Link>
-
+          <nav>
+            {[
+              ["/dashboard", "⌂", "داشبورد"],
+              ["/market", "▦", "بازار و نمودار"],
+              ["/bots", "◈", "ربات‌های معاملاتی"],
+              ["/ai-analysis", "✦", "تحلیل هوشمند AI"],
+              ["/news", "▤", "اخبار بازار"],
+              ["/broker", "⌘", "اتصال بروکر"],
+              ["/economic", "◎", "تقویم اقتصادی"],
+              ["/courses", "▣", "آموزش"],
+              ["/payments", "▤", "کیف پول و پرداخت"],
+              ["/support", "◉", "پشتیبانی"],
+              ["/settings", "⚙", "تنظیمات"],
+            ].map(([href, icon, label]) => (
+              <Link
+                key={href}
+                href={href}
+                className={href === "/dashboard" ? "active" : ""}
+              >
+                <i>{icon}</i>
+                {label}
+              </Link>
+            ))}
           </nav>
 
-          <div className="support-box">
-
-            <strong>
-              🎧 مرکز پشتیبانی
-            </strong>
+          <div className="help">
+            <strong>مرکز پشتیبانی</strong>
 
             <p>
-              برای سوالات و مشکلات خود می‌توانید
-              از مرکز پشتیبانی Trading AI استفاده کنید.
+              برای دریافت راهنمایی و حل مشکلات خود
+              با تیم پشتیبانی در ارتباط باشید.
             </p>
 
-            <Link href="/support" className="support-button">
+            <Link href="/support" className="btn">
               ورود به پشتیبانی
             </Link>
-
           </div>
-
         </aside>
 
-        {/* MAIN */}
-
-        <section className="main-content">
-
-          {/* TOPBAR */}
-
-          <header className="topbar">
-
+        <section className="content">
+          <header className="top">
             <div>
-              <div className="top-title">
-                داشبورد Trading AI
-              </div>
-
-              <div className="top-subtitle">
+              <strong>داشبورد Trading AI</strong>
+              <small>
                 مرکز مدیریت حساب و ابزارهای معاملاتی
-              </div>
+              </small>
             </div>
 
-            <div className="user-area">
-
-              <div className="status">
-                <span className="status-dot" />
-                سیستم فعال است
-              </div>
-
-              <div className="user-avatar">
-                {user.name?.charAt(0)?.toUpperCase() || "U"}
-              </div>
-
-            </div>
-
+            <Link href="/settings" className="avatar">
+              {user.name?.charAt(0)?.toUpperCase() || "U"}
+            </Link>
           </header>
 
-          {/* WELCOME */}
+          <section className="hero">
+            <span>✦ حساب شما فعال است</span>
 
-          <section className="welcome">
-
-            <div className="welcome-content">
-
-              <span className="welcome-label">
-                ✦ حساب شما فعال است
-              </span>
-
-              <h1>
-                سلام {user.name} 👋
-              </h1>
-
-              <p>
-                به پنل حرفه‌ای Trading AI خوش آمدید.
-                از اینجا می‌توانید بازار، ربات‌ها،
-                تحلیل هوشمند، اخبار و سایر ابزارهای
-                معاملاتی خود را مدیریت کنید.
-              </p>
-
-            </div>
-
-          </section>
-
-          {/* STATS */}
-
-          <section className="stats">
-
-            <div className="stat">
-              <div className="stat-icon">✓</div>
-              <div className="stat-label">وضعیت حساب</div>
-              <div className="stat-value green">
-                فعال
-              </div>
-            </div>
-
-            <div className="stat">
-              <div className="stat-icon">◆</div>
-              <div className="stat-label">پلن فعلی</div>
-              <div className="stat-value cyan">
-                {user.plan}
-              </div>
-            </div>
-
-            <div className="stat">
-              <div className="stat-icon">🤖</div>
-              <div className="stat-label">ربات‌های فعال</div>
-              <div className="stat-value">
-                0
-              </div>
-            </div>
-
-            <div className="stat">
-              <div className="stat-icon">🔗</div>
-              <div className="stat-label">اتصال بروکر</div>
-              <div className="stat-value orange">
-                متصل نیست
-              </div>
-            </div>
-
-          </section>
-
-          {/* QUICK ACCESS */}
-
-          <div className="section-header">
-
-            <h2>
-              دسترسی سریع
-            </h2>
+            <h1>سلام {user.name} 👋</h1>
 
             <p>
-              مهم‌ترین بخش‌های Trading AI در کارت‌های جداگانه
+              به پنل حرفه‌ای Trading AI خوش آمدید.
+              وضعیت ربات‌ها، سیگنال‌ها، معاملات و
+              ابزارهای معاملاتی خود را از اینجا مدیریت کنید.
             </p>
 
-          </div>
+            <div className="actions">
+              <Link href="/ai-analysis" className="btn">
+                شروع تحلیل هوشمند
+              </Link>
 
-          <section className="quick-grid">
+              <Link href="/bots" className="btn ghost">
+                مدیریت ربات‌ها
+              </Link>
 
-            <Link href="/market" className="quick-card">
+              <Link href="/settings" className="btn ghost">
+                تنظیمات حساب
+              </Link>
 
-              <div className="quick-icon">
-                📊
-              </div>
-
-              <h3>
-                بازار و نمودار
-              </h3>
-
-              <p>
-                مشاهده بازارها، قیمت‌ها و نمودارهای معاملاتی
-              </p>
-
-              <div className="quick-arrow">
-                ورود به بازار ←
-              </div>
-
-            </Link>
-
-            <Link href="/bots" className="quick-card">
-
-              <div className="quick-icon">
-                🤖
-              </div>
-
-              <h3>
-                ربات‌های معاملاتی
-              </h3>
-
-              <p>
-                ساخت و مدیریت ربات‌های هوشمند معاملاتی
-              </p>
-
-              <div className="quick-arrow">
-                مدیریت ربات‌ها ←
-              </div>
-
-            </Link>
-
-            <Link href="/ai-analysis" className="quick-card">
-
-              <div className="quick-icon">
-                🧠
-              </div>
-
-              <h3>
-                تحلیل هوشمند AI
-              </h3>
-
-              <p>
-                بررسی بازار با ابزارهای تحلیل هوش مصنوعی
-              </p>
-
-              <div className="quick-arrow">
-                مشاهده تحلیل ←
-              </div>
-
-            </Link>
-
-            <Link href="/news" className="quick-card">
-
-              <div className="quick-icon">
-                📰
-              </div>
-
-              <h3>
-                اخبار بازار
-              </h3>
-
-              <p>
-                مشاهده اخبار مهم و اطلاعات مرتبط با بازار
-              </p>
-
-              <div className="quick-arrow">
-                مشاهده اخبار ←
-              </div>
-
-            </Link>
-
+              <Link href="/market" className="btn ghost">
+                مشاهده بازار
+              </Link>
+            </div>
           </section>
 
-          {/* ACCOUNT + DEVELOPMENT */}
+          <section className="stats">
+            <Card
+              icon="✓"
+              label="وضعیت حساب"
+              value="فعال"
+              color="green"
+            />
 
-          <section className="bottom-grid">
+            <Card
+              icon="◆"
+              label="پلن فعلی"
+              value={user.plan}
+              color="cyan"
+            />
 
-            <div className="panel">
+            <Card
+              icon="◈"
+              label="ربات‌های فعال"
+              value={`${nf(activeBots)} / ${nf(bots)}`}
+            />
 
-              <div className="panel-title-row">
+            <Card
+              icon="↗"
+              label="سود/زیان ثبت‌شده"
+              value={nf(pnl)}
+              color={pnl >= 0 ? "green" : "amber"}
+            />
+          </section>
 
+          <section className="mini-stats">
+            <div>
+              <span>معاملات باز</span>
+              <strong>{nf(openTrades)}</strong>
+            </div>
+
+            <div>
+              <span>سیگنال‌های ثبت‌شده</span>
+              <strong>{nf(signals)}</strong>
+            </div>
+
+            <div>
+              <span>ربات‌های ثبت‌شده</span>
+              <strong>{nf(bots)}</strong>
+            </div>
+
+            <div>
+              <span>سطح دسترسی</span>
+              <strong>{user.role}</strong>
+            </div>
+          </section>
+
+          <h2>دسترسی سریع</h2>
+
+          <p className="muted">
+            ابزارهای اصلی پلتفرم را با یک کلیک باز کنید.
+          </p>
+
+          <section className="cards">
+            <Quick
+              href="/market"
+              icon="▦"
+              title="بازار و نمودار"
+              text="مشاهده بازارها، قیمت‌ها و نمودارهای معاملاتی"
+              foot="ورود به بازار ←"
+            />
+
+            <Quick
+              href="/bots"
+              icon="◈"
+              title="ربات‌های معاملاتی"
+              text="ساخت، پیکربندی و مدیریت ربات‌های هوشمند"
+              foot={`${nf(bots)} ربات ثبت شده ←`}
+            />
+
+            <Quick
+              href="/ai-analysis"
+              icon="✦"
+              title="تحلیل هوشمند AI"
+              text="بررسی ساختار بازار و دریافت تحلیل‌های هوشمند"
+              foot={`${nf(signals)} سیگنال ثبت شده ←`}
+            />
+
+            <Quick
+              href="/news"
+              icon="▤"
+              title="اخبار بازار"
+              text="پیگیری اخبار اقتصادی و رویدادهای مهم بازار"
+              foot="مشاهده اخبار ←"
+            />
+
+            <Quick
+              href="/economic"
+              icon="◎"
+              title="تقویم اقتصادی"
+              text="بررسی رویدادهای اقتصادی و اخبار تأثیرگذار"
+              foot="مشاهده تقویم ←"
+            />
+
+            <Quick
+              href="/broker"
+              icon="⌘"
+              title="اتصال بروکر"
+              text="مدیریت و بررسی وضعیت اتصال حساب معاملاتی"
+              foot="مدیریت بروکر ←"
+            />
+
+            <Quick
+              href="/payments"
+              icon="▤"
+              title="کیف پول و پرداخت"
+              text="مدیریت پلن، پرداخت‌ها و وضعیت اشتراک"
+              foot="مشاهده پرداخت‌ها ←"
+            />
+
+            <Quick
+              href="/settings"
+              icon="⚙"
+              title="تنظیمات پیشرفته"
+              text="مدیریت اطلاعات حساب، امنیت و تنظیمات شخصی"
+              foot="باز کردن تنظیمات ←"
+            />
+          </section>
+
+          <section className="lower">
+            <Panel title="اطلاعات حساب">
+              <div className="account">
                 <div>
-                  <h2>
-                    اطلاعات حساب
-                  </h2>
-
-                  <p className="panel-description">
-                    مشخصات حساب کاربری شما
-                  </p>
-                </div>
-
-                <span className="panel-badge">
-                  حساب فعال
-                </span>
-
-              </div>
-
-              <div className="account-grid">
-
-                <div className="account-item">
-                  <span>نام کاربر</span>
+                  <small>نام کاربر</small>
                   <strong>{user.name}</strong>
                 </div>
 
-                <div className="account-item">
-                  <span>ایمیل</span>
+                <div>
+                  <small>ایمیل</small>
                   <strong>{user.email}</strong>
                 </div>
 
-                <div className="account-item">
-                  <span>نوع حساب</span>
+                <div>
+                  <small>نوع حساب</small>
                   <strong>{user.plan}</strong>
                 </div>
 
-                <div className="account-item">
-                  <span>سطح دسترسی</span>
+                <div>
+                  <small>سطح دسترسی</small>
                   <strong>{user.role}</strong>
                 </div>
 
-              </div>
-
-            </div>
-
-            <div className="panel">
-
-              <div className="panel-title-row">
+                <div>
+                  <small>معاملات باز</small>
+                  <strong>{nf(openTrades)}</strong>
+                </div>
 
                 <div>
-                  <h2>
-                    امکانات پلتفرم
-                  </h2>
-
-                  <p className="panel-description">
-                    وضعیت قابلیت‌های Trading AI
-                  </p>
+                  <small>تاریخ عضویت</small>
+                  <strong>{formattedJoinDate}</strong>
                 </div>
-
               </div>
 
-              <div className="feature-list">
+              <div className="panel-actions">
+                <Link href="/settings" className="btn">
+                  ویرایش حساب
+                </Link>
 
-                <div className="feature">
-                  <div className="feature-icon">
-                    📈
-                  </div>
-
-                  <div>
-                    <strong>
-                      چارت بازار
-                    </strong>
-
-                    <span>
-                      آماده توسعه
-                    </span>
-                  </div>
-                </div>
-
-                <div className="feature">
-                  <div className="feature-icon">
-                    🤖
-                  </div>
-
-                  <div>
-                    <strong>
-                      ربات خودکار
-                    </strong>
-
-                    <span>
-                      آماده توسعه
-                    </span>
-                  </div>
-                </div>
-
-                <div className="feature">
-                  <div className="feature-icon">
-                    🔗
-                  </div>
-
-                  <div>
-                    <strong>
-                      اتصال بروکر
-                    </strong>
-
-                    <span>
-                      آماده توسعه
-                    </span>
-                  </div>
-                </div>
-
-                <div className="feature">
-                  <div className="feature-icon">
-                    🧠
-                  </div>
-
-                  <div>
-                    <strong>
-                      تحلیل پیشرفته AI
-                    </strong>
-
-                    <span>
-                      آماده توسعه
-                    </span>
-                  </div>
-                </div>
-
+                <Link href="/support" className="btn ghost">
+                  تماس با پشتیبانی
+                </Link>
               </div>
+            </Panel>
 
-            </div>
+            <Panel title="وضعیت امکانات">
+              <div className="features">
+                <Feature
+                  icon="📈"
+                  title="بازار و داده‌ها"
+                  text="قابل استفاده از مسیر بازار"
+                />
 
+                <Feature
+                  icon="◈"
+                  title="ربات‌های معاملاتی"
+                  text={`${nf(activeBots)} ربات فعال`}
+                />
+
+                <Feature
+                  icon="✦"
+                  title="تحلیل هوشمند AI"
+                  text={`${nf(signals)} سیگنال ثبت‌شده`}
+                />
+
+                <Feature
+                  icon="⌘"
+                  title="اتصال بروکر"
+                  text="نیازمند پیاده‌سازی اتصال اختصاصی"
+                />
+
+                <Feature
+                  icon="🔐"
+                  title="امنیت حساب"
+                  text="مدیریت رمز عبور از تنظیمات"
+                />
+              </div>
+            </Panel>
           </section>
 
-          {/* PLATFORM INFO */}
-
           <section className="info-section">
+            <div className="info-header">
+              <div>
+                <h2>راهنمای سریع</h2>
+                <p>
+                  برای شروع کار با امکانات Trading AI
+                  یکی از گزینه‌های زیر را انتخاب کنید.
+                </p>
+              </div>
 
-            <h2 className="info-title">
-              راهنمای سریع
-            </h2>
+              <span className="live-badge">
+                سیستم آنلاین
+              </span>
+            </div>
 
             <div className="info-grid">
-
               <Link href="/bots" className="info-card">
-                <strong>
-                  🤖 مدیریت ربات‌ها
-                </strong>
-
+                <strong>🤖 مدیریت ربات‌ها</strong>
                 <span>
-                  مشاهده و مدیریت ربات‌های معاملاتی
+                  مشاهده، ایجاد و مدیریت ربات‌های معاملاتی
                 </span>
               </Link>
 
               <Link href="/broker" className="info-card">
-                <strong>
-                  🔗 اتصال بروکر
-                </strong>
-
+                <strong>🔗 اتصال بروکر</strong>
                 <span>
                   مدیریت اتصال حساب معاملاتی
                 </span>
               </Link>
 
               <Link href="/support" className="info-card">
-                <strong>
-                  🎧 پشتیبانی
-                </strong>
-
+                <strong>🎧 پشتیبانی</strong>
                 <span>
-                  دریافت راهنمایی و ارسال درخواست
+                  ارسال درخواست و دریافت راهنمایی
                 </span>
               </Link>
 
+              <Link href="/settings" className="info-card">
+                <strong>⚙ تنظیمات پیشرفته</strong>
+                <span>
+                  تنظیمات امنیتی و شخصی حساب
+                </span>
+              </Link>
             </div>
-
           </section>
-
         </section>
-
       </div>
     </main>
   );
 }
+
+function Card({
+  icon,
+  label,
+  value,
+  color = "",
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div className="stat">
+      <b>{icon}</b>
+      <small>{label}</small>
+      <strong className={color}>{value}</strong>
+    </div>
+  );
+}
+
+function Quick({
+  href,
+  icon,
+  title,
+  text,
+  foot,
+}: {
+  href: string;
+  icon: string;
+  title: string;
+  text: string;
+  foot: string;
+}) {
+  return (
+    <Link href={href} className="quick">
+      <b>{icon}</b>
+      <h3>{title}</h3>
+      <p>{text}</p>
+      <strong>{foot}</strong>
+    </Link>
+  );
+}
+
+function Panel({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="panel">
+      <h2>{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+function Feature({
+  icon,
+  title,
+  text,
+}: {
+  icon: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="feature">
+      <b>{icon}</b>
+
+      <span>
+        <strong>{title}</strong>
+        <small>{text}</small>
+      </span>
+    </div>
+  );
+}
+
+const css = `
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: #050b16;
+}
+
+a {
+  text-decoration: none;
+}
+
+.ta {
+  min-height: 100vh;
+  padding: 22px;
+  color: #f8fafc;
+  font-family: Tahoma, Arial, sans-serif;
+  background:
+    radial-gradient(
+      circle at 90% 0%,
+      rgba(8, 145, 178, .14),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 0% 100%,
+      rgba(79, 70, 229, .12),
+      transparent 30%
+    ),
+    #050b16;
+}
+
+.shell {
+  width: min(1540px, 100%);
+  margin: auto;
+  display: grid;
+  grid-template-columns: 255px minmax(0, 1fr);
+  gap: 20px;
+  direction: ltr;
+}
+
+.side,
+.content {
+  direction: rtl;
+}
+
+.side {
+  position: sticky;
+  top: 22px;
+  height: calc(100vh - 44px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 28px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(15, 31, 51, .97),
+      rgba(5, 15, 29, .97)
+    );
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, .28),
+    inset 0 1px 0 rgba(255, 255, 255, .03);
+  backdrop-filter: blur(24px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 20px;
+  color: white;
+  border-bottom: 1px solid rgba(148, 163, 184, .13);
+}
+
+.brand b {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 15px;
+  color: white;
+  background:
+    linear-gradient(135deg, #06b6d4, #4f46e5);
+  box-shadow:
+    0 12px 30px rgba(6, 182, 212, .22);
+}
+
+.brand strong {
+  display: block;
+  font-size: 15px;
+}
+
+.brand small {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.caption {
+  margin: 25px 8px 11px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.side nav {
+  display: grid;
+  gap: 6px;
+}
+
+.side nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: bold;
+  transition:
+    transform .2s ease,
+    background .2s ease,
+    color .2s ease,
+    border-color .2s ease;
+}
+
+.side nav a:hover {
+  color: white;
+  background: rgba(34, 211, 238, .06);
+  border-color: rgba(34, 211, 238, .13);
+  transform: translateX(-3px);
+}
+
+.side nav a.active {
+  color: #67e8f9;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(6, 182, 212, .14),
+      rgba(79, 70, 229, .12)
+    );
+  border-color: rgba(34, 211, 238, .25);
+  box-shadow: 0 8px 25px rgba(6, 182, 212, .07);
+}
+
+.side nav i {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: #67e8f9;
+  background: rgba(255, 255, 255, .04);
+  font-style: normal;
+}
+
+.help {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid rgba(34, 211, 238, .16);
+  border-radius: 18px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(8, 145, 178, .15),
+      rgba(79, 70, 229, .09)
+    );
+}
+
+.help strong {
+  font-size: 12px;
+}
+
+.help p {
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 2;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 11px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: white;
+  background:
+    linear-gradient(135deg, #0891b2, #4f46e5);
+  font-size: 11px;
+  font-weight: bold;
+  transition:
+    transform .2s ease,
+    box-shadow .2s ease,
+    opacity .2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(6, 182, 212, .16);
+}
+
+.btn.ghost {
+  color: #cbd5e1;
+  border-color: rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .04);
+}
+
+.content {
+  min-width: 0;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px 20px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 22px;
+  background: rgba(8, 18, 33, .9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+  backdrop-filter: blur(24px);
+}
+
+.top strong {
+  display: block;
+  font-size: 20px;
+}
+
+.top small {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid rgba(103, 232, 249, .15);
+  border-radius: 14px;
+  color: white;
+  background:
+    linear-gradient(135deg, #0e7490, #4338ca);
+  font-weight: bold;
+  box-shadow: 0 8px 25px rgba(30, 64, 175, .2);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  margin-top: 18px;
+  padding: 30px;
+  border: 1px solid rgba(34, 211, 238, .2);
+  border-radius: 28px;
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(6, 182, 212, .1),
+      transparent 35%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(8, 47, 73, .9),
+      rgba(8, 18, 33, .97)
+    );
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, .16),
+    inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  left: -140px;
+  top: -150px;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, .08);
+  filter: blur(25px);
+}
+
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.hero > span {
+  display: inline-flex;
+  padding: 8px 12px;
+  border: 1px solid rgba(34, 211, 238, .16);
+  border-radius: 999px;
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .07);
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.hero h1 {
+  margin: 18px 0 10px;
+  color: #f8fafc;
+  font-size: clamp(25px, 3vw, 39px);
+  line-height: 1.5;
+}
+
+.hero p {
+  max-width: 800px;
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 2.1;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.stat {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, .13);
+  border-radius: 20px;
+  background: rgba(8, 18, 33, .9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+  transition:
+    transform .2s ease,
+    border-color .2s ease;
+}
+
+.stat:hover {
+  transform: translateY(-3px);
+  border-color: rgba(34, 211, 238, .22);
+}
+
+.stat > b {
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border-radius: 13px;
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .08);
+  font-size: 20px;
+}
+
+.stat small {
+  display: block;
+  margin-top: 15px;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.stat > strong {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  font-size: 22px;
+}
+
+.green {
+  color: #4ade80;
+}
+
+.cyan {
+  color: #22d3ee;
+}
+
+.amber {
+  color: #fbbf24;
+}
+
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.mini-stats > div {
+  padding: 15px;
+  border: 1px solid rgba(148, 163, 184, .1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.mini-stats span {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.mini-stats strong {
+  display: block;
+  margin-top: 8px;
+  color: #e2e8f0;
+  font-size: 15px;
+}
+
+h2 {
+  margin: 28px 2px 7px;
+  color: #f8fafc;
+  font-size: 17px;
+}
+
+.muted {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.quick {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 215px;
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, .13);
+  border-radius: 20px;
+  color: white;
+  background: rgba(8, 18, 33, .9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+  transition:
+    transform .2s ease,
+    border-color .2s ease,
+    background .2s ease;
+}
+
+.quick:hover {
+  transform: translateY(-4px);
+  border-color: rgba(34, 211, 238, .32);
+  background: rgba(11, 28, 47, .98);
+}
+
+.quick > b {
+  display: grid;
+  place-items: center;
+  width: 47px;
+  height: 47px;
+  border-radius: 15px;
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .08);
+  font-size: 21px;
+}
+
+.quick h3 {
+  margin: 17px 0 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.quick p {
+  margin: 0;
+  color: #718198;
+  font-size: 10px;
+  line-height: 2;
+}
+
+.quick > strong {
+  margin-top: auto;
+  padding-top: 18px;
+  color: #67e8f9;
+  font-size: 10px;
+}
+
+.lower {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.panel {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, .13);
+  border-radius: 22px;
+  background: rgba(8, 18, 33, .9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+.panel h2 {
+  margin: 0 0 17px;
+  font-size: 16px;
+}
+
+.account {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account div {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.account small,
+.feature small {
+  display: block;
+  color: #64748b;
+  font-size: 9px;
+}
+
+.account strong {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.features {
+  display: grid;
+  gap: 10px;
+}
+
+.feature {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.feature > b {
+  font-size: 18px;
+}
+
+.feature strong {
+  display: block;
+  font-size: 11px;
+}
+
+.feature small {
+  margin-top: 4px;
+  line-height: 1.8;
+}
+
+.info-section {
+  margin-top: 18px;
+  padding: 22px;
+  border: 1px solid rgba(34, 211, 238, .14);
+  border-radius: 22px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(6, 182, 212, .07),
+      rgba(79, 70, 229, .05)
+    );
+}
+
+.info-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.info-header h2 {
+  margin: 0;
+}
+
+.info-header p {
+  margin: 7px 0 0;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 2;
+}
+
+.live-badge {
+  flex-shrink: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(34, 197, 94, .15);
+  border-radius: 10px;
+  color: #86efac;
+  background: rgba(34, 197, 94, .07);
+  font-size: 9px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.info-card {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid rgba(148, 163, 184, .08);
+  border-radius: 15px;
+  color: white;
+  background: rgba(5, 15, 28, .65);
+  transition:
+    transform .2s ease,
+    border-color .2s ease;
+}
+
+.info-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(34, 211, 238, .25);
+}
+
+.info-card strong {
+  display: block;
+  font-size: 11px;
+}
+
+.info-card span {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 9px;
+  line-height: 1.9;
+}
+
+@media (max-width: 1250px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1150px) {
+  .shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .stats,
+  .mini-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lower {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 780px) {
+  .ta {
+    padding: 10px;
+  }
+
+  .shell {
+    display: block;
+  }
+
+  .side {
+    display: none;
+  }
+
+  .top {
+    padding: 15px;
+    border-radius: 18px;
+  }
+
+  .top strong {
+    font-size: 16px;
+  }
+
+  .hero {
+    padding: 23px;
+    border-radius: 22px;
+  }
+
+  .hero h1 {
+    font-size: 26px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .actions .btn {
+    width: 100%;
+  }
+
+  .info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .stats,
+  .mini-stats,
+  .cards,
+  .account,
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
+
+  .hero h1 {
+    font-size: 23px;
+  }
+
+  .hero p {
+    font-size: 11px;
+  }
+
+  .stat {
+    padding: 18px;
+  }
+
+  .panel,
+  .info-section {
+    padding: 17px;
+  }
+
+  .info-header {
+    flex-direction: column;
+  }
+
+  .live-badge {
+    align-self: flex-start;
+  }
+}
+`;
