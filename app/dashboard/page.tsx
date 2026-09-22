@@ -1,159 +1,254 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const MARKET_SYMBOLS = [
-  "BTCUSDT",
-  "ETHUSDT",
-  "XAUUSD",
-  "EURUSD",
-  "GBPUSD",
-];
+type IconName =
+  | "dashboard"
+  | "signals"
+  | "bots"
+  | "market"
+  | "wallet"
+  | "settings"
+  | "bell"
+  | "chart"
+  | "trade"
+  | "shield"
+  | "news"
+  | "support"
+  | "arrow"
+  | "menu"
+  | "spark"
+  | "user"
+  | "activity"
+  | "refresh";
 
-const faPlan: Record<string, string> = {
-  FREE: "رایگان",
-  BASIC: "پایه",
-  PRO: "حرفه‌ای",
-  PREMIUM: "پریمیوم",
-};
+function Icon({
+  name,
+  size = 20,
+}: {
+  name: IconName;
+  size?: number;
+}) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    xmlns: "http://www.w3.org/2000/svg",
+    "aria-hidden": true,
+  };
 
-const faDirection: Record<string, string> = {
-  BUY: "خرید",
-  SELL: "فروش",
-  LONG: "خرید",
-  SHORT: "فروش",
-};
+  switch (name) {
+    case "dashboard":
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+        </svg>
+      );
 
-const faSignalStatus: Record<string, string> = {
-  WAITING: "در انتظار",
-  ACTIVE: "فعال",
-  OPEN: "باز",
-  CLOSED: "بسته",
-  EXPIRED: "منقضی",
-  CANCELLED: "لغو شده",
-  STOPPED: "متوقف",
-};
+    case "signals":
+      return (
+        <svg {...common}>
+          <path
+            d="M4 17L9 12L13 15L20 7"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M16 7H20V11"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
 
-const faTradeStatus: Record<string, string> = {
-  OPEN: "باز",
-  CLOSED: "بسته",
-  STOPPED: "متوقف",
-};
+    case "bots":
+      return (
+        <svg {...common}>
+          <rect x="5" y="6" width="14" height="12" rx="3" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M12 3V6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <circle cx="9" cy="12" r="1" fill="currentColor" />
+          <circle cx="15" cy="12" r="1" fill="currentColor" />
+          <path d="M9 15H15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
 
-function numberText(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+    case "market":
+      return (
+        <svg {...common}>
+          <path d="M4 19V5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M4 19H21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path
+            d="M7 15L10 11L13 13L18 7"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
 
-function integerText(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
-}
+    case "wallet":
+      return (
+        <svg {...common}>
+          <path
+            d="M4 7.5C4 6.12 5.12 5 6.5 5H19V19H6.5C5.12 19 4 17.88 4 16.5V7.5Z"
+            stroke="currentColor"
+            strokeWidth="1.7"
+          />
+          <path d="M4 8H18" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M16 13H20" stroke="currentColor" strokeWidth="1.7" />
+          <circle cx="16" cy="13" r="1" fill="currentColor" />
+        </svg>
+      );
 
-function priceText(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    case "settings":
+      return (
+        <svg {...common}>
+          <path
+            d="M12 8.2A3.8 3.8 0 1 0 12 15.8A3.8 3.8 0 0 0 12 8.2Z"
+            stroke="currentColor"
+            strokeWidth="1.7"
+          />
+          <path
+            d="M19.4 13.5L21 14.4L19.4 17.1L17.8 16.2C17.3 16.7 16.7 17.1 16 17.4V19.2H12.8V17.4C12.5 17.4 12.2 17.4 12 17.4C11.8 17.4 11.5 17.4 11.2 17.4V19.2H8V17.4C7.3 17.1 6.7 16.7 6.2 16.2L4.6 17.1L3 14.4L4.6 13.5C4.5 13 4.5 12.5 4.5 12C4.5 11.5 4.5 11 4.6 10.5L3 9.6L4.6 6.9L6.2 7.8C6.7 7.3 7.3 6.9 8 6.6V4.8H11.2V6.6C11.5 6.6 11.8 6.6 12 6.6C12.2 6.6 12.5 6.6 12.8 6.6V4.8H16V6.6C16.7 6.9 17.3 7.3 17.8 7.8L19.4 6.9L21 9.6L19.4 10.5C19.5 11 19.5 11.5 19.5 12C19.5 12.5 19.5 13 19.4 13.5Z"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+
+    case "bell":
+      return (
+        <svg {...common}>
+          <path
+            d="M18 9.5C18 6.2 15.8 4 12 4C8.2 4 6 6.2 6 9.5C6 14 4.5 16 4.5 16H19.5C19.5 16 18 14 18 9.5Z"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinejoin="round"
+          />
+          <path d="M10 19C10.5 20 11.2 20.5 12 20.5C12.8 20.5 13.5 20 14 19" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "chart":
+      return (
+        <svg {...common}>
+          <path d="M4 19V5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M4 19H21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M7 15L10 12L13 14L18 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+
+    case "trade":
+      return (
+        <svg {...common}>
+          <path d="M5 7H19" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M5 12H15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M5 17H12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <circle cx="18" cy="17" r="3" stroke="currentColor" strokeWidth="1.7" />
+        </svg>
+      );
+
+    case "shield":
+      return (
+        <svg {...common}>
+          <path
+            d="M12 3L19 6V11.5C19 16 16.2 19.3 12 21C7.8 19.3 5 16 5 11.5V6L12 3Z"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinejoin="round"
+          />
+          <path d="M9 12L11 14L15 9.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+
+    case "news":
+      return (
+        <svg {...common}>
+          <path d="M5 4H19V20H5C4.45 20 4 19.55 4 19V5C4 4.45 4.45 4 5 4Z" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M8 8H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M8 12H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M8 16H13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "support":
+      return (
+        <svg {...common}>
+          <path d="M5 13V11C5 7.13 8.13 4 12 4C15.87 4 19 7.13 19 11V13" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M5 13H8V18H6.5C5.67 18 5 17.33 5 16.5V13Z" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M19 13H16V18H17.5C18.33 18 19 17.33 19 16.5V13Z" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M16 19C15 20 13.8 20.5 12 20.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "arrow":
+      return (
+        <svg {...common}>
+          <path d="M5 12H19" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M13 6L19 12L13 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+
+    case "menu":
+      return (
+        <svg {...common}>
+          <path d="M4 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M4 12H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M4 17H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "spark":
+      return (
+        <svg {...common}>
+          <path d="M12 3L13.5 9.5L20 11L13.5 12.5L12 19L10.5 12.5L4 11L10.5 9.5L12 3Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        </svg>
+      );
+
+    case "user":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M5 20C5.7 16.5 8 14.5 12 14.5C16 14.5 18.3 16.5 19 20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "activity":
+      return (
+        <svg {...common}>
+          <path d="M3 12H7L9.5 6L14 18L16.5 12H21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+
+    case "refresh":
+      return (
+        <svg {...common}>
+          <path d="M20 11A8 8 0 0 0 6.4 5.2L4 7.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M4 4V7.5H7.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 13A8 8 0 0 0 17.6 18.8L20 16.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M20 20V16.5H16.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
   }
-
-  if (value >= 10000) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 0,
-    });
-  }
-
-  if (value >= 100) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 2,
-    });
-  }
-
-  if (value >= 1) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 4,
-    });
-  }
-
-  return value.toLocaleString("en-US", {
-    maximumFractionDigits: 6,
-  });
 }
 
-function dateText(date: Date) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function shortDate(date: Date) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
-function initial(name: string) {
-  return name.trim().charAt(0).toUpperCase() || "U";
-}
-
-function marketLabel(symbol: string) {
-  if (symbol === "BTCUSDT") return "BTC / USDT";
-  if (symbol === "ETHUSDT") return "ETH / USDT";
-  if (symbol === "XAUUSD") return "XAU / USD";
-  if (symbol === "EURUSD") return "EUR / USD";
-  if (symbol === "GBPUSD") return "GBP / USD";
-  return symbol;
-}
-
-function directionLabel(direction: string) {
-  return faDirection[direction] || direction;
-}
-
-function statusLabel(status: string) {
-  return faSignalStatus[status] || faTradeStatus[status] || status;
-}
-
-function signalTone(direction: string) {
-  const value = direction.toUpperCase();
-
-  if (
-    value === "BUY" ||
-    value === "LONG"
-  ) {
-    return "buy";
-  }
-
-  return "sell";
-}
-
-function buildChartPoints(values: number[]) {
-  if (values.length === 0) return "";
-
-  if (values.length === 1) {
-    return "50,80";
-  }
-
-  const width = 420;
-  const height = 150;
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-
-  const range = max - min || 1;
-
-  return values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * width;
-      const normalized = (value - min) / range;
-      const y = height - normalized * 105 - 15;
-
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("fa-IR").format(value);
 }
 
 export default async function DashboardPage() {
@@ -163,11 +258,6 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  /*
-   * IMPORTANT:
-   * getSession() in this project returns userId.
-   * It does NOT return session.user.
-   */
   const user = await prisma.user.findUnique({
     where: {
       id: session.userId,
@@ -178,7 +268,6 @@ export default async function DashboardPage() {
       email: true,
       role: true,
       plan: true,
-      createdAt: true,
     },
   });
 
@@ -186,1503 +275,1365 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  /*
-   * Real database statistics
-   */
-  const [
-    botsCount,
-    activeBotsCount,
-    signalsCount,
-    activeSignalsCount,
-    buySignalsCount,
-    sellSignalsCount,
-    tradesCount,
-    openTradesCount,
-    closedTradesCount,
-    recentSignals,
-    recentTrades,
-    marketRows,
-  ] = await Promise.all([
+  const [botsCount, signalsCount, tradesCount] = await Promise.all([
     prisma.tradingBot.count({
       where: {
         userId: user.id,
       },
     }),
-
-    prisma.tradingBot.count({
-      where: {
-        userId: user.id,
-        isActive: true,
-      },
-    }),
-
     prisma.tradingSignal.count({
       where: {
         userId: user.id,
       },
     }),
-
-    prisma.tradingSignal.count({
-      where: {
-        userId: user.id,
-        status: {
-          in: ["WAITING", "ACTIVE", "OPEN"],
-        },
-      },
-    }),
-
-    prisma.tradingSignal.count({
-      where: {
-        userId: user.id,
-        direction: {
-          in: ["BUY", "LONG"],
-        },
-      },
-    }),
-
-    prisma.tradingSignal.count({
-      where: {
-        userId: user.id,
-        direction: {
-          in: ["SELL", "SHORT"],
-        },
-      },
-    }),
-
     prisma.trade.count({
       where: {
         userId: user.id,
       },
     }),
-
-    prisma.trade.count({
-      where: {
-        userId: user.id,
-        status: "OPEN",
-      },
-    }),
-
-    prisma.trade.count({
-      where: {
-        userId: user.id,
-        status: "CLOSED",
-      },
-    }),
-
-    prisma.tradingSignal.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 6,
-      select: {
-        id: true,
-        symbol: true,
-        timeframe: true,
-        direction: true,
-        entry: true,
-        takeProfit: true,
-        stopLoss: true,
-        riskReward: true,
-        score: true,
-        confidence: true,
-        status: true,
-        source: true,
-        telegramSent: true,
-        createdAt: true,
-      },
-    }),
-
-    prisma.trade.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        openedAt: "asc",
-      },
-      take: 12,
-      select: {
-        id: true,
-        symbol: true,
-        direction: true,
-        entryPrice: true,
-        exitPrice: true,
-        takeProfit: true,
-        stopLoss: true,
-        quantity: true,
-        profitLoss: true,
-        status: true,
-        source: true,
-        openedAt: true,
-        closedAt: true,
-      },
-    }),
-
-    Promise.all(
-      MARKET_SYMBOLS.map(async (symbol) => {
-        const candles = await prisma.marketCandle.findMany({
-          where: {
-            symbol,
-          },
-          orderBy: {
-            openTime: "desc",
-          },
-          take: 2,
-          select: {
-            close: true,
-            openTime: true,
-          },
-        });
-
-        const latest = candles[0] || null;
-        const previous = candles[1] || null;
-
-        let change = 0;
-
-        if (
-          latest &&
-          previous &&
-          previous.close !== 0
-        ) {
-          change =
-            ((latest.close - previous.close) /
-              previous.close) *
-            100;
-        }
-
-        return {
-          symbol,
-          latest,
-          previous,
-          change,
-        };
-      })
-    ),
   ]);
 
-  /*
-   * Real P/L chart
-   */
-  let cumulative = 0;
+  const firstName = user.name?.trim()?.split(" ")[0] || "کاربر";
+  const initial = firstName.charAt(0).toUpperCase();
 
-  const chartValues = recentTrades.map((trade) => {
-    const pnl = Number(trade.profitLoss || 0);
-
-    cumulative += Number.isFinite(pnl) ? pnl : 0;
-
-    return cumulative;
-  });
-
-  const chartPoints = buildChartPoints(chartValues);
-
-  const totalPnL = recentTrades.reduce(
-    (sum, trade) => {
-      const value = Number(trade.profitLoss || 0);
-
-      return sum + (Number.isFinite(value) ? value : 0);
-    },
-    0
-  );
-
-  const winningTrades = recentTrades.filter(
-    (trade) => Number(trade.profitLoss || 0) > 0
-  ).length;
-
-  const losingTrades = recentTrades.filter(
-    (trade) => Number(trade.profitLoss || 0) < 0
-  ).length;
-
-  const winRate =
-    winningTrades + losingTrades > 0
-      ? (winningTrades /
-          (winningTrades + losingTrades)) *
-        100
-      : 0;
-
-  const userName = user.name || "کاربر";
+  const isAdmin = user.role === "ADMIN";
 
   return (
-    <main
-      dir="rtl"
-      className="min-h-screen overflow-x-hidden bg-[#020202] text-white"
-    >
-      {/* GLOBAL BACKGROUND */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#020202]">
-        <div className="absolute -right-[180px] -top-[220px] h-[650px] w-[650px] rounded-full bg-[#d09a26]/[0.08] blur-[150px]" />
+    <main dir="rtl" className="trading-shell">
+      <style>{`
+        :root {
+          --gold: #d6ad55;
+          --gold-2: #f2d27c;
+          --gold-3: #8b6827;
+          --black: #050505;
+          --black-2: #090909;
+          --panel: rgba(17,17,17,.78);
+          --panel-2: rgba(11,11,11,.9);
+          --border: rgba(214,173,85,.20);
+          --text: #f4f1e9;
+          --muted: #99958b;
+          --green: #48d597;
+          --red: #ff6868;
+        }
 
-        <div className="absolute -left-[220px] top-[42%] h-[600px] w-[600px] rounded-full bg-[#8c6418]/[0.045] blur-[160px]" />
+        * {
+          box-sizing: border-box;
+        }
 
-        <div className="absolute bottom-[-300px] right-[25%] h-[550px] w-[550px] rounded-full bg-[#d5a633]/[0.035] blur-[160px]" />
+        html {
+          background: #030303;
+        }
 
-        <div className="absolute inset-0 opacity-[0.025] [background-image:linear-gradient(#d7a83b_1px,transparent_1px),linear-gradient(90deg,#d7a83b_1px,transparent_1px)] [background-size:60px_60px]" />
-      </div>
+        body {
+          margin: 0;
+          background: #030303;
+          color: var(--text);
+          font-family:
+            Tahoma,
+            Arial,
+            "Segoe UI",
+            sans-serif;
+        }
 
-      <div className="mx-auto max-w-[1500px] px-2 py-2 sm:px-4 sm:py-4 lg:px-7 lg:py-7">
+        a {
+          color: inherit;
+          text-decoration: none;
+        }
 
-        {/* APP FRAME */}
-        <div className="overflow-hidden rounded-[24px] border border-[#35280f] bg-[#050505]/95 shadow-[0_30px_100px_rgba(0,0,0,0.75)]">
+        .trading-shell {
+          min-height: 100vh;
+          width: 100%;
+          background:
+            radial-gradient(circle at 80% 0%, rgba(214,173,85,.10), transparent 26rem),
+            radial-gradient(circle at 10% 30%, rgba(214,173,85,.035), transparent 24rem),
+            #030303;
+          overflow-x: hidden;
+        }
 
-          {/* HEADER */}
-          <header className="border-b border-[#21190b] bg-[#060606]/95">
+        .page {
+          width: min(1440px, calc(100% - 40px));
+          margin: 0 auto;
+          padding: 22px 0 40px;
+        }
 
-            <div className="flex min-h-[78px] items-center justify-between gap-3 px-3 py-3 sm:px-5 lg:px-7">
+        .topbar {
+          min-height: 76px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          padding: 12px 18px;
+          border: 1px solid var(--border);
+          border-radius: 22px;
+          background: rgba(10,10,10,.82);
+          backdrop-filter: blur(22px);
+          -webkit-backdrop-filter: blur(22px);
+          box-shadow:
+            0 20px 70px rgba(0,0,0,.45),
+            inset 0 1px 0 rgba(255,255,255,.035);
+          position: sticky;
+          top: 14px;
+          z-index: 50;
+        }
 
-              {/* BRAND */}
-              <Link
-                href="/dashboard"
-                className="flex shrink-0 items-center gap-3"
-              >
-                <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-[#735719] bg-gradient-to-br from-[#2a1d07] via-[#0d0d0d] to-[#090909] shadow-[0_0_35px_rgba(214,165,51,0.12)]">
-                  <div className="absolute inset-[5px] rounded-xl border border-[#4d3912]" />
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          min-width: 210px;
+        }
 
-                  <span className="relative text-xl text-[#e3b83f]">
-                    ♛
-                  </span>
-                </div>
+        .brand-mark {
+          width: 46px;
+          height: 46px;
+          border-radius: 14px;
+          display: grid;
+          place-items: center;
+          color: #080808;
+          background:
+            linear-gradient(145deg, #f5d986, #c39234);
+          box-shadow:
+            0 0 28px rgba(214,173,85,.22),
+            inset 0 1px 0 rgba(255,255,255,.6);
+          font-weight: 900;
+          font-size: 17px;
+        }
 
-                <div className="hidden sm:block">
-                  <div className="text-[17px] font-black tracking-[0.08em] text-[#e7ba43]">
-                    TRADING AI
-                  </div>
+        .brand-name {
+          font-size: 16px;
+          font-weight: 900;
+          letter-spacing: .5px;
+        }
 
-                  <div className="mt-1 text-[8px] tracking-[0.19em] text-[#777]">
-                    SMART TRADING PLATFORM
-                  </div>
-                </div>
+        .brand-sub {
+          color: var(--muted);
+          font-size: 10px;
+          margin-top: 3px;
+        }
+
+        .nav {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          flex: 1;
+        }
+
+        .nav-link {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 11px 12px;
+          border-radius: 12px;
+          color: #aaa69c;
+          font-size: 12px;
+          transition: .2s ease;
+          white-space: nowrap;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+          color: var(--gold-2);
+          background: rgba(214,173,85,.08);
+        }
+
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .icon-button {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 13px;
+          color: #cfc8b7;
+          background: rgba(255,255,255,.025);
+          border: 1px solid rgba(255,255,255,.08);
+        }
+
+        .icon-button:hover {
+          color: var(--gold-2);
+          border-color: var(--border);
+          background: rgba(214,173,85,.06);
+        }
+
+        .profile {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 5px 7px 5px 5px;
+          border: 1px solid rgba(214,173,85,.16);
+          border-radius: 15px;
+          background: rgba(255,255,255,.025);
+        }
+
+        .avatar {
+          width: 35px;
+          height: 35px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          color: #080808;
+          font-weight: 900;
+          background: linear-gradient(145deg, #f4d780, #a97925);
+        }
+
+        .profile-text {
+          display: flex;
+          flex-direction: column;
+          min-width: 80px;
+        }
+
+        .profile-name {
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .profile-plan {
+          color: var(--muted);
+          font-size: 9px;
+          margin-top: 2px;
+        }
+
+        .mobile-nav {
+          display: none;
+        }
+
+        .hero {
+          margin-top: 22px;
+          display: grid;
+          grid-template-columns: 1.4fr .9fr;
+          gap: 18px;
+        }
+
+        .hero-main,
+        .hero-side,
+        .glass-card {
+          border: 1px solid var(--border);
+          background:
+            linear-gradient(145deg, rgba(22,22,22,.90), rgba(7,7,7,.92));
+          box-shadow:
+            0 22px 70px rgba(0,0,0,.42),
+            inset 0 1px 0 rgba(255,255,255,.035);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+        }
+
+        .hero-main {
+          min-height: 315px;
+          border-radius: 25px;
+          padding: 34px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .hero-main:after {
+          content: "";
+          position: absolute;
+          width: 380px;
+          height: 380px;
+          border-radius: 50%;
+          background: rgba(214,173,85,.07);
+          filter: blur(45px);
+          left: -150px;
+          bottom: -190px;
+          pointer-events: none;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          color: var(--gold-2);
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: .4px;
+          margin-bottom: 15px;
+        }
+
+        .eyebrow-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--gold);
+          box-shadow: 0 0 14px rgba(214,173,85,.7);
+        }
+
+        .hero-title {
+          font-size: clamp(28px, 4vw, 48px);
+          line-height: 1.25;
+          margin: 0;
+          max-width: 720px;
+          font-weight: 950;
+          letter-spacing: -.8px;
+        }
+
+        .hero-title span {
+          color: var(--gold-2);
+        }
+
+        .hero-description {
+          max-width: 690px;
+          margin: 15px 0 0;
+          color: #aaa69e;
+          line-height: 2;
+          font-size: 13px;
+        }
+
+        .hero-buttons {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 25px;
+        }
+
+        .primary-button,
+        .secondary-button {
+          min-height: 45px;
+          padding: 0 18px;
+          border-radius: 13px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          font-size: 12px;
+          font-weight: 800;
+          transition: .2s ease;
+        }
+
+        .primary-button {
+          color: #090909;
+          background: linear-gradient(135deg, #f1d37d, #b98127);
+          box-shadow: 0 12px 30px rgba(214,173,85,.15);
+        }
+
+        .primary-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 16px 38px rgba(214,173,85,.25);
+        }
+
+        .secondary-button {
+          color: #ded8c9;
+          border: 1px solid rgba(214,173,85,.20);
+          background: rgba(255,255,255,.025);
+        }
+
+        .secondary-button:hover {
+          border-color: rgba(214,173,85,.42);
+          color: var(--gold-2);
+        }
+
+        .hero-side {
+          border-radius: 25px;
+          padding: 22px;
+        }
+
+        .section-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+          margin-bottom: 15px;
+        }
+
+        .section-title {
+          margin: 0;
+          font-size: 15px;
+          font-weight: 900;
+        }
+
+        .section-caption {
+          margin: 5px 0 0;
+          color: var(--muted);
+          font-size: 10px;
+        }
+
+        .system-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          color: #8fe6bd;
+          font-size: 10px;
+        }
+
+        .status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--green);
+          box-shadow: 0 0 12px rgba(72,213,151,.65);
+        }
+
+        .mini-stats {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-top: 18px;
+        }
+
+        .mini-stat {
+          min-height: 100px;
+          border: 1px solid rgba(255,255,255,.07);
+          background: rgba(255,255,255,.025);
+          border-radius: 16px;
+          padding: 14px;
+        }
+
+        .mini-stat-label {
+          color: #8f8b82;
+          font-size: 10px;
+        }
+
+        .mini-stat-value {
+          margin-top: 12px;
+          font-size: 25px;
+          font-weight: 900;
+          color: #f2eee5;
+        }
+
+        .mini-stat-note {
+          margin-top: 4px;
+          color: #6f6b63;
+          font-size: 9px;
+        }
+
+        .stats {
+          margin-top: 18px;
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 14px;
+        }
+
+        .stat-card {
+          min-height: 135px;
+          padding: 18px;
+          border-radius: 20px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .stat-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 13px;
+          display: grid;
+          place-items: center;
+          color: var(--gold-2);
+          border: 1px solid rgba(214,173,85,.17);
+          background: rgba(214,173,85,.07);
+        }
+
+        .stat-label {
+          margin-top: 18px;
+          color: #9b978d;
+          font-size: 10px;
+        }
+
+        .stat-value {
+          margin-top: 5px;
+          font-size: 27px;
+          font-weight: 950;
+        }
+
+        .stat-description {
+          color: #66635c;
+          font-size: 9px;
+          margin-top: 3px;
+        }
+
+        .workspace {
+          margin-top: 18px;
+          display: grid;
+          grid-template-columns: 1.35fr .65fr;
+          gap: 18px;
+        }
+
+        .card {
+          border-radius: 22px;
+          padding: 20px;
+        }
+
+        .chart-box {
+          height: 260px;
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(214,173,85,.10);
+          border-radius: 17px;
+          background:
+            linear-gradient(rgba(214,173,85,.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(214,173,85,.035) 1px, transparent 1px),
+            rgba(0,0,0,.23);
+          background-size: 45px 45px;
+        }
+
+        .chart-svg {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+        }
+
+        .chart-placeholder {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          pointer-events: none;
+        }
+
+        .chart-placeholder-inner {
+          padding: 16px 22px;
+          border-radius: 16px;
+          background: rgba(5,5,5,.68);
+          border: 1px solid rgba(214,173,85,.13);
+          backdrop-filter: blur(10px);
+        }
+
+        .chart-placeholder strong {
+          display: block;
+          color: var(--gold-2);
+          font-size: 13px;
+        }
+
+        .chart-placeholder span {
+          display: block;
+          margin-top: 6px;
+          color: #77736b;
+          font-size: 10px;
+        }
+
+        .quick-list {
+          display: grid;
+          gap: 9px;
+        }
+
+        .quick-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-height: 62px;
+          padding: 10px 12px;
+          border-radius: 15px;
+          border: 1px solid rgba(255,255,255,.065);
+          background: rgba(255,255,255,.018);
+        }
+
+        .quick-icon {
+          width: 36px;
+          height: 36px;
+          flex: 0 0 36px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          color: var(--gold-2);
+          background: rgba(214,173,85,.07);
+          border: 1px solid rgba(214,173,85,.12);
+        }
+
+        .quick-text {
+          flex: 1;
+        }
+
+        .quick-title {
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .quick-sub {
+          color: #716d65;
+          font-size: 9px;
+          margin-top: 3px;
+        }
+
+        .quick-arrow {
+          color: #666158;
+        }
+
+        .bottom-grid {
+          margin-top: 18px;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 14px;
+        }
+
+        .feature-card {
+          min-height: 145px;
+          border-radius: 20px;
+          padding: 19px;
+          transition: .2s ease;
+        }
+
+        .feature-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(214,173,85,.36);
+        }
+
+        .feature-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .feature-icon {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 13px;
+          color: var(--gold-2);
+          border: 1px solid rgba(214,173,85,.16);
+          background: rgba(214,173,85,.065);
+        }
+
+        .feature-arrow {
+          color: #5f5a51;
+        }
+
+        .feature-title {
+          margin: 18px 0 0;
+          font-size: 13px;
+          font-weight: 900;
+        }
+
+        .feature-description {
+          margin: 7px 0 0;
+          color: #77736b;
+          line-height: 1.8;
+          font-size: 9px;
+        }
+
+        .footer {
+          margin-top: 22px;
+          padding: 18px 5px 0;
+          border-top: 1px solid rgba(255,255,255,.055);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+          color: #59564f;
+          font-size: 9px;
+        }
+
+        .footer-status {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .gold {
+          color: var(--gold-2);
+        }
+
+        .admin-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-right: 6px;
+          padding: 4px 7px;
+          border-radius: 7px;
+          color: var(--gold-2);
+          background: rgba(214,173,85,.08);
+          border: 1px solid rgba(214,173,85,.16);
+          font-size: 8px;
+        }
+
+        @media (max-width: 1120px) {
+          .nav-link {
+            padding: 10px 8px;
+            font-size: 10px;
+          }
+
+          .brand {
+            min-width: 175px;
+          }
+
+          .hero {
+            grid-template-columns: 1fr;
+          }
+
+          .stats {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .workspace {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 780px) {
+          .page {
+            width: min(100% - 20px, 650px);
+            padding-top: 10px;
+          }
+
+          .topbar {
+            position: relative;
+            top: 0;
+            padding: 11px;
+            border-radius: 18px;
+          }
+
+          .nav {
+            display: none;
+          }
+
+          .header-actions .icon-button:nth-child(1) {
+            display: none;
+          }
+
+          .profile-text {
+            display: none;
+          }
+
+          .profile {
+            padding: 4px;
+            border: 0;
+            background: transparent;
+          }
+
+          .mobile-nav {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            margin-top: 9px;
+            padding: 7px;
+            border: 1px solid var(--border);
+            border-radius: 17px;
+            background: rgba(10,10,10,.84);
+          }
+
+          .mobile-nav a {
+            min-height: 50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            border-radius: 11px;
+            color: #858179;
+            font-size: 8px;
+          }
+
+          .mobile-nav a:first-child {
+            color: var(--gold-2);
+            background: rgba(214,173,85,.08);
+          }
+
+          .hero {
+            margin-top: 10px;
+          }
+
+          .hero-main {
+            min-height: auto;
+            padding: 23px 18px;
+            border-radius: 20px;
+          }
+
+          .hero-title {
+            font-size: 27px;
+          }
+
+          .hero-description {
+            font-size: 11px;
+          }
+
+          .hero-buttons {
+            display: grid;
+            grid-template-columns: 1fr;
+          }
+
+          .primary-button,
+          .secondary-button {
+            width: 100%;
+          }
+
+          .hero-side {
+            padding: 17px;
+            border-radius: 20px;
+          }
+
+          .stats {
+            grid-template-columns: 1fr 1fr;
+            gap: 9px;
+          }
+
+          .stat-card {
+            min-height: 125px;
+            padding: 14px;
+            border-radius: 17px;
+          }
+
+          .stat-value {
+            font-size: 23px;
+          }
+
+          .workspace,
+          .bottom-grid {
+            margin-top: 10px;
+          }
+
+          .bottom-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .card {
+            padding: 15px;
+            border-radius: 19px;
+          }
+
+          .chart-box {
+            height: 220px;
+          }
+
+          .footer {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+        }
+
+        @media (max-width: 430px) {
+          .page {
+            width: calc(100% - 12px);
+          }
+
+          .brand-name {
+            font-size: 13px;
+          }
+
+          .brand-sub {
+            font-size: 8px;
+          }
+
+          .brand-mark {
+            width: 40px;
+            height: 40px;
+          }
+
+          .mini-stats {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .mini-stat {
+            min-height: 90px;
+          }
+
+          .mini-stat-value {
+            font-size: 21px;
+          }
+
+          .hero-title {
+            font-size: 24px;
+          }
+
+          .stats {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .stat-label {
+            font-size: 9px;
+          }
+
+          .stat-value {
+            font-size: 20px;
+          }
+
+          .stat-description {
+            font-size: 8px;
+          }
+        }
+      `}</style>
+
+      <div className="page">
+        <header className="topbar">
+          <Link href="/dashboard" className="brand">
+            <div className="brand-mark">AI</div>
+
+            <div>
+              <div className="brand-name">TRADING AI</div>
+              <div className="brand-sub">SMART TRADING PLATFORM</div>
+            </div>
+          </Link>
+
+          <nav className="nav">
+            <Link className="nav-link active" href="/dashboard">
+              <Icon name="dashboard" size={17} />
+              داشبورد
+            </Link>
+
+            <Link className="nav-link" href="/signals">
+              <Icon name="signals" size={17} />
+              سیگنال‌ها
+            </Link>
+
+            <Link className="nav-link" href="/bots">
+              <Icon name="bots" size={17} />
+              ربات‌ها
+            </Link>
+
+            <Link className="nav-link" href="/market">
+              <Icon name="market" size={17} />
+              بازار
+            </Link>
+
+            <Link className="nav-link" href="/payments">
+              <Icon name="wallet" size={17} />
+              کیف پول
+            </Link>
+
+            <Link className="nav-link" href="/settings">
+              <Icon name="settings" size={17} />
+              تنظیمات
+            </Link>
+          </nav>
+
+          <div className="header-actions">
+            <Link href="/notifications" className="icon-button" aria-label="اعلان‌ها">
+              <Icon name="bell" size={18} />
+            </Link>
+
+            <Link href="/profile" className="profile">
+              <div className="avatar">{initial}</div>
+
+              <div className="profile-text">
+                <span className="profile-name">
+                  {firstName}
+                  {isAdmin && <span className="admin-badge">ADMIN</span>}
+                </span>
+
+                <span className="profile-plan">
+                  پلن {user.plan || "FREE"}
+                </span>
+              </div>
+            </Link>
+          </div>
+        </header>
+
+        <nav className="mobile-nav">
+          <Link href="/dashboard">
+            <Icon name="dashboard" size={18} />
+            داشبورد
+          </Link>
+
+          <Link href="/signals">
+            <Icon name="signals" size={18} />
+            سیگنال‌ها
+          </Link>
+
+          <Link href="/bots">
+            <Icon name="bots" size={18} />
+            ربات‌ها
+          </Link>
+
+          <Link href="/market">
+            <Icon name="market" size={18} />
+            بازار
+          </Link>
+        </nav>
+
+        <section className="hero">
+          <div className="hero-main">
+            <div className="eyebrow">
+              <span className="eyebrow-dot" />
+              پنل هوشمند معاملات
+            </div>
+
+            <h1 className="hero-title">
+              سلام {firstName}،
+              <br />
+              <span>داشبورد معاملاتی شما آماده است.</span>
+            </h1>
+
+            <p className="hero-description">
+              اینجا مرکز کنترل Trading AI است؛ سیگنال‌ها، ربات‌های معاملاتی،
+              وضعیت حساب و ابزارهای تحلیل خود را از یک محیط حرفه‌ای مدیریت کنید.
+            </p>
+
+            <div className="hero-buttons">
+              <Link href="/ai-analysis" className="primary-button">
+                <Icon name="spark" size={17} />
+                شروع تحلیل هوشمند
               </Link>
 
-              {/* DESKTOP NAV */}
-              <nav className="hidden items-center gap-1 xl:flex">
-                <NavItem
-                  href="/dashboard"
-                  icon="⌂"
-                  title="داشبورد"
-                  active
-                />
+              <Link href="/signals" className="secondary-button">
+                مشاهده سیگنال‌ها
+                <Icon name="arrow" size={16} />
+              </Link>
 
-                <NavItem
-                  href="/signals"
-                  icon="↗"
-                  title="سیگنال‌ها"
-                />
-
-                <NavItem
-                  href="/bots"
-                  icon="♙"
-                  title="ربات‌ها"
-                />
-
-                <NavItem
-                  href="/market"
-                  icon="◈"
-                  title="بازارها"
-                />
-
-                <NavItem
-                  href="/broker"
-                  icon="▣"
-                  title="بروکر"
-                />
-
-                <NavItem
-                  href="/payments"
-                  icon="◇"
-                  title="کیف پول"
-                />
-
-                <NavItem
-                  href="/settings"
-                  icon="⚙"
-                  title="تنظیمات"
-                />
-              </nav>
-
-              {/* HEADER ACTIONS */}
-              <div className="flex items-center gap-2">
-
-                <Link
-                  href="/notifications"
-                  className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[#2b210e] bg-[#0a0a0a] text-[#9b7930] transition hover:border-[#76591c] hover:text-[#e5b73f] sm:flex"
-                >
-                  ♧
-                </Link>
-
-                <div className="flex h-10 min-w-10 items-center justify-center rounded-full border border-[#80621b] bg-[#0b0b0b] px-3 text-sm font-black text-[#ddb039]">
-                  {initial(userName)}
-                </div>
-              </div>
+              <Link href="/bots" className="secondary-button">
+                مدیریت ربات‌ها
+              </Link>
             </div>
-
-            {/* MOBILE NAV */}
-            <div className="border-t border-[#1a140a] px-3 py-3 xl:hidden">
-              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-                <MobileNavItem
-                  href="/dashboard"
-                  title="داشبورد"
-                  icon="⌂"
-                  active
-                />
-
-                <MobileNavItem
-                  href="/signals"
-                  title="سیگنال‌ها"
-                  icon="↗"
-                />
-
-                <MobileNavItem
-                  href="/bots"
-                  title="ربات‌ها"
-                  icon="♙"
-                />
-
-                <MobileNavItem
-                  href="/market"
-                  title="بازار"
-                  icon="◈"
-                />
-
-                <MobileNavItem
-                  href="/broker"
-                  title="بروکر"
-                  icon="▣"
-                />
-
-                <MobileNavItem
-                  href="/settings"
-                  title="تنظیمات"
-                  icon="⚙"
-                />
-              </div>
-            </div>
-          </header>
-
-          {/* MAIN */}
-          <section className="px-3 py-4 sm:px-5 sm:py-6 lg:px-7 lg:py-8">
-
-            {/* HERO */}
-            <section className="relative overflow-hidden rounded-[24px] border border-[#493612] bg-gradient-to-br from-[#161006] via-[#080808] to-[#040404] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-
-              <div className="pointer-events-none absolute right-[-160px] top-[-180px] h-[500px] w-[500px] rounded-full bg-[#d3a332]/[0.08] blur-[110px]" />
-
-              <div className="pointer-events-none absolute bottom-[-220px] left-[15%] h-[450px] w-[600px] rounded-full bg-[#b27f1d]/[0.04] blur-[120px]" />
-
-              <div className="relative grid gap-8 p-5 sm:p-7 lg:grid-cols-[1.05fr_0.95fr] lg:p-10">
-
-                {/* HERO TEXT */}
-                <div className="flex flex-col justify-center">
-
-                  <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-[#4a3815] bg-[#110d06] px-3 py-2 text-[10px] font-bold text-[#c5a150]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#35c96a] shadow-[0_0_10px_#35c96a]" />
-                    سیستم معاملاتی آنلاین
-                  </div>
-
-                  <h1 className="text-3xl font-black leading-[1.3] text-white sm:text-4xl lg:text-5xl">
-                    هوش مصنوعی
-                    <br />
-
-                    <span className="bg-gradient-to-l from-[#f4ce61] via-[#d7a633] to-[#89641b] bg-clip-text text-transparent">
-                      تحلیل بازار
-                    </span>
-                  </h1>
-
-                  <p className="mt-5 max-w-xl text-sm leading-7 text-[#858585] sm:text-base">
-                    {userName} عزیز، پنل حرفه‌ای Trading AI برای مدیریت
-                    سیگنال‌ها، ربات‌ها، معاملات و تحلیل بازار آماده است.
-                  </p>
-
-                  <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-
-                    <Link
-                      href="/ai-analysis"
-                      className="flex h-12 items-center justify-center rounded-xl bg-gradient-to-r from-[#edc34d] to-[#9d7019] px-7 text-sm font-black text-[#080808] shadow-[0_10px_35px_rgba(215,165,48,0.18)] transition hover:-translate-y-0.5 hover:brightness-110"
-                    >
-                      ✦ شروع تحلیل هوشمند
-                    </Link>
-
-                    <Link
-                      href="/signals"
-                      className="flex h-12 items-center justify-center rounded-xl border border-[#503b14] bg-[#0b0b0b] px-7 text-sm font-bold text-[#d2aa43] transition hover:border-[#8a681f] hover:bg-[#131006]"
-                    >
-                      مشاهده سیگنال‌ها
-                    </Link>
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[10px] text-[#696969]">
-                    <span>
-                      ● {integerText(activeBotsCount)} ربات فعال
-                    </span>
-
-                    <span>
-                      ● {integerText(activeSignalsCount)} سیگنال فعال
-                    </span>
-
-                    <span>
-                      ● {integerText(openTradesCount)} معامله باز
-                    </span>
-                  </div>
-                </div>
-
-                {/* HERO CHART */}
-                <div className="relative min-h-[250px] overflow-hidden rounded-2xl border border-[#3b2c11] bg-[#050505]">
-
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(206,155,37,0.12),transparent_55%)]" />
-
-                  <div className="absolute left-4 top-4 z-10">
-                    <div className="text-[9px] tracking-[0.15em] text-[#6c6c6c]">
-                      ACCOUNT PERFORMANCE
-                    </div>
-
-                    <div className="mt-1 text-sm font-black text-[#dfb33f]">
-                      عملکرد معاملات
-                    </div>
-                  </div>
-
-                  <div className="absolute right-4 top-4 z-10 rounded-lg border border-[#493713] bg-[#0a0a0a]/90 px-3 py-2">
-                    <div className="text-[9px] text-[#6b6b6b]">
-                      P/L
-                    </div>
-
-                    <div
-                      className={[
-                        "mt-1 text-sm font-black",
-                        totalPnL > 0
-                          ? "text-[#47c875]"
-                          : totalPnL < 0
-                            ? "text-[#e15a5a]"
-                            : "text-[#d2a941]",
-                      ].join(" ")}
-                    >
-                      {totalPnL > 0 ? "+" : ""}
-                      {numberText(totalPnL)}
-                    </div>
-                  </div>
-
-                  <div className="absolute inset-x-5 bottom-7 top-20">
-                    <div className="absolute inset-0 flex flex-col justify-between opacity-30">
-                      <span className="border-t border-[#71551a]" />
-                      <span className="border-t border-[#71551a]" />
-                      <span className="border-t border-[#71551a]" />
-                      <span className="border-t border-[#71551a]" />
-                    </div>
-
-                    {chartPoints ? (
-                      <svg
-                        viewBox="0 0 420 150"
-                        preserveAspectRatio="none"
-                        className="absolute inset-0 h-full w-full overflow-visible"
-                      >
-                        <defs>
-                          <linearGradient
-                            id="goldLine"
-                            x1="0"
-                            y1="0"
-                            x2="1"
-                            y2="0"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#8e681b"
-                            />
-
-                            <stop
-                              offset="55%"
-                              stopColor="#dcb341"
-                            />
-
-                            <stop
-                              offset="100%"
-                              stopColor="#f1cf68"
-                            />
-                          </linearGradient>
-
-                          <linearGradient
-                            id="goldArea"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#d5a735"
-                              stopOpacity="0.26"
-                            />
-
-                            <stop
-                              offset="100%"
-                              stopColor="#d5a735"
-                              stopOpacity="0"
-                            />
-                          </linearGradient>
-                        </defs>
-
-                        <polyline
-                          points={chartPoints}
-                          fill="none"
-                          stroke="url(#goldLine)"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                      </svg>
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="text-2xl text-[#70551c]">
-                            ◇
-                          </div>
-
-                          <div className="mt-2 text-xs text-[#626262]">
-                            هنوز داده معاملاتی کافی نیست
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="absolute bottom-3 left-4 right-4 flex justify-between text-[8px] text-[#555]">
-                    <span>
-                      {recentTrades[0]
-                        ? shortDate(recentTrades[0].openedAt)
-                        : "—"}
-                    </span>
-
-                    <span>
-                      {recentTrades.length
-                        ? shortDate(
-                            recentTrades[
-                              recentTrades.length - 1
-                            ].openedAt
-                          )
-                        : "—"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* STAT CARDS */}
-            <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-
-              <StatCard
-                title="کل سیگنال‌ها"
-                value={integerText(signalsCount)}
-                description={`${integerText(activeSignalsCount)} سیگنال فعال`}
-                icon="↗"
-              />
-
-              <StatCard
-                title="ربات‌های معاملاتی"
-                value={integerText(botsCount)}
-                description={`${integerText(activeBotsCount)} ربات فعال`}
-                icon="♙"
-              />
-
-              <StatCard
-                title="کل معاملات"
-                value={integerText(tradesCount)}
-                description={`${integerText(openTradesCount)} معامله باز`}
-                icon="◈"
-              />
-
-              <StatCard
-                title="پلن حساب"
-                value={faPlan[user.plan] || user.plan}
-                description={
-                  user.role === "ADMIN"
-                    ? "دسترسی مدیر سیستم"
-                    : "حساب کاربری"
-                }
-                icon="♛"
-              />
-            </section>
-
-            {/* MARKET DATA */}
-            <section className="mt-5">
-
-              <div className="mb-3 flex items-end justify-between">
-                <div>
-                  <h2 className="text-lg font-black text-white">
-                    بازارهای تحت نظر
-                  </h2>
-
-                  <p className="mt-1 text-[10px] text-[#626262]">
-                    آخرین داده ثبت‌شده در Market Data
-                  </p>
-                </div>
-
-                <Link
-                  href="/market"
-                  className="text-[10px] text-[#c8a13c] transition hover:text-[#f0c94e]"
-                >
-                  مشاهده بازار →
-                </Link>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {marketRows.map((market) => {
-                  const hasData = Boolean(market.latest);
-
-                  return (
-                    <div
-                      key={market.symbol}
-                      className="group rounded-2xl border border-[#30240f] bg-[#080808] p-4 transition hover:-translate-y-0.5 hover:border-[#725619]"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-black text-[#cfcfcf]">
-                          {marketLabel(market.symbol)}
-                        </span>
-
-                        <span className="h-2 w-2 rounded-full bg-[#70551b]" />
-                      </div>
-
-                      <div className="mt-4 text-lg font-black text-white">
-                        {hasData
-                          ? priceText(market.latest?.close)
-                          : "—"}
-                      </div>
-
-                      <div className="mt-2 flex items-center justify-between gap-2 text-[9px]">
-                        <span className="text-[#5d5d5d]">
-                          {hasData
-                            ? "آخرین قیمت"
-                            : "داده موجود نیست"}
-                        </span>
-
-                        {hasData && (
-                          <span
-                            className={
-                              market.change > 0
-                                ? "text-[#43c675]"
-                                : market.change < 0
-                                  ? "text-[#e35a5a]"
-                                  : "text-[#9a7c2e]"
-                            }
-                          >
-                            {market.change > 0 ? "+" : ""}
-                            {market.change.toFixed(2)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* MAIN GRID */}
-            <section className="mt-7 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
-
-              {/* SIGNALS */}
-              <div className="overflow-hidden rounded-[22px] border border-[#30240f] bg-[#070707]">
-
-                <div className="flex items-center justify-between border-b border-[#211a0d] px-4 py-4 sm:px-5">
-                  <div>
-                    <h2 className="text-base font-black text-white sm:text-lg">
-                      سیگنال‌های معاملاتی
-                    </h2>
-
-                    <p className="mt-1 text-[10px] text-[#626262]">
-                      آخرین سیگنال‌های ثبت‌شده توسط سیستم
-                    </p>
-                  </div>
-
-                  <Link
-                    href="/signals"
-                    className="rounded-lg border border-[#483614] bg-[#120e07] px-3 py-2 text-[10px] font-bold text-[#d2a63a] transition hover:border-[#795b1c]"
-                  >
-                    همه سیگنال‌ها
-                  </Link>
-                </div>
-
-                {recentSignals.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <div className="min-w-[760px]">
-
-                      <div className="grid grid-cols-[1.1fr_0.7fr_0.8fr_0.8fr_0.7fr_0.8fr] border-b border-[#18130a] px-5 py-3 text-[9px] text-[#626262]">
-                        <div>دارایی</div>
-                        <div>جهت</div>
-                        <div>ورود</div>
-                        <div>هدف</div>
-                        <div>امتیاز</div>
-                        <div>وضعیت</div>
-                      </div>
-
-                      {recentSignals.map((signal) => {
-                        const tone = signalTone(
-                          signal.direction
-                        );
-
-                        return (
-                          <div
-                            key={signal.id}
-                            className="grid grid-cols-[1.1fr_0.7fr_0.8fr_0.8fr_0.7fr_0.8fr] items-center border-b border-[#15110a] px-5 py-4 transition hover:bg-[#0d0b07]"
-                          >
-                            <div>
-                              <div className="text-xs font-black text-[#e2e2e2]">
-                                {marketLabel(signal.symbol)}
-                              </div>
-
-                              <div className="mt-1 text-[9px] text-[#5e5e5e]">
-                                {signal.timeframe || "—"} •{" "}
-                                {signal.source || "ANALYSIS"}
-                              </div>
-                            </div>
-
-                            <div>
-                              <span
-                                className={[
-                                  "inline-flex rounded-lg border px-2.5 py-1.5 text-[9px] font-black",
-                                  tone === "buy"
-                                    ? "border-[#164a2c] bg-[#09170f] text-[#4ed47e]"
-                                    : "border-[#4a1d1d] bg-[#190909] text-[#e56a6a]",
-                                ].join(" ")}
-                              >
-                                {directionLabel(
-                                  signal.direction
-                                )}
-                              </span>
-                            </div>
-
-                            <div className="text-xs font-bold text-[#bdbdbd]">
-                              {priceText(signal.entry)}
-                            </div>
-
-                            <div className="text-xs font-bold text-[#d1a83b]">
-                              {priceText(
-                                signal.takeProfit
-                              )}
-                            </div>
-
-                            <div>
-                              <div className="text-xs font-black text-[#e0b43d]">
-                                {signal.score !== null &&
-                                signal.score !== undefined
-                                  ? `${Math.round(
-                                      signal.score
-                                    )}%`
-                                  : "—"}
-                              </div>
-
-                              <div className="mt-1 h-1 w-12 overflow-hidden rounded-full bg-[#211b0e]">
-                                <div
-                                  className="h-full rounded-full bg-gradient-to-r from-[#8e671d] to-[#e6bb47]"
-                                  style={{
-                                    width: `${Math.min(
-                                      100,
-                                      Math.max(
-                                        0,
-                                        Number(
-                                          signal.score || 0
-                                        )
-                                      )
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="rounded-lg border border-[#332912] bg-[#0d0b07] px-2 py-1.5 text-[9px] text-[#a99154]">
-                                {statusLabel(
-                                  signal.status
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon="↗"
-                    title="هنوز سیگنالی ثبت نشده است"
-                    description="وقتی موتور تحلیل یا ربات معاملاتی یک سیگنال واقعی ایجاد کند، اطلاعات آن در این بخش نمایش داده می‌شود."
-                    href="/ai-analysis"
-                    button="شروع تحلیل"
-                  />
-                )}
-              </div>
-
-              {/* PERFORMANCE */}
-              <div className="rounded-[22px] border border-[#30240f] bg-[#070707] p-5">
-
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-black text-white">
-                      عملکرد معاملات
-                    </h2>
-
-                    <p className="mt-1 text-[10px] text-[#626262]">
-                      براساس معاملات ثبت‌شده
-                    </p>
-                  </div>
-
-                  <span className="rounded-lg border border-[#3f3010] bg-[#100c06] px-2 py-1 text-[9px] text-[#c7a03a]">
-                    REAL DATA
-                  </span>
-                </div>
-
-                <div className="mt-6">
-                  <div className="text-3xl font-black text-white">
-                    {totalPnL > 0 ? "+" : ""}
-                    {numberText(totalPnL)}
-                  </div>
-
-                  <div className="mt-1 text-[10px] text-[#626262]">
-                    سود / زیان معاملات اخیر
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-
-                  <ProgressRow
-                    label="نرخ معاملات موفق"
-                    value={`${winRate.toFixed(1)}%`}
-                    percentage={winRate}
-                  />
-
-                  <ProgressRow
-                    label="معاملات بسته‌شده"
-                    value={integerText(closedTradesCount)}
-                    percentage={
-                      tradesCount
-                        ? (closedTradesCount /
-                            tradesCount) *
-                          100
-                        : 0
-                    }
-                  />
-
-                  <ProgressRow
-                    label="خرید"
-                    value={integerText(buySignalsCount)}
-                    percentage={
-                      signalsCount
-                        ? (buySignalsCount /
-                            signalsCount) *
-                          100
-                        : 0
-                    }
-                  />
-
-                  <ProgressRow
-                    label="فروش"
-                    value={integerText(sellSignalsCount)}
-                    percentage={
-                      signalsCount
-                        ? (sellSignalsCount /
-                            signalsCount) *
-                          100
-                        : 0
-                    }
-                  />
-                </div>
-
-                <div className="mt-6 grid grid-cols-2 gap-3">
-                  <MiniMetric
-                    title="موفق"
-                    value={integerText(winningTrades)}
-                    tone="green"
-                  />
-
-                  <MiniMetric
-                    title="زیان‌ده"
-                    value={integerText(losingTrades)}
-                    tone="red"
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* TRADE ACTIVITY */}
-            <section className="mt-7 rounded-[22px] border border-[#30240f] bg-[#070707]">
-
-              <div className="flex items-center justify-between border-b border-[#211a0d] px-4 py-4 sm:px-5">
-                <div>
-                  <h2 className="text-base font-black text-white sm:text-lg">
-                    آخرین معاملات
-                  </h2>
-
-                  <p className="mt-1 text-[10px] text-[#626262]">
-                    اطلاعات واقعی ثبت‌شده در حساب
-                  </p>
-                </div>
-
-                <Link
-                  href="/trades"
-                  className="text-[10px] text-[#c8a13c] hover:text-[#f0c94e]"
-                >
-                  مشاهده همه →
-                </Link>
-              </div>
-
-              {recentTrades.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <div className="min-w-[720px]">
-
-                    <div className="grid grid-cols-[1fr_0.7fr_0.8fr_0.9fr_0.8fr_0.8fr] border-b border-[#18130a] px-5 py-3 text-[9px] text-[#626262]">
-                      <div>دارایی</div>
-                      <div>جهت</div>
-                      <div>ورود</div>
-                      <div>خروج</div>
-                      <div>P/L</div>
-                      <div>وضعیت</div>
-                    </div>
-
-                    {[...recentTrades]
-                      .reverse()
-                      .map((trade) => {
-                        const pnl = Number(
-                          trade.profitLoss || 0
-                        );
-
-                        return (
-                          <div
-                            key={trade.id}
-                            className="grid grid-cols-[1fr_0.7fr_0.8fr_0.9fr_0.8fr_0.8fr] items-center border-b border-[#15110a] px-5 py-4"
-                          >
-                            <div>
-                              <div className="text-xs font-black text-[#ddd]">
-                                {marketLabel(
-                                  trade.symbol
-                                )}
-                              </div>
-
-                              <div className="mt-1 text-[9px] text-[#575757]">
-                                {dateText(
-                                  trade.openedAt
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="text-xs font-bold text-[#bfa04c]">
-                              {directionLabel(
-                                trade.direction
-                              )}
-                            </div>
-
-                            <div className="text-xs text-[#aaa]">
-                              {priceText(
-                                trade.entryPrice
-                              )}
-                            </div>
-
-                            <div className="text-xs text-[#aaa]">
-                              {priceText(
-                                trade.exitPrice
-                              )}
-                            </div>
-
-                            <div
-                              className={[
-                                "text-xs font-black",
-                                pnl > 0
-                                  ? "text-[#43ca75]"
-                                  : pnl < 0
-                                    ? "text-[#e05b5b]"
-                                    : "text-[#a8893a]",
-                              ].join(" ")}
-                            >
-                              {pnl > 0 ? "+" : ""}
-                              {numberText(pnl)}
-                            </div>
-
-                            <div>
-                              <span className="rounded-lg border border-[#2f2612] bg-[#0c0b08] px-2 py-1.5 text-[9px] text-[#98834b]">
-                                {faTradeStatus[
-                                  trade.status
-                                ] || trade.status}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              ) : (
-                <EmptyState
-                  icon="◈"
-                  title="هنوز معامله‌ای ثبت نشده است"
-                  description="پس از ثبت معامله توسط سیستم یا ربات، فعالیت معاملاتی اینجا نمایش داده می‌شود."
-                  href="/bots"
-                  button="مدیریت ربات‌ها"
-                />
-              )}
-            </section>
-
-            {/* QUICK TOOLS */}
-            <section className="mt-7">
-
-              <div className="mb-4">
-                <h2 className="text-xl font-black text-white">
-                  ابزارهای حرفه‌ای
-                </h2>
-
-                <p className="mt-1 text-[10px] text-[#626262]">
-                  دسترسی سریع به امکانات اصلی پلتفرم
+          </div>
+
+          <aside className="hero-side">
+            <div className="section-head">
+              <div>
+                <h2 className="section-title">وضعیت سیستم</h2>
+                <p className="section-caption">
+                  اطلاعات ثبت‌شده در حساب شما
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <span className="system-status">
+                <span className="status-dot" />
+                آنلاین
+              </span>
+            </div>
 
-                <ToolCard
-                  href="/ai-analysis"
-                  icon="✦"
-                  title="تحلیل AI"
-                  description="تحلیل هوشمند بازار"
-                />
-
-                <ToolCard
-                  href="/signals"
-                  icon="↗"
-                  title="سیگنال‌ها"
-                  description="سیگنال‌های معاملاتی"
-                />
-
-                <ToolCard
-                  href="/bots"
-                  icon="♙"
-                  title="ربات‌ها"
-                  description="مدیریت ربات‌ها"
-                />
-
-                <ToolCard
-                  href="/market"
-                  icon="◈"
-                  title="بازار"
-                  description="داده بازار"
-                />
-
-                <ToolCard
-                  href="/news"
-                  icon="▤"
-                  title="اخبار"
-                  description="اخبار اقتصادی"
-                />
-
-                <ToolCard
-                  href="/economic"
-                  icon="◌"
-                  title="تقویم"
-                  description="رویدادهای اقتصادی"
-                />
-              </div>
-            </section>
-
-            {/* SYSTEM STATUS */}
-            <section className="mt-7 grid gap-5 md:grid-cols-3">
-
-              <StatusCard
-                title="Trading AI Engine"
-                description="موتور اصلی پلتفرم"
-                status="ONLINE"
-              />
-
-              <StatusCard
-                title="Database"
-                description="اتصال پایگاه داده"
-                status="CONNECTED"
-              />
-
-              <StatusCard
-                title="Signal Engine"
-                description="موتور پردازش سیگنال"
-                status={
-                  activeBotsCount > 0
-                    ? "READY"
-                    : "WAITING"
-                }
-              />
-            </section>
-
-            {/* ACCOUNT */}
-            <section className="mt-7 rounded-[22px] border border-[#382a10] bg-gradient-to-r from-[#100d07] via-[#070707] to-[#0d0b07] p-5 sm:p-6">
-
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
-                <div className="flex items-center gap-4">
-
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-[#765719] bg-[#110d06] text-xl font-black text-[#dfb13b]">
-                    {initial(userName)}
-                  </div>
-
-                  <div>
-                    <div className="text-sm font-black text-white">
-                      {userName}
-                    </div>
-
-                    <div className="mt-1 text-[10px] text-[#656565]">
-                      {user.email}
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <span className="rounded-lg border border-[#493713] bg-[#100d07] px-2 py-1 text-[9px] text-[#c9a23d]">
-                        {faPlan[user.plan] ||
-                          user.plan}
-                      </span>
-
-                      {user.role === "ADMIN" && (
-                        <span className="rounded-lg border border-[#4a3812] bg-[#151006] px-2 py-1 text-[9px] text-[#e2b944]">
-                          ADMIN
-                        </span>
-                      )}
-                    </div>
-                  </div>
+            <div className="mini-stats">
+              <div className="mini-stat">
+                <div className="mini-stat-label">ربات‌های معاملاتی</div>
+                <div className="mini-stat-value">
+                  {formatNumber(botsCount)}
                 </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Link
-                    href="/settings"
-                    className="flex h-10 items-center justify-center rounded-xl border border-[#4b3814] bg-[#100d07] px-5 text-xs font-bold text-[#d3aa40] transition hover:bg-[#181208]"
-                  >
-                    تنظیمات حساب
-                  </Link>
-
-                  <Link
-                    href="/support"
-                    className="flex h-10 items-center justify-center rounded-xl border border-[#28200e] bg-[#080808] px-5 text-xs font-bold text-[#858585] transition hover:text-[#d4aa3e]"
-                  >
-                    پشتیبانی
-                  </Link>
+                <div className="mini-stat-note">
+                  ثبت‌شده در حساب
                 </div>
               </div>
-            </section>
 
-            {/* FOOTER */}
-            <footer className="mt-8 border-t border-[#1c160b] pt-5">
+              <div className="mini-stat">
+                <div className="mini-stat-label">سیگنال‌ها</div>
+                <div className="mini-stat-value">
+                  {formatNumber(signalsCount)}
+                </div>
+                <div className="mini-stat-note">
+                  ثبت‌شده در دیتابیس
+                </div>
+              </div>
 
-              <div className="flex flex-col gap-4 text-[10px] text-[#555] sm:flex-row sm:items-center sm:justify-between">
+              <div className="mini-stat">
+                <div className="mini-stat-label">معاملات</div>
+                <div className="mini-stat-value">
+                  {formatNumber(tradesCount)}
+                </div>
+                <div className="mini-stat-note">
+                  ثبت‌شده در حساب
+                </div>
+              </div>
 
-                <div>
-                  © {new Date().getFullYear()} Trading AI
-                  <span className="mx-2 text-[#33270f]">
-                    •
+              <div className="mini-stat">
+                <div className="mini-stat-label">سطح دسترسی</div>
+                <div className="mini-stat-value" style={{ fontSize: 18 }}>
+                  {user.role || "USER"}
+                </div>
+                <div className="mini-stat-note">
+                  پلن {user.plan || "FREE"}
+                </div>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section className="stats">
+          <div className="glass-card stat-card">
+            <div className="stat-icon">
+              <Icon name="signals" size={20} />
+            </div>
+            <div className="stat-label">کل سیگنال‌های حساب</div>
+            <div className="stat-value">{formatNumber(signalsCount)}</div>
+            <div className="stat-description">
+              داده واقعی از TradingSignal
+            </div>
+          </div>
+
+          <div className="glass-card stat-card">
+            <div className="stat-icon">
+              <Icon name="bots" size={20} />
+            </div>
+            <div className="stat-label">ربات‌های معاملاتی</div>
+            <div className="stat-value">{formatNumber(botsCount)}</div>
+            <div className="stat-description">
+              ربات‌های متصل به حساب
+            </div>
+          </div>
+
+          <div className="glass-card stat-card">
+            <div className="stat-icon">
+              <Icon name="trade" size={20} />
+            </div>
+            <div className="stat-label">کل معاملات</div>
+            <div className="stat-value">{formatNumber(tradesCount)}</div>
+            <div className="stat-description">
+              سوابق معاملاتی ثبت‌شده
+            </div>
+          </div>
+
+          <div className="glass-card stat-card">
+            <div className="stat-icon">
+              <Icon name="shield" size={20} />
+            </div>
+            <div className="stat-label">امنیت حساب</div>
+            <div className="stat-value" style={{ fontSize: 19 }}>
+              فعال
+            </div>
+            <div className="stat-description">
+              Session authentication
+            </div>
+          </div>
+        </section>
+
+        <section className="workspace">
+          <div className="glass-card card">
+            <div className="section-head">
+              <div>
+                <h2 className="section-title">عملکرد سیستم</h2>
+                <p className="section-caption">
+                  نمای تحلیلی عملکرد حساب
+                </p>
+              </div>
+
+              <Link href="/trades" className="secondary-button" style={{ minHeight: 36 }}>
+                معاملات
+              </Link>
+            </div>
+
+            <div className="chart-box">
+              <svg
+                className="chart-svg"
+                viewBox="0 0 900 300"
+                preserveAspectRatio="none"
+              >
+                <defs>
+                  <linearGradient id="goldArea" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#d6ad55" stopOpacity=".24" />
+                    <stop offset="100%" stopColor="#d6ad55" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+
+                <path
+                  d="M0 245
+                     C55 235 70 220 120 226
+                     S180 180 225 194
+                     S280 160 330 175
+                     S385 125 430 145
+                     S500 110 545 126
+                     S605 90 650 112
+                     S710 75 755 95
+                     S820 55 900 68
+                     L900 300
+                     L0 300 Z"
+                  fill="url(#goldArea)"
+                />
+
+                <path
+                  d="M0 245
+                     C55 235 70 220 120 226
+                     S180 180 225 194
+                     S280 160 330 175
+                     S385 125 430 145
+                     S500 110 545 126
+                     S605 90 650 112
+                     S710 75 755 95
+                     S820 55 900 68"
+                  fill="none"
+                  stroke="#d6ad55"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              </svg>
+
+              <div className="chart-placeholder">
+                <div className="chart-placeholder-inner">
+                  <strong>نمودار آماده اتصال به داده‌های واقعی</strong>
+                  <span>
+                    برای جلوگیری از نمایش اطلاعات ساختگی، قیمت و P/L از دیتابیس/API
+                    واقعی خوانده خواهد شد.
                   </span>
-                  Smart Trading Platform
-                </div>
-
-                <div className="flex flex-wrap items-center gap-4">
-
-                  <Link
-                    href="/support"
-                    className="transition hover:text-[#cda73e]"
-                  >
-                    پشتیبانی
-                  </Link>
-
-                  <Link
-                    href="/settings"
-                    className="transition hover:text-[#cda73e]"
-                  >
-                    تنظیمات
-                  </Link>
-
-                  <span className="flex items-center gap-2 text-[#4a9c67]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#36c96a]" />
-                    سیستم فعال
-                  </span>
                 </div>
               </div>
-            </footer>
-          </section>
-        </div>
+            </div>
+          </div>
+
+          <div className="glass-card card">
+            <div className="section-head">
+              <div>
+                <h2 className="section-title">دسترسی سریع</h2>
+                <p className="section-caption">
+                  ابزارهای اصلی پلتفرم
+                </p>
+              </div>
+            </div>
+
+            <div className="quick-list">
+              <Link href="/signals" className="quick-item">
+                <div className="quick-icon">
+                  <Icon name="signals" size={18} />
+                </div>
+                <div className="quick-text">
+                  <div className="quick-title">سیگنال‌های معاملاتی</div>
+                  <div className="quick-sub">مشاهده و مدیریت سیگنال‌ها</div>
+                </div>
+                <span className="quick-arrow">
+                  <Icon name="arrow" size={16} />
+                </span>
+              </Link>
+
+              <Link href="/bots" className="quick-item">
+                <div className="quick-icon">
+                  <Icon name="bots" size={18} />
+                </div>
+                <div className="quick-text">
+                  <div className="quick-title">ربات‌های معاملاتی</div>
+                  <div className="quick-sub">مدیریت استراتژی و ربات‌ها</div>
+                </div>
+                <span className="quick-arrow">
+                  <Icon name="arrow" size={16} />
+                </span>
+              </Link>
+
+              <Link href="/market" className="quick-item">
+                <div className="quick-icon">
+                  <Icon name="market" size={18} />
+                </div>
+                <div className="quick-text">
+                  <div className="quick-title">بازار</div>
+                  <div className="quick-sub">داده بازار و تحلیل تکنیکال</div>
+                </div>
+                <span className="quick-arrow">
+                  <Icon name="arrow" size={16} />
+                </span>
+              </Link>
+
+              <Link href="/news" className="quick-item">
+                <div className="quick-icon">
+                  <Icon name="news" size={18} />
+                </div>
+                <div className="quick-text">
+                  <div className="quick-title">اخبار اقتصادی</div>
+                  <div className="quick-sub">اخبار و رویدادهای بازار</div>
+                </div>
+                <span className="quick-arrow">
+                  <Icon name="arrow" size={16} />
+                </span>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="bottom-grid">
+          <Link href="/ai-analysis" className="glass-card feature-card">
+            <div className="feature-top">
+              <div className="feature-icon">
+                <Icon name="spark" size={21} />
+              </div>
+
+              <span className="feature-arrow">
+                <Icon name="arrow" size={17} />
+              </span>
+            </div>
+
+            <h3 className="feature-title">تحلیل هوش مصنوعی</h3>
+            <p className="feature-description">
+              بررسی ساختار بازار، روند، نقاط مهم و داده‌های تحلیلی.
+            </p>
+          </Link>
+
+          <Link href="/bots" className="glass-card feature-card">
+            <div className="feature-top">
+              <div className="feature-icon">
+                <Icon name="bots" size={21} />
+              </div>
+
+              <span className="feature-arrow">
+                <Icon name="arrow" size={17} />
+              </span>
+            </div>
+
+            <h3 className="feature-title">مدیریت ربات‌ها</h3>
+            <p className="feature-description">
+              تنظیم ریسک، حد ضرر، حد سود، فیلتر خبر و شرایط اجرای ربات.
+            </p>
+          </Link>
+
+          <Link href="/signals" className="glass-card feature-card">
+            <div className="feature-top">
+              <div className="feature-icon">
+                <Icon name="shield" size={21} />
+              </div>
+
+              <span className="feature-arrow">
+                <Icon name="arrow" size={17} />
+              </span>
+            </div>
+
+            <h3 className="feature-title">مرکز سیگنال‌ها</h3>
+            <p className="feature-description">
+              سیگنال‌های واقعی ثبت‌شده توسط سیستم و وضعیت پردازش آن‌ها.
+            </p>
+          </Link>
+
+          <Link href="/economic" className="glass-card feature-card">
+            <div className="feature-top">
+              <div className="feature-icon">
+                <Icon name="news" size={21} />
+              </div>
+
+              <span className="feature-arrow">
+                <Icon name="arrow" size={17} />
+              </span>
+            </div>
+
+            <h3 className="feature-title">تقویم اقتصادی</h3>
+            <p className="feature-description">
+              رویدادهای اقتصادی مهم و ابزارهای فیلتر خبر برای معاملات.
+            </p>
+          </Link>
+
+          <Link href="/broker" className="glass-card feature-card">
+            <div className="feature-top">
+              <div className="feature-icon">
+                <Icon name="wallet" size={21} />
+              </div>
+
+              <span className="feature-arrow">
+                <Icon name="arrow" size={17} />
+              </span>
+            </div>
+
+            <h3 className="feature-title">اتصال بروکر</h3>
+            <p className="feature-description">
+              مدیریت اتصال حساب معاملاتی و سرویس‌های اجرای سفارش.
+            </p>
+          </Link>
+
+          <Link href="/support" className="glass-card feature-card">
+            <div className="feature-top">
+              <div className="feature-icon">
+                <Icon name="support" size={21} />
+              </div>
+
+              <span className="feature-arrow">
+                <Icon name="arrow" size={17} />
+              </span>
+            </div>
+
+            <h3 className="feature-title">پشتیبانی</h3>
+            <p className="feature-description">
+              ایجاد و پیگیری تیکت‌های پشتیبانی حساب کاربری.
+            </p>
+          </Link>
+        </section>
+
+        <footer className="footer">
+          <div>
+            © {new Date().getFullYear()} Trading AI — Smart Trading Platform
+          </div>
+
+          <div className="footer-status">
+            <span className="status-dot" />
+            سیستم احراز هویت فعال
+          </div>
+
+          <div>
+            <span className="gold">SECURE</span> · Session Protected
+          </div>
+        </footer>
       </div>
     </main>
-  );
-}
-
-/* ========================================================= */
-/* NAVIGATION                                                  */
-/* ========================================================= */
-
-function NavItem({
-  href,
-  icon,
-  title,
-  active = false,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  active?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "relative flex items-center gap-2 rounded-xl px-3 py-3 text-xs transition",
-        active
-          ? "bg-[#181207] text-[#e3b63e]"
-          : "text-[#777] hover:bg-[#0d0d0d] hover:text-[#dfb33f]",
-      ].join(" ")}
-    >
-      <span className="text-base">{icon}</span>
-
-      <span>{title}</span>
-
-      {active && (
-        <span className="absolute bottom-0 left-1/2 h-[2px] w-8 -translate-x-1/2 rounded-full bg-[#ddb03b] shadow-[0_0_12px_rgba(221,176,59,0.75)]" />
-      )}
-    </Link>
-  );
-}
-
-function MobileNavItem({
-  href,
-  icon,
-  title,
-  active = false,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  active?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-[10px] font-bold transition",
-        active
-          ? "border-[#765719] bg-[#1b1407] text-[#e1b53c]"
-          : "border-[#21190c] bg-[#090909] text-[#777]",
-      ].join(" ")}
-    >
-      <span>{icon}</span>
-      <span>{title}</span>
-    </Link>
-  );
-}
-
-/* ========================================================= */
-/* STAT CARD                                                   */
-/* ========================================================= */
-
-function StatCard({
-  title,
-  value,
-  description,
-  icon,
-}: {
-  title: string;
-  value: string;
-  description: string;
-  icon: string;
-}) {
-  return (
-    <div className="group rounded-2xl border border-[#30240f] bg-[#080808] p-4 transition hover:-translate-y-0.5 hover:border-[#705419] hover:bg-[#0b0b0b]">
-      <div className="flex items-start justify-between gap-3">
-
-        <div className="min-w-0">
-          <div className="text-[10px] text-[#686868]">
-            {title}
-          </div>
-
-          <div className="mt-3 truncate text-xl font-black text-white sm:text-2xl">
-            {value}
-          </div>
-
-          <div className="mt-1 truncate text-[9px] text-[#555]">
-            {description}
-          </div>
-        </div>
-
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#483613] bg-[#110d06] text-[#d6a837]">
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================= */
-/* EMPTY STATE                                                  */
-/* ========================================================= */
-
-function EmptyState({
-  icon,
-  title,
-  description,
-  href,
-  button,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  href: string;
-  button: string;
-}) {
-  return (
-    <div className="flex min-h-[230px] flex-col items-center justify-center px-6 py-10 text-center">
-
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#493714] bg-[#110d06] text-xl text-[#cda238] shadow-[0_0_30px_rgba(205,162,56,0.07)]">
-        {icon}
-      </div>
-
-      <h3 className="mt-4 text-sm font-black text-[#d9d9d9]">
-        {title}
-      </h3>
-
-      <p className="mt-2 max-w-lg text-[10px] leading-6 text-[#606060]">
-        {description}
-      </p>
-
-      <Link
-        href={href}
-        className="mt-5 rounded-xl border border-[#4a3814] bg-[#120e07] px-5 py-2.5 text-[10px] font-bold text-[#d3a83d] transition hover:border-[#7a5c1c] hover:bg-[#181208]"
-      >
-        {button}
-      </Link>
-    </div>
-  );
-}
-
-/* ========================================================= */
-/* PROGRESS                                                     */
-/* ========================================================= */
-
-function ProgressRow({
-  label,
-  value,
-  percentage,
-}: {
-  label: string;
-  value: string;
-  percentage: number;
-}) {
-  const safePercentage = Math.min(
-    100,
-    Math.max(0, percentage)
-  );
-
-  return (
-    <div>
-      <div className="flex items-center justify-between text-[10px]">
-        <span className="text-[#777]">{label}</span>
-
-        <span className="font-bold text-[#c9a33d]">
-          {value}
-        </span>
-      </div>
-
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#19150c]">
-        <div
-          className="h-full rounded-full bg-gradient-to-l from-[#f0c74f] to-[#8b641b]"
-          style={{
-            width: `${safePercentage}%`,
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================= */
-/* MINI METRIC                                                  */
-/* ========================================================= */
-
-function MiniMetric({
-  title,
-  value,
-  tone,
-}: {
-  title: string;
-  value: string;
-  tone: "green" | "red";
-}) {
-  return (
-    <div className="rounded-xl border border-[#251d0e] bg-[#0a0a0a] p-3">
-      <div className="text-[9px] text-[#5f5f5f]">
-        {title}
-      </div>
-
-      <div
-        className={[
-          "mt-2 text-lg font-black",
-          tone === "green"
-            ? "text-[#43c876]"
-            : "text-[#df5e5e]",
-        ].join(" ")}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================= */
-/* TOOL CARD                                                    */
-/* ========================================================= */
-
-function ToolCard({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-2xl border border-[#30240f] bg-[#080808] p-4 transition duration-200 hover:-translate-y-1 hover:border-[#735719] hover:bg-[#0d0b08]"
-    >
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#483614] bg-[#110d06] text-lg text-[#d6a938] transition group-hover:border-[#8a671e] group-hover:shadow-[0_0_22px_rgba(211,164,51,0.1)]">
-        {icon}
-      </div>
-
-      <div className="mt-4 text-xs font-black text-[#ddd]">
-        {title}
-      </div>
-
-      <div className="mt-2 text-[9px] leading-5 text-[#606060]">
-        {description}
-      </div>
-    </Link>
-  );
-}
-
-/* ========================================================= */
-/* STATUS CARD                                                  */
-/* ========================================================= */
-
-function StatusCard({
-  title,
-  description,
-  status,
-}: {
-  title: string;
-  description: string;
-  status: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-[#30240f] bg-[#080808] p-4">
-
-      <div className="flex items-center justify-between gap-3">
-
-        <div>
-          <div className="text-xs font-black text-[#ddd]">
-            {title}
-          </div>
-
-          <div className="mt-1 text-[9px] text-[#5b5b5b]">
-            {description}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 rounded-full border border-[#173b24] bg-[#08150d] px-2.5 py-1.5 text-[8px] font-black text-[#4ccc77]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#39ca6c] shadow-[0_0_8px_#39ca6c]" />
-          {status}
-        </div>
-      </div>
-    </div>
   );
 }
