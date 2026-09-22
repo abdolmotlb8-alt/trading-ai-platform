@@ -1,49 +1,14 @@
 import Link from "next/link";
-import { redirect, revalidatePath } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function statusText(status: string) {
-  switch (status) {
-    case "OPEN":
-      return "باز";
-    case "PENDING":
-      return "در انتظار پاسخ";
-    case "ANSWERED":
-      return "پاسخ داده شده";
-    case "CLOSED":
-      return "بسته شده";
-    default:
-      return status;
-  }
-}
-
-function statusClass(status: string) {
-  switch (status) {
-    case "CLOSED":
-      return "closed";
-    case "ANSWERED":
-      return "answered";
-    case "PENDING":
-      return "pending";
-    default:
-      return "open";
-  }
-}
-
 function Icon({
   name,
-  size = 19,
+  size = 18,
 }: {
   name:
     | "dashboard"
@@ -61,12 +26,12 @@ function Icon({
     | "message"
     | "clock"
     | "check"
-    | "arrow"
     | "shield"
-    | "close";
+    | "user"
+    | "arrow";
   size?: number;
 }) {
-  const paths: Record<string, React.ReactNode> = {
+  const icons: Record<string, React.ReactNode> = {
     dashboard: (
       <>
         <rect x="3" y="3" width="7" height="7" rx="1.5" />
@@ -78,9 +43,9 @@ function Icon({
 
     market: (
       <>
-        <path d="M4 18V6" />
-        <path d="M4 18h16" />
-        <path d="m7 14 4-5 3 3 5-7" />
+        <path d="M4 19V5" />
+        <path d="M4 19h17" />
+        <path d="m7 15 4-5 3 3 5-8" />
       </>
     ),
 
@@ -98,8 +63,8 @@ function Icon({
       <>
         <path d="M12 3v18" />
         <path d="M3 12h18" />
-        <path d="m5.5 5.5 13 13" />
-        <path d="m18.5 5.5-13 13" />
+        <path d="m5 5 14 14" />
+        <path d="M19 5 5 19" />
       </>
     ),
 
@@ -195,12 +160,6 @@ function Icon({
       </>
     ),
 
-    arrow: (
-      <>
-        <path d="m9 18 6-6-6-6" />
-      </>
-    ),
-
     shield: (
       <>
         <path d="M12 3 20 6v5c0 5-3.2 8.5-8 10-4.8-1.5-8-5-8-10V6z" />
@@ -208,10 +167,16 @@ function Icon({
       </>
     ),
 
-    close: (
+    user: (
       <>
-        <path d="M6 6l12 12" />
-        <path d="M18 6 6 18" />
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 21a7 7 0 0 1 14 0" />
+      </>
+    ),
+
+    arrow: (
+      <>
+        <path d="m9 18 6-6-6-6" />
       </>
     ),
   };
@@ -228,9 +193,31 @@ function Icon({
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {paths[name]}
+      {icons[name]}
     </svg>
   );
+}
+
+function dateText(date: Date) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function statusLabel(status: string) {
+  if (status === "OPEN") return "باز";
+  if (status === "CLOSED") return "بسته شده";
+  if (status === "ANSWERED") return "پاسخ داده شده";
+  if (status === "PENDING") return "در انتظار پاسخ";
+  return status;
+}
+
+function statusClass(status: string) {
+  if (status === "CLOSED") return "closed";
+  if (status === "ANSWERED") return "answered";
+  if (status === "PENDING") return "pending";
+  return "open";
 }
 
 async function createTicket(formData: FormData) {
@@ -243,6 +230,7 @@ async function createTicket(formData: FormData) {
   }
 
   const subject = String(formData.get("subject") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
 
   if (subject.length < 3 || subject.length > 120) {
@@ -253,10 +241,14 @@ async function createTicket(formData: FormData) {
     redirect("/support?error=message");
   }
 
+  const finalSubject = category
+    ? `[${category}] ${subject}`
+    : subject;
+
   await prisma.supportTicket.create({
     data: {
       userId: session.userId,
-      subject,
+      subject: finalSubject,
       status: "OPEN",
       messages: {
         create: {
@@ -268,7 +260,6 @@ async function createTicket(formData: FormData) {
     },
   });
 
-  revalidatePath("/support");
   redirect("/support?created=1");
 }
 
@@ -307,26 +298,24 @@ async function replyToTicket(formData: FormData) {
     redirect("/support?error=closed");
   }
 
-  await prisma.$transaction([
-    prisma.supportMessage.create({
-      data: {
-        ticketId: ticket.id,
-        senderId: session.userId,
-        senderType: "USER",
-        message,
-      },
-    }),
-    prisma.supportTicket.update({
-      where: {
-        id: ticket.id,
-      },
-      data: {
-        status: "OPEN",
-      },
-    }),
-  ]);
+  await prisma.supportMessage.create({
+    data: {
+      ticketId: ticket.id,
+      senderId: session.userId,
+      senderType: "USER",
+      message,
+    },
+  });
 
-  revalidatePath("/support");
+  await prisma.supportTicket.update({
+    where: {
+      id: ticket.id,
+    },
+    data: {
+      status: "OPEN",
+    },
+  });
+
   redirect("/support?replied=1");
 }
 
@@ -371,13 +360,13 @@ export default async function SupportPage({
     orderBy: {
       updatedAt: "desc",
     },
-    take: 30,
+    take: 50,
     include: {
       messages: {
         orderBy: {
           createdAt: "asc",
         },
-        take: 30,
+        take: 50,
       },
     },
   });
@@ -386,6 +375,10 @@ export default async function SupportPage({
 
   const openTickets = tickets.filter(
     (ticket) => ticket.status !== "CLOSED"
+  ).length;
+
+  const closedTickets = tickets.filter(
+    (ticket) => ticket.status === "CLOSED"
   ).length;
 
   const answeredTickets = tickets.filter((ticket) =>
@@ -403,19 +396,29 @@ export default async function SupportPage({
       .map((part) => part.charAt(0))
       .join("")
       .slice(0, 2)
-      .toUpperCase() || "AI";
+      .toUpperCase() || "U";
 
-  const errorMessages: Record<string, string> = {
-    subject: "عنوان درخواست باید بین ۳ تا ۱۲۰ کاراکتر باشد.",
-    message: "متن درخواست باید بین ۵ تا ۵۰۰۰ کاراکتر باشد.",
-    reply: "متن پاسخ معتبر نیست.",
-    ticket: "درخواست موردنظر پیدا نشد.",
-    closed: "این درخواست قبلاً بسته شده است.",
-  };
+  let errorText = "";
 
-  const errorText = params.error
-    ? errorMessages[params.error] ?? "عملیات انجام نشد."
-    : "";
+  if (params.error === "subject") {
+    errorText = "عنوان درخواست باید بین ۳ تا ۱۲۰ کاراکتر باشد.";
+  }
+
+  if (params.error === "message") {
+    errorText = "متن درخواست باید بین ۵ تا ۵۰۰۰ کاراکتر باشد.";
+  }
+
+  if (params.error === "reply") {
+    errorText = "متن پاسخ معتبر نیست.";
+  }
+
+  if (params.error === "ticket") {
+    errorText = "درخواست موردنظر پیدا نشد.";
+  }
+
+  if (params.error === "closed") {
+    errorText = "این درخواست بسته شده و امکان ارسال پیام جدید ندارد.";
+  }
 
   return (
     <main dir="rtl" className="support-page">
@@ -424,14 +427,18 @@ export default async function SupportPage({
           box-sizing: border-box;
         }
 
+        :root {
+          color-scheme: dark;
+        }
+
         html {
           scroll-behavior: smooth;
         }
 
         body {
           margin: 0;
-          background: #050505;
-          color: #f7f2e8;
+          background: #030303;
+          color: #f7f2e7;
           font-family: Tahoma, Arial, sans-serif;
         }
 
@@ -442,7 +449,8 @@ export default async function SupportPage({
 
         button,
         input,
-        textarea {
+        textarea,
+        select {
           font: inherit;
         }
 
@@ -451,30 +459,45 @@ export default async function SupportPage({
           padding: 18px;
           background:
             radial-gradient(
-              circle at 88% 0%,
+              circle at 90% 0%,
               rgba(212, 175, 55, 0.12),
-              transparent 27%
+              transparent 28%
             ),
             radial-gradient(
               circle at 0% 100%,
-              rgba(126, 94, 22, 0.10),
-              transparent 30%
+              rgba(212, 175, 55, 0.055),
+              transparent 32%
             ),
-            #050505;
+            #030303;
         }
 
-        .app-shell {
-          width: min(1480px, 100%);
-          margin: 0 auto;
+        .app {
+          width: min(1500px, 100%);
+          margin: auto;
           display: grid;
-          grid-template-columns: 250px minmax(0, 1fr);
+          grid-template-columns: 255px minmax(0, 1fr);
           gap: 18px;
           direction: ltr;
         }
 
         .sidebar,
-        .main {
+        .content {
           direction: rtl;
+          min-width: 0;
+        }
+
+        .glass {
+          background:
+            linear-gradient(
+              145deg,
+              rgba(24, 24, 22, 0.82),
+              rgba(8, 8, 8, 0.90)
+            );
+          border: 1px solid rgba(212, 175, 55, 0.13);
+          box-shadow:
+            0 24px 80px rgba(0, 0, 0, 0.36),
+            inset 0 1px 0 rgba(255, 255, 255, 0.025);
+          backdrop-filter: blur(20px);
         }
 
         .sidebar {
@@ -483,69 +506,67 @@ export default async function SupportPage({
           height: calc(100vh - 36px);
           overflow-y: auto;
           padding: 18px;
-          border: 1px solid rgba(212, 175, 55, 0.13);
-          border-radius: 25px;
+          border-radius: 26px;
           background:
             linear-gradient(
               180deg,
-              rgba(19, 19, 18, 0.96),
-              rgba(9, 9, 9, 0.96)
+              rgba(19, 19, 18, 0.97),
+              rgba(7, 7, 7, 0.98)
             );
-          box-shadow:
-            0 25px 80px rgba(0, 0, 0, 0.38),
-            inset 0 1px 0 rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(212, 175, 55, 0.12);
+          box-shadow: 0 25px 75px rgba(0, 0, 0, 0.4);
         }
 
         .brand {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 6px 4px 20px;
+          padding: 4px 3px 20px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.07);
         }
 
         .brand-logo {
-          width: 45px;
-          height: 45px;
-          flex: 0 0 45px;
+          width: 46px;
+          height: 46px;
           display: grid;
           place-items: center;
+          flex: 0 0 46px;
           border-radius: 15px;
-          color: #050505;
-          font-size: 13px;
-          font-weight: 900;
+          color: #080706;
+          font-size: 12px;
+          font-weight: 950;
           letter-spacing: 1px;
           background:
             linear-gradient(
-              145deg,
-              #f7df86,
-              #d4af37 45%,
-              #8e6813
+              135deg,
+              #f8e39a,
+              #d4af37 48%,
+              #8e6815
             );
           box-shadow:
-            0 8px 30px rgba(212, 175, 55, 0.18),
-            inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            0 12px 32px rgba(212, 175, 55, 0.17),
+            inset 0 1px 0 rgba(255, 255, 255, 0.55);
         }
 
         .brand strong {
           display: block;
-          font-size: 16px;
           color: #fff;
+          font-size: 16px;
         }
 
-        .brand span {
+        .brand small {
           display: block;
           margin-top: 5px;
-          color: #77736b;
-          font-size: 9px;
-          letter-spacing: 0.7px;
+          color: #68645d;
+          font-size: 8px;
+          letter-spacing: 0.8px;
         }
 
         .nav-title {
-          margin: 24px 7px 10px;
-          color: #6f6a60;
+          margin: 23px 7px 10px;
+          color: #625e57;
           font-size: 9px;
-          font-weight: 700;
+          font-weight: 800;
           letter-spacing: 1.2px;
         }
 
@@ -558,40 +579,34 @@ export default async function SupportPage({
           min-height: 44px;
           display: flex;
           align-items: center;
-          gap: 11px;
-          padding: 0 12px;
+          gap: 10px;
+          padding: 0 11px;
+          color: #89847b;
           border: 1px solid transparent;
           border-radius: 13px;
-          color: #8e8a82;
-          font-size: 11px;
-          transition:
-            background 0.2s ease,
-            color 0.2s ease,
-            border-color 0.2s ease,
-            transform 0.2s ease;
+          font-size: 10px;
+          transition: 0.2s ease;
         }
 
         .nav a svg {
-          color: #77736a;
-          flex: 0 0 auto;
+          color: #6e6960;
         }
 
         .nav a:hover {
-          color: #f5e8c2;
-          background: rgba(212, 175, 55, 0.055);
+          color: #e9d28a;
+          background: rgba(212, 175, 55, 0.04);
           border-color: rgba(212, 175, 55, 0.08);
-          transform: translateX(-2px);
         }
 
         .nav a.active {
-          color: #f5d76e;
+          color: #f0d46e;
           background:
             linear-gradient(
               90deg,
-              rgba(212, 175, 55, 0.13),
-              rgba(212, 175, 55, 0.035)
+              rgba(212, 175, 55, 0.15),
+              rgba(212, 175, 55, 0.025)
             );
-          border-color: rgba(212, 175, 55, 0.18);
+          border-color: rgba(212, 175, 55, 0.16);
           box-shadow: inset -2px 0 #d4af37;
         }
 
@@ -599,16 +614,16 @@ export default async function SupportPage({
           color: #d4af37;
         }
 
-        .sidebar-bottom {
-          margin-top: 25px;
+        .security {
+          margin-top: 22px;
           padding-top: 17px;
           border-top: 1px solid rgba(255, 255, 255, 0.07);
         }
 
-        .security-box {
-          padding: 14px;
-          border-radius: 16px;
-          border: 1px solid rgba(212, 175, 55, 0.11);
+        .security-card {
+          padding: 15px;
+          border-radius: 17px;
+          border: 1px solid rgba(212, 175, 55, 0.12);
           background: rgba(212, 175, 55, 0.035);
         }
 
@@ -616,58 +631,50 @@ export default async function SupportPage({
           display: flex;
           align-items: center;
           gap: 8px;
-          color: #d9b94d;
+          color: #d9b84b;
           font-size: 10px;
-          font-weight: 700;
+          font-weight: 800;
         }
 
-        .security-box p {
+        .security-card p {
           margin: 9px 0 0;
-          color: #706c64;
-          font-size: 9px;
+          color: #6f6a62;
+          font-size: 8px;
           line-height: 2;
         }
 
-        .main {
+        .content {
           min-width: 0;
         }
 
         .topbar {
-          min-height: 82px;
+          min-height: 78px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 18px;
-          padding: 17px 20px;
-          border: 1px solid rgba(212, 175, 55, 0.12);
-          border-radius: 22px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(19, 19, 18, 0.95),
-              rgba(10, 10, 10, 0.91)
-            );
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+          gap: 15px;
+          padding: 15px 18px;
+          border-radius: 21px;
         }
 
         .eyebrow {
           margin-bottom: 7px;
-          color: #b99124;
+          color: #b89023;
           font-size: 8px;
-          font-weight: 800;
+          font-weight: 900;
           letter-spacing: 2px;
         }
 
         .topbar h1 {
           margin: 0;
-          font-size: 22px;
           color: #fff;
+          font-size: 22px;
         }
 
         .topbar p {
           margin: 6px 0 0;
-          color: #77736b;
-          font-size: 10px;
+          color: #6e6a62;
+          font-size: 9px;
         }
 
         .top-user {
@@ -681,24 +688,24 @@ export default async function SupportPage({
           align-items: center;
           gap: 7px;
           padding: 8px 11px;
-          border: 1px solid rgba(212, 175, 55, 0.11);
-          border-radius: 30px;
-          color: #9e988d;
-          font-size: 9px;
-          white-space: nowrap;
+          border-radius: 999px;
+          border: 1px solid rgba(212, 175, 55, 0.13);
+          color: #9a948a;
+          background: rgba(212, 175, 55, 0.025);
+          font-size: 8px;
         }
 
-        .online-dot {
+        .online i {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: #51c878;
-          box-shadow: 0 0 10px #51c878;
+          background: #55c879;
+          box-shadow: 0 0 10px #55c879;
         }
 
         .avatar {
-          width: 39px;
-          height: 39px;
+          width: 40px;
+          height: 40px;
           display: grid;
           place-items: center;
           border-radius: 13px;
@@ -707,197 +714,162 @@ export default async function SupportPage({
           font-weight: 900;
           background:
             linear-gradient(
-              145deg,
-              #f4db79,
-              #c79d29
+              135deg,
+              #f3d878,
+              #c89c2c
             );
-          box-shadow: 0 7px 25px rgba(212, 175, 55, 0.14);
         }
 
         .hero {
           position: relative;
           overflow: hidden;
-          margin-top: 18px;
-          padding: 31px;
-          border: 1px solid rgba(212, 175, 55, 0.14);
-          border-radius: 26px;
-          background:
-            radial-gradient(
-              circle at 86% 20%,
-              rgba(212, 175, 55, 0.10),
-              transparent 28%
-            ),
-            linear-gradient(
-              135deg,
-              rgba(24, 24, 22, 0.97),
-              rgba(9, 9, 9, 0.97)
-            );
-          box-shadow:
-            0 30px 90px rgba(0, 0, 0, 0.32),
-            inset 0 1px 0 rgba(255, 255, 255, 0.025);
+          margin-top: 15px;
+          padding: 27px;
+          border-radius: 24px;
         }
 
-        .hero:after {
+        .hero:before {
           content: "";
           position: absolute;
-          width: 240px;
-          height: 240px;
-          left: -100px;
-          bottom: -140px;
-          border: 1px solid rgba(212, 175, 55, 0.10);
+          width: 280px;
+          height: 280px;
+          left: -130px;
+          bottom: -190px;
+          border: 1px solid rgba(212, 175, 55, 0.12);
           border-radius: 50%;
           box-shadow:
-            0 0 0 35px rgba(212, 175, 55, 0.025),
-            0 0 0 70px rgba(212, 175, 55, 0.018);
-          pointer-events: none;
+            0 0 0 40px rgba(212, 175, 55, 0.025),
+            0 0 0 80px rgba(212, 175, 55, 0.015);
         }
 
-        .hero-content {
+        .hero-inner {
           position: relative;
           z-index: 2;
-          max-width: 850px;
+          max-width: 900px;
         }
 
-        .status-pill {
+        .pill {
           width: fit-content;
           display: inline-flex;
           align-items: center;
           gap: 8px;
-          padding: 8px 12px;
+          padding: 7px 11px;
           border-radius: 999px;
-          border: 1px solid rgba(212, 175, 55, 0.17);
+          color: #d8b548;
           background: rgba(212, 175, 55, 0.045);
-          color: #d9b94d;
-          font-size: 9px;
-          font-weight: 700;
+          border: 1px solid rgba(212, 175, 55, 0.15);
+          font-size: 8px;
+          font-weight: 800;
         }
 
-        .status-pill span {
+        .pill i {
           width: 6px;
           height: 6px;
           border-radius: 50%;
           background: #d4af37;
-          box-shadow: 0 0 10px rgba(212, 175, 55, 0.7);
+          box-shadow: 0 0 9px rgba(212, 175, 55, 0.8);
         }
 
         .hero h2 {
-          margin: 22px 0 10px;
-          font-size: clamp(24px, 4vw, 38px);
-          line-height: 1.35;
+          margin: 17px 0 9px;
           color: #fff;
+          font-size: clamp(24px, 4vw, 36px);
+          line-height: 1.45;
         }
 
-        .hero h2 em {
+        .hero h2 span {
           color: #d4af37;
-          font-style: normal;
         }
 
         .hero p {
-          max-width: 720px;
+          max-width: 760px;
           margin: 0;
-          color: #8c877d;
-          font-size: 11px;
-          line-height: 2.1;
+          color: #817c72;
+          font-size: 10px;
+          line-height: 2.15;
         }
 
         .hero-actions {
           display: flex;
           flex-wrap: wrap;
-          gap: 9px;
-          margin-top: 23px;
+          gap: 8px;
+          margin-top: 20px;
         }
 
-        .hero-link {
+        .hero-btn {
           min-height: 41px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
-          padding: 0 16px;
-          border-radius: 12px;
-          border: 1px solid rgba(212, 175, 55, 0.15);
-          color: #b5afa4;
+          gap: 7px;
+          padding: 0 15px;
+          border-radius: 11px;
+          border: 1px solid rgba(212, 175, 55, 0.13);
+          color: #a8a196;
           background: rgba(255, 255, 255, 0.018);
-          font-size: 10px;
+          font-size: 9px;
         }
 
-        .hero-link.primary {
+        .hero-btn.primary {
           color: #080706;
           border-color: transparent;
           background:
             linear-gradient(
               135deg,
-              #f2d66f,
-              #c99d2e
+              #f3d876,
+              #c79a29
             );
-          font-weight: 800;
+          font-weight: 900;
         }
 
         .stats {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
-          margin-top: 12px;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 11px;
+          margin-top: 11px;
         }
 
         .stat {
-          min-height: 104px;
-          padding: 17px;
-          border: 1px solid rgba(212, 175, 55, 0.09);
-          border-radius: 19px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(19, 19, 18, 0.92),
-              rgba(10, 10, 10, 0.92)
-            );
-          box-shadow: 0 15px 45px rgba(0, 0, 0, 0.2);
+          min-height: 96px;
+          padding: 15px;
+          border-radius: 18px;
         }
 
         .stat-icon {
-          width: 33px;
-          height: 33px;
+          width: 32px;
+          height: 32px;
           display: grid;
           place-items: center;
-          margin-bottom: 12px;
+          margin-bottom: 10px;
           border-radius: 10px;
           color: #d4af37;
-          background: rgba(212, 175, 55, 0.075);
+          background: rgba(212, 175, 55, 0.065);
         }
 
         .stat small {
           display: block;
-          color: #77736b;
-          font-size: 9px;
+          color: #6d6860;
+          font-size: 8px;
         }
 
         .stat strong {
           display: block;
           margin-top: 5px;
-          color: #f7f2e8;
+          color: #eee9df;
           font-size: 20px;
         }
 
-        .content-grid {
+        .workspace {
           display: grid;
-          grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-          gap: 13px;
-          margin-top: 13px;
+          grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+          gap: 11px;
+          margin-top: 11px;
           align-items: start;
         }
 
         .panel {
-          min-width: 0;
-          padding: 20px;
-          border: 1px solid rgba(212, 175, 55, 0.10);
-          border-radius: 21px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(18, 18, 17, 0.94),
-              rgba(8, 8, 8, 0.94)
-            );
-          box-shadow: 0 18px 55px rgba(0, 0, 0, 0.24);
+          border-radius: 20px;
+          padding: 19px;
         }
 
         .panel-head {
@@ -905,7 +877,7 @@ export default async function SupportPage({
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          margin-bottom: 18px;
+          margin-bottom: 17px;
         }
 
         .panel-title {
@@ -914,208 +886,249 @@ export default async function SupportPage({
           gap: 9px;
         }
 
-        .panel-title-icon {
+        .panel-icon {
           width: 34px;
           height: 34px;
           display: grid;
           place-items: center;
           border-radius: 10px;
           color: #d4af37;
-          background: rgba(212, 175, 55, 0.065);
+          background: rgba(212, 175, 55, 0.06);
         }
 
         .panel h3 {
           margin: 0;
-          color: #f4f0e8;
-          font-size: 13px;
+          color: #f3eee4;
+          font-size: 12px;
         }
 
-        .panel-head p {
-          margin: 3px 0 0;
-          color: #66625b;
+        .panel-title p {
+          margin: 4px 0 0;
+          color: #5e5a53;
           font-size: 8px;
         }
 
-        .ticket-form {
+        .form {
           display: grid;
-          gap: 11px;
+          gap: 10px;
         }
 
         .field {
           display: grid;
-          gap: 7px;
+          gap: 6px;
         }
 
         .field label {
-          color: #aaa49a;
-          font-size: 9px;
+          color: #aaa399;
+          font-size: 8px;
         }
 
         .field input,
-        .field textarea {
+        .field textarea,
+        .field select {
           width: 100%;
-          border: 1px solid rgba(255, 255, 255, 0.075);
           outline: none;
-          border-radius: 12px;
-          color: #eee8dd;
+          color: #e9e4da;
           background: #080808;
-          padding: 12px 13px;
-          font-size: 10px;
-          transition:
-            border-color 0.2s,
-            box-shadow 0.2s;
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 11px;
+          padding: 11px 12px;
+          font-size: 9px;
+          transition: 0.2s;
+        }
+
+        .field select {
+          appearance: auto;
         }
 
         .field textarea {
-          min-height: 145px;
+          min-height: 130px;
           resize: vertical;
           line-height: 2;
         }
 
+        .field input:focus,
+        .field textarea:focus,
+        .field select:focus {
+          border-color: rgba(212, 175, 55, 0.42);
+          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.045);
+        }
+
         .field input::placeholder,
         .field textarea::placeholder {
-          color: #4e4b46;
+          color: #4c4944;
         }
 
-        .field input:focus,
-        .field textarea:focus {
-          border-color: rgba(212, 175, 55, 0.45);
-          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.055);
+        .counter {
+          color: #4f4b45;
+          font-size: 7px;
+          text-align: left;
         }
 
-        .submit-btn {
-          min-height: 45px;
+        .submit {
+          min-height: 44px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
+          gap: 7px;
           border: 0;
-          border-radius: 12px;
+          border-radius: 11px;
           color: #080706;
           background:
             linear-gradient(
               135deg,
-              #f0d36a,
-              #c69a2c
+              #f3d876,
+              #c79a29
             );
           cursor: pointer;
-          font-size: 10px;
-          font-weight: 900;
-          box-shadow: 0 10px 28px rgba(212, 175, 55, 0.10);
-        }
-
-        .notice {
-          margin-bottom: 13px;
-          padding: 11px 13px;
-          border-radius: 12px;
           font-size: 9px;
-          line-height: 1.9;
+          font-weight: 900;
+          box-shadow: 0 12px 30px rgba(212, 175, 55, 0.11);
         }
 
-        .notice.success {
-          border: 1px solid rgba(76, 175, 80, 0.17);
-          color: #a7d9ac;
-          background: rgba(76, 175, 80, 0.05);
-        }
-
-        .notice.error {
-          border: 1px solid rgba(220, 100, 100, 0.18);
-          color: #e7aaaa;
-          background: rgba(220, 100, 100, 0.045);
+        .privacy {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          color: #55514b;
+          font-size: 7px;
         }
 
         .tips {
           display: grid;
-          gap: 9px;
+          gap: 8px;
         }
 
         .tip {
           display: flex;
           align-items: flex-start;
-          gap: 10px;
-          padding: 12px;
+          gap: 9px;
+          padding: 11px;
+          border: 1px solid rgba(255, 255, 255, 0.045);
           border-radius: 13px;
-          border: 1px solid rgba(255, 255, 255, 0.05);
-          background: rgba(255, 255, 255, 0.018);
+          background: rgba(255, 255, 255, 0.015);
         }
 
         .tip-icon {
-          width: 29px;
-          height: 29px;
-          flex: 0 0 29px;
+          width: 30px;
+          height: 30px;
           display: grid;
           place-items: center;
+          flex: 0 0 30px;
           border-radius: 9px;
           color: #d4af37;
-          background: rgba(212, 175, 55, 0.07);
+          background: rgba(212, 175, 55, 0.06);
         }
 
         .tip strong {
           display: block;
-          color: #d9d3c8;
-          font-size: 9px;
+          color: #c8c2b8;
+          font-size: 8px;
         }
 
         .tip span {
           display: block;
           margin-top: 4px;
-          color: #66625b;
-          font-size: 8px;
+          color: #666159;
+          font-size: 7px;
           line-height: 1.9;
         }
 
-        .tickets {
-          margin-top: 13px;
+        .alerts {
+          margin-top: 11px;
         }
 
-        .tickets-header {
+        .alert {
+          padding: 11px 13px;
+          border-radius: 11px;
+          font-size: 8px;
+        }
+
+        .alert.success {
+          color: #a9d8ad;
+          border: 1px solid rgba(74, 170, 88, 0.17);
+          background: rgba(74, 170, 88, 0.045);
+        }
+
+        .alert.error {
+          color: #e2aaaa;
+          border: 1px solid rgba(220, 90, 90, 0.18);
+          background: rgba(220, 90, 90, 0.045);
+        }
+
+        .tickets {
+          margin-top: 11px;
+        }
+
+        .tickets-head {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 15px;
+          gap: 10px;
+          margin-bottom: 13px;
         }
 
-        .tickets-header h3 {
+        .tickets-head h3 {
           margin: 0;
-          color: #f4f0e8;
+          color: #f4efe7;
           font-size: 13px;
         }
 
-        .tickets-header span {
+        .ticket-count {
+          display: flex;
+          gap: 5px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        .count {
           padding: 5px 8px;
           border-radius: 7px;
-          color: #b9952f;
-          background: rgba(212, 175, 55, 0.06);
-          font-size: 8px;
+          color: #777168;
+          border: 1px solid rgba(255, 255, 255, 0.055);
+          background: rgba(255, 255, 255, 0.015);
+          font-size: 7px;
+        }
+
+        .count.active {
+          color: #080706;
+          border-color: transparent;
+          background: #d4af37;
+          font-weight: 900;
         }
 
         .ticket-list {
           display: grid;
-          gap: 10px;
+          gap: 9px;
         }
 
         .ticket {
-          border: 1px solid rgba(255, 255, 255, 0.055);
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.015);
           overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.085);
+          border-radius: 16px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(20, 20, 18, 0.75),
+              rgba(7, 7, 7, 0.8)
+            );
         }
 
-        .ticket-top {
+        .ticket-head {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
           gap: 10px;
-          padding: 14px 15px;
+          padding: 13px 14px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.045);
         }
 
-        .ticket-title {
+        .ticket-main {
           min-width: 0;
         }
 
-        .ticket-title strong {
+        .ticket-main strong {
           display: block;
           overflow: hidden;
           color: #eee9df;
@@ -1124,139 +1137,164 @@ export default async function SupportPage({
           white-space: nowrap;
         }
 
-        .ticket-title span {
-          display: block;
+        .ticket-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
           margin-top: 5px;
-          color: #5f5b55;
-          font-size: 8px;
+          color: #5d5952;
+          font-size: 7px;
         }
 
         .badge {
           flex: 0 0 auto;
           padding: 6px 9px;
           border-radius: 999px;
-          font-size: 8px;
-          border: 1px solid rgba(212, 175, 55, 0.11);
-          color: #c6a43b;
+          color: #d7b94e;
+          border: 1px solid rgba(212, 175, 55, 0.14);
           background: rgba(212, 175, 55, 0.045);
-        }
-
-        .badge.answered {
-          color: #a6d6ae;
-          border-color: rgba(86, 174, 101, 0.15);
-          background: rgba(86, 174, 101, 0.045);
-        }
-
-        .badge.pending {
-          color: #d7bd75;
-        }
-
-        .badge.closed {
-          color: #77736c;
-          border-color: rgba(255, 255, 255, 0.06);
-          background: rgba(255, 255, 255, 0.025);
-        }
-
-        .messages {
-          padding: 13px;
-          display: grid;
-          gap: 8px;
-        }
-
-        .message {
-          max-width: 86%;
-          padding: 10px 12px;
-          border-radius: 12px;
-          color: #9a958c;
-          background: #090909;
-          border: 1px solid rgba(255, 255, 255, 0.045);
-        }
-
-        .message.user {
-          margin-right: auto;
-          border-color: rgba(212, 175, 55, 0.08);
-        }
-
-        .message.admin {
-          margin-left: auto;
-          color: #c7d5ca;
-          border-color: rgba(79, 155, 91, 0.12);
-          background: rgba(79, 155, 91, 0.035);
-        }
-
-        .message-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 5px;
-          color: #69655e;
           font-size: 7px;
         }
 
-        .message.admin .message-head strong {
-          color: #92bd9a;
+        .badge.answered {
+          color: #a9d4ad;
+          border-color: rgba(79, 165, 91, 0.15);
+          background: rgba(79, 165, 91, 0.045);
         }
 
-        .message-body {
+        .badge.closed {
+          color: #767169;
+          border-color: rgba(255, 255, 255, 0.055);
+          background: rgba(255, 255, 255, 0.025);
+        }
+
+        .badge.pending {
+          color: #d7bd74;
+        }
+
+        .messages {
+          display: grid;
+          gap: 7px;
+          padding: 11px 13px;
+        }
+
+        .message {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          padding: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.045);
+          border-radius: 11px;
+          background: rgba(255, 255, 255, 0.012);
+        }
+
+        .message.admin {
+          border-color: rgba(212, 175, 55, 0.10);
+          background: rgba(212, 175, 55, 0.025);
+        }
+
+        .message-avatar {
+          width: 27px;
+          height: 27px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 27px;
+          border-radius: 9px;
+          color: #080706;
+          background: #b98b20;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .message.admin .message-avatar {
+          color: #f7e5a4;
+          background: rgba(212, 175, 55, 0.12);
+        }
+
+        .message-content {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .message-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 4px;
+        }
+
+        .message-top strong {
+          color: #aaa49a;
+          font-size: 7px;
+        }
+
+        .message.admin .message-top strong {
+          color: #d5b449;
+        }
+
+        .message-top span {
+          color: #55514a;
+          font-size: 7px;
+        }
+
+        .message-text {
+          color: #8f8a81;
+          font-size: 8px;
+          line-height: 1.9;
           white-space: pre-wrap;
           word-break: break-word;
-          font-size: 9px;
-          line-height: 1.95;
         }
 
-        .reply-form {
+        .reply {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 8px;
+          grid-template-columns: minmax(0, 1fr) 42px;
+          gap: 7px;
           padding: 0 13px 13px;
         }
 
-        .reply-form input {
-          min-width: 0;
+        .reply input {
           width: 100%;
           height: 39px;
-          border: 1px solid rgba(255, 255, 255, 0.065);
-          border-radius: 11px;
           outline: none;
-          padding: 0 12px;
-          color: #eee8dd;
-          background: #080808;
-          font-size: 9px;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.065);
+          color: #eee8df;
+          background: #070707;
+          padding: 0 11px;
+          font-size: 8px;
         }
 
-        .reply-form input:focus {
+        .reply input:focus {
           border-color: rgba(212, 175, 55, 0.4);
         }
 
-        .reply-btn {
-          width: 43px;
+        .reply button {
           height: 39px;
           display: grid;
           place-items: center;
-          border: 1px solid rgba(212, 175, 55, 0.18);
-          border-radius: 11px;
+          border: 1px solid rgba(212, 175, 55, 0.17);
+          border-radius: 10px;
           color: #d4af37;
-          background: rgba(212, 175, 55, 0.06);
+          background: rgba(212, 175, 55, 0.055);
           cursor: pointer;
         }
 
         .closed-note {
           margin: 0 13px 13px;
-          padding: 10px 12px;
-          border-radius: 11px;
-          color: #5f5b54;
-          background: rgba(255, 255, 255, 0.02);
-          font-size: 8px;
+          padding: 9px;
+          border-radius: 9px;
+          color: #5e5951;
+          background: rgba(255, 255, 255, 0.018);
           text-align: center;
+          font-size: 7px;
         }
 
         .empty {
-          padding: 35px 20px;
+          padding: 38px 20px;
           text-align: center;
           border: 1px dashed rgba(212, 175, 55, 0.12);
-          border-radius: 16px;
-          color: #68645d;
+          border-radius: 15px;
         }
 
         .empty-icon {
@@ -1264,34 +1302,34 @@ export default async function SupportPage({
           height: 48px;
           display: grid;
           place-items: center;
-          margin: 0 auto 10px;
+          margin: auto auto 10px;
           border-radius: 15px;
           color: #d4af37;
-          background: rgba(212, 175, 55, 0.06);
+          background: rgba(212, 175, 55, 0.055);
         }
 
         .empty strong {
           display: block;
-          color: #a8a299;
-          font-size: 10px;
+          color: #a7a197;
+          font-size: 9px;
         }
 
         .empty span {
           display: block;
           margin-top: 5px;
-          font-size: 8px;
+          color: #5c5851;
+          font-size: 7px;
         }
 
         .footer {
-          margin-top: 14px;
-          padding: 15px;
+          padding: 16px;
           text-align: center;
-          color: #4f4b45;
-          font-size: 8px;
+          color: #4d4943;
+          font-size: 7px;
         }
 
-        @media (max-width: 1050px) {
-          .app-shell {
+        @media (max-width: 1100px) {
+          .app {
             grid-template-columns: 1fr;
           }
 
@@ -1299,21 +1337,21 @@ export default async function SupportPage({
             display: none;
           }
 
-          .content-grid {
+          .workspace {
             grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 700px) {
+        @media (max-width: 720px) {
           .support-page {
             padding: 9px;
           }
 
           .topbar {
-            padding: 15px;
+            padding: 14px;
           }
 
-          .top-user .online {
+          .online {
             display: none;
           }
 
@@ -1322,8 +1360,7 @@ export default async function SupportPage({
           }
 
           .hero {
-            padding: 22px;
-            border-radius: 21px;
+            padding: 21px;
           }
 
           .hero h2 {
@@ -1335,64 +1372,52 @@ export default async function SupportPage({
           }
 
           .stat {
-            min-height: 85px;
-          }
-
-          .content-grid {
-            margin-top: 10px;
+            min-height: 80px;
           }
 
           .panel {
             padding: 15px;
-            border-radius: 18px;
           }
 
-          .ticket-top {
+          .tickets-head {
             align-items: flex-start;
+            flex-direction: column;
           }
 
-          .message {
-            max-width: 94%;
+          .ticket-count {
+            justify-content: flex-start;
           }
         }
 
-        @media (max-width: 470px) {
-          .topbar {
-            align-items: flex-start;
-          }
-
-          .avatar {
-            width: 35px;
-            height: 35px;
-          }
-
-          .hero h2 {
-            font-size: 23px;
-          }
-
+        @media (max-width: 480px) {
           .hero-actions {
             display: grid;
           }
 
-          .hero-link {
+          .hero-btn {
             width: 100%;
           }
 
-          .reply-form {
-            grid-template-columns: 1fr 43px;
+          .ticket-head {
+            flex-direction: column;
+          }
+
+          .badge {
+            align-self: flex-start;
           }
         }
       `}</style>
 
-      <div className="app-shell">
+      <div className="app">
         {/* SIDEBAR */}
+
         <aside className="sidebar">
           <Link href="/dashboard" className="brand">
             <div className="brand-logo">AI</div>
 
             <div>
               <strong>Trading AI</strong>
-              <span>SMART TRADING PLATFORM</span>
+              <small>SMART TRADING PLATFORM</small>
             </div>
           </Link>
 
@@ -1436,7 +1461,7 @@ export default async function SupportPage({
 
             <Link href="/payments">
               <Icon name="wallet" size={17} />
-              پرداخت‌ها
+              کیف پول و پرداخت
             </Link>
 
             <Link href="/support" className="active">
@@ -1450,37 +1475,40 @@ export default async function SupportPage({
             </Link>
           </nav>
 
-          <div className="sidebar-bottom">
-            <div className="security-box">
+          <div className="security">
+            <div className="security-card">
               <div className="security-title">
                 <Icon name="shield" size={15} />
                 پشتیبانی امن
               </div>
 
               <p>
-                درخواست‌های شما مستقیماً در حساب کاربری ثبت می‌شوند و پاسخ
-                پشتیبانی داخل همین بخش نمایش داده خواهد شد.
+                درخواست‌های شما مستقیماً به حساب کاربری متصل هستند و
+                پاسخ‌های تیم پشتیبانی در همین بخش نمایش داده می‌شوند.
               </p>
             </div>
           </div>
         </aside>
 
-        {/* MAIN */}
-        <section className="main">
-          <header className="topbar">
+        {/* CONTENT */}
+
+        <section className="content">
+          <header className="topbar glass">
             <div>
-              <div className="eyebrow">TRADING AI SUPPORT CENTER</div>
+              <div className="eyebrow">
+                TRADING AI SUPPORT CENTER
+              </div>
 
               <h1>مرکز پشتیبانی</h1>
 
               <p>
-                مدیریت درخواست‌ها و ارتباط مستقیم با تیم پشتیبانی
+                درخواست‌های خود را ثبت کنید و پاسخ آن‌ها را پیگیری کنید
               </p>
             </div>
 
             <div className="top-user">
               <div className="online">
-                <span className="online-dot" />
+                <i />
                 سیستم فعال است
               </div>
 
@@ -1489,108 +1517,130 @@ export default async function SupportPage({
           </header>
 
           {/* HERO */}
-          <section className="hero">
-            <div className="hero-content">
-              <div className="status-pill">
-                <span />
+
+          <section className="hero glass">
+            <div className="hero-inner">
+              <div className="pill">
+                <i />
                 پشتیبانی آنلاین Trading AI
               </div>
 
               <h2>
                 همیشه یک قدم
-                <em> با شما</em>
+                <span> با شما</span>
               </h2>
 
               <p>
-                مشکل یا سوالی درباره حساب، ربات‌ها، سیگنال‌ها، پرداخت،
-                اتصال بروکر یا سرویس‌های Trading AI دارید؟ درخواست خود را
-                ثبت کنید و پاسخ تیم پشتیبانی را در همین صفحه دریافت کنید.
+                برای مشکلات حساب، ربات‌های معاملاتی، تحلیل AI، سیگنال‌ها،
+                پرداخت، اتصال بروکر و سایر سرویس‌های Trading AI یک
+                درخواست ایجاد کنید. تمام گفتگوها در حساب شما ذخیره
+                می‌شوند.
               </p>
 
               <div className="hero-actions">
-                <a href="#new-ticket" className="hero-link primary">
+                <a href="#new-ticket" className="hero-btn primary">
                   <Icon name="plus" size={15} />
                   ایجاد درخواست جدید
                 </a>
 
-                <a href="#my-tickets" className="hero-link">
+                <a href="#tickets" className="hero-btn">
                   <Icon name="message" size={15} />
-                  درخواست‌های من
+                  مشاهده درخواست‌ها
                 </a>
               </div>
             </div>
           </section>
 
           {/* STATS */}
+
           <section className="stats">
-            <div className="stat">
+            <div className="stat glass">
               <div className="stat-icon">
-                <Icon name="message" size={17} />
+                <Icon name="message" size={16} />
               </div>
 
               <small>کل درخواست‌ها</small>
-              <strong>{totalTickets.toLocaleString("fa-IR")}</strong>
+
+              <strong>
+                {totalTickets.toLocaleString("fa-IR")}
+              </strong>
             </div>
 
-            <div className="stat">
+            <div className="stat glass">
               <div className="stat-icon">
-                <Icon name="clock" size={17} />
+                <Icon name="clock" size={16} />
               </div>
 
               <small>درخواست‌های باز</small>
-              <strong>{openTickets.toLocaleString("fa-IR")}</strong>
+
+              <strong>
+                {openTickets.toLocaleString("fa-IR")}
+              </strong>
             </div>
 
-            <div className="stat">
+            <div className="stat glass">
               <div className="stat-icon">
-                <Icon name="check" size={17} />
+                <Icon name="check" size={16} />
               </div>
 
-              <small>دارای پاسخ پشتیبانی</small>
-              <strong>{answeredTickets.toLocaleString("fa-IR")}</strong>
+              <small>پاسخ داده شده</small>
+
+              <strong>
+                {answeredTickets.toLocaleString("fa-IR")}
+              </strong>
             </div>
           </section>
 
-          {/* NOTICES */}
+          {/* ALERTS */}
+
           {(params.created || params.replied || errorText) && (
-            <div style={{ marginTop: 13 }}>
+            <div className="alerts">
               {params.created && (
-                <div className="notice success">
-                  درخواست شما با موفقیت ثبت شد و در مرکز پشتیبانی ذخیره شد.
+                <div className="alert success">
+                  درخواست شما با موفقیت ثبت شد و در حساب شما ذخیره شد.
                 </div>
               )}
 
               {params.replied && (
-                <div className="notice success">
+                <div className="alert success">
                   پیام شما با موفقیت به درخواست پشتیبانی اضافه شد.
                 </div>
               )}
 
               {errorText && (
-                <div className="notice error">{errorText}</div>
+                <div className="alert error">
+                  {errorText}
+                </div>
               )}
             </div>
           )}
 
-          {/* CREATE + TIPS */}
-          <section className="content-grid" id="new-ticket">
-            <div className="panel">
+          {/* WORKSPACE */}
+
+          <section className="workspace" id="new-ticket">
+            {/* NEW TICKET */}
+
+            <div className="panel glass">
               <div className="panel-head">
                 <div className="panel-title">
-                  <div className="panel-title-icon">
+                  <div className="panel-icon">
                     <Icon name="plus" size={17} />
                   </div>
 
                   <div>
                     <h3>ایجاد درخواست جدید</h3>
-                    <p>موضوع و توضیح مشکل خود را وارد کنید</p>
+                    <p>
+                      اطلاعات مشکل را دقیق وارد کنید
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <form action={createTicket} className="ticket-form">
+              <form action={createTicket} className="form">
                 <div className="field">
-                  <label htmlFor="subject">موضوع درخواست</label>
+                  <label htmlFor="subject">
+                    موضوع درخواست
+                  </label>
 
                   <input
                     id="subject"
@@ -1603,34 +1653,97 @@ export default async function SupportPage({
                 </div>
 
                 <div className="field">
-                  <label htmlFor="message">توضیحات</label>
+                  <label htmlFor="category">
+                    دسته‌بندی
+                  </label>
+
+                  <select
+                    id="category"
+                    name="category"
+                    defaultValue=""
+                  >
+                    <option value="">
+                      انتخاب دسته‌بندی
+                    </option>
+
+                    <option value="حساب کاربری">
+                      حساب کاربری
+                    </option>
+
+                    <option value="ربات معاملاتی">
+                      ربات معاملاتی
+                    </option>
+
+                    <option value="تحلیل AI">
+                      تحلیل AI
+                    </option>
+
+                    <option value="سیگنال">
+                      سیگنال
+                    </option>
+
+                    <option value="بروکر">
+                      اتصال بروکر
+                    </option>
+
+                    <option value="پرداخت">
+                      پرداخت
+                    </option>
+
+                    <option value="تلگرام">
+                      تلگرام
+                    </option>
+
+                    <option value="سایر">
+                      سایر
+                    </option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="message">
+                    توضیحات کامل
+                  </label>
 
                   <textarea
                     id="message"
                     name="message"
                     maxLength={5000}
                     required
-                    placeholder="مشکل یا سوال خود را با جزئیات بنویسید..."
+                    placeholder="مشکل یا سوال خود را با جزئیات توضیح دهید..."
                   />
+
+                  <div className="counter">
+                    حداکثر ۵۰۰۰ کاراکتر
+                  </div>
                 </div>
 
-                <button type="submit" className="submit-btn">
-                  <Icon name="send" size={16} />
-                  ثبت درخواست پشتیبانی
+                <button type="submit" className="submit">
+                  <Icon name="send" size={15} />
+                  ارسال درخواست
                 </button>
+
+                <div className="privacy">
+                  <Icon name="shield" size={11} />
+                  اطلاعات درخواست شما فقط در حساب کاربری شما ذخیره می‌شود.
+                </div>
               </form>
             </div>
 
-            <div className="panel">
+            {/* TIPS */}
+
+            <div className="panel glass">
               <div className="panel-head">
                 <div className="panel-title">
-                  <div className="panel-title-icon">
+                  <div className="panel-icon">
                     <Icon name="shield" size={17} />
                   </div>
 
                   <div>
-                    <h3>قبل از ارسال درخواست</h3>
-                    <p>برای پاسخ دقیق‌تر</p>
+                    <h3>نکات قبل از ارسال</h3>
+                    <p>
+                      برای پاسخ سریع‌تر و دقیق‌تر
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1642,10 +1755,13 @@ export default async function SupportPage({
                   </div>
 
                   <div>
-                    <strong>موضوع را واضح بنویسید</strong>
+                    <strong>
+                      موضوع را واضح بنویسید
+                    </strong>
+
                     <span>
-                      موضوع کوتاه و مشخص باعث می‌شود درخواست سریع‌تر
-                      بررسی شود.
+                      عنوان دقیق باعث می‌شود درخواست سریع‌تر
+                      شناسایی و بررسی شود.
                     </span>
                   </div>
                 </div>
@@ -1656,10 +1772,30 @@ export default async function SupportPage({
                   </div>
 
                   <div>
-                    <strong>درخواست را دوباره ایجاد نکنید</strong>
+                    <strong>
+                      یک درخواست را ادامه دهید
+                    </strong>
+
                     <span>
-                      اگر قبلاً تیکت ساخته‌اید، از همان درخواست برای ادامه
-                      گفتگو استفاده کنید.
+                      برای یک مشکل چند تیکت مشابه ایجاد نکنید و
+                      از همان درخواست پاسخ دهید.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="tip">
+                  <div className="tip-icon">
+                    <Icon name="check" size={14} />
+                  </div>
+
+                  <div>
+                    <strong>
+                      جزئیات کافی ارائه دهید
+                    </strong>
+
+                    <span>
+                      اگر خطایی مشاهده می‌کنید، متن خطا و توضیح
+                      اتفاق را داخل درخواست قرار دهید.
                     </span>
                   </div>
                 </div>
@@ -1670,10 +1806,13 @@ export default async function SupportPage({
                   </div>
 
                   <div>
-                    <strong>اطلاعات حساس ارسال نکنید</strong>
+                    <strong>
+                      اطلاعات محرمانه ارسال نکنید
+                    </strong>
+
                     <span>
-                      رمز عبور، کد امنیتی یا اطلاعات محرمانه حساب را داخل
-                      پیام پشتیبانی قرار ندهید.
+                      رمز عبور، توکن خصوصی یا اطلاعات حساس حساب
+                      را برای پشتیبانی ارسال نکنید.
                     </span>
                   </div>
                 </div>
@@ -1682,15 +1821,30 @@ export default async function SupportPage({
           </section>
 
           {/* TICKETS */}
-          <section className="panel tickets" id="my-tickets">
-            <div className="tickets-header">
-              <div>
-                <h3>درخواست‌های من</h3>
-              </div>
 
-              <span>
-                {totalTickets.toLocaleString("fa-IR")} درخواست
-              </span>
+          <section className="panel glass tickets" id="tickets">
+            <div className="tickets-head">
+              <h3>درخواست‌های من</h3>
+
+              <div className="ticket-count">
+                <span className="count active">
+                  همه {totalTickets.toLocaleString("fa-IR")}
+                </span>
+
+                <span className="count">
+                  باز {openTickets.toLocaleString("fa-IR")}
+                </span>
+
+                <span className="count">
+                  پاسخ داده شده{" "}
+                  {answeredTickets.toLocaleString("fa-IR")}
+                </span>
+
+                <span className="count">
+                  بسته{" "}
+                  {closedTickets.toLocaleString("fa-IR")}
+                </span>
+              </div>
             </div>
 
             {tickets.length === 0 ? (
@@ -1699,91 +1853,130 @@ export default async function SupportPage({
                   <Icon name="support" size={21} />
                 </div>
 
-                <strong>هنوز درخواست پشتیبانی ثبت نکرده‌اید</strong>
+                <strong>
+                  هنوز درخواست پشتیبانی ندارید
+                </strong>
 
                 <span>
-                  اگر مشکلی دارید، اولین درخواست خود را از بخش بالا ایجاد
-                  کنید.
+                  اولین درخواست خود را از فرم بالا ایجاد کنید.
                 </span>
               </div>
             ) : (
               <div className="ticket-list">
                 {tickets.map((ticket) => {
-                  const hasAdminReply = ticket.messages.some(
+                  const hasSupportReply = ticket.messages.some(
                     (message) =>
                       message.senderType === "ADMIN" ||
                       message.senderType === "SUPPORT"
                   );
 
-                  const visualStatus =
+                  const displayStatus =
                     ticket.status === "CLOSED"
                       ? "CLOSED"
-                      : hasAdminReply
+                      : hasSupportReply
                         ? "ANSWERED"
                         : ticket.status;
 
                   return (
-                    <article className="ticket" key={ticket.id}>
-                      <div className="ticket-top">
-                        <div className="ticket-title">
-                          <strong>{ticket.subject}</strong>
+                    <article
+                      className="ticket"
+                      key={ticket.id}
+                    >
+                      <div className="ticket-head">
+                        <div className="ticket-main">
+                          <strong>
+                            {ticket.subject}
+                          </strong>
 
-                          <span>
-                            آخرین بروزرسانی:{" "}
-                            {formatDate(ticket.updatedAt)}
-                          </span>
+                          <div className="ticket-meta">
+                            <span>
+                              شناسه: {ticket.id}
+                            </span>
+
+                            <span>
+                              ایجاد:{" "}
+                              {dateText(ticket.createdAt)}
+                            </span>
+
+                            <span>
+                              بروزرسانی:{" "}
+                              {dateText(ticket.updatedAt)}
+                            </span>
+                          </div>
                         </div>
 
                         <span
                           className={`badge ${statusClass(
-                            visualStatus
+                            displayStatus
                           )}`}
                         >
-                          {statusText(visualStatus)}
+                          {statusLabel(displayStatus)}
                         </span>
                       </div>
 
                       <div className="messages">
-                        {ticket.messages.map((message) => {
-                          const isAdmin =
-                            message.senderType === "ADMIN" ||
-                            message.senderType === "SUPPORT";
+                        {ticket.messages.length === 0 ? (
+                          <div className="message-text">
+                            هنوز پیامی در این درخواست وجود ندارد.
+                          </div>
+                        ) : (
+                          ticket.messages.map((message) => {
+                            const isSupport =
+                              message.senderType === "ADMIN" ||
+                              message.senderType === "SUPPORT";
 
-                          return (
-                            <div
-                              className={`message ${
-                                isAdmin ? "admin" : "user"
-                              }`}
-                              key={message.id}
-                            >
-                              <div className="message-head">
-                                <strong>
-                                  {isAdmin
-                                    ? "تیم پشتیبانی"
-                                    : "شما"}
-                                </strong>
+                            return (
+                              <div
+                                className={`message ${
+                                  isSupport ? "admin" : ""
+                                }`}
+                                key={message.id}
+                              >
+                                <div className="message-avatar">
+                                  {isSupport ? (
+                                    <Icon
+                                      name="support"
+                                      size={13}
+                                    />
+                                  ) : (
+                                    initials
+                                  )}
+                                </div>
 
-                                <span>
-                                  {formatDate(message.createdAt)}
-                                </span>
+                                <div className="message-content">
+                                  <div className="message-top">
+                                    <strong>
+                                      {isSupport
+                                        ? "تیم پشتیبانی"
+                                        : "شما"}
+                                    </strong>
+
+                                    <span>
+                                      {dateText(
+                                        message.createdAt
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  <div className="message-text">
+                                    {message.message}
+                                  </div>
+                                </div>
                               </div>
-
-                              <div className="message-body">
-                                {message.message}
-                              </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })
+                        )}
                       </div>
 
                       {ticket.status === "CLOSED" ? (
                         <div className="closed-note">
-                          این درخواست بسته شده است.
+                          این درخواست بسته شده است و امکان ارسال
+                          پیام جدید وجود ندارد.
                         </div>
                       ) : (
                         <form
                           action={replyToTicket}
-                          className="reply-form"
+                          className="reply"
                         >
                           <input
                             type="hidden"
@@ -1792,18 +1985,17 @@ export default async function SupportPage({
                           />
 
                           <input
-                            name="message"
                             type="text"
+                            name="message"
                             maxLength={5000}
                             required
-                            placeholder="پاسخ یا توضیح جدید..."
+                            placeholder="پاسخ یا توضیح جدید خود را بنویسید..."
                           />
 
                           <button
                             type="submit"
-                            className="reply-btn"
-                            aria-label="ارسال پاسخ"
-                            title="ارسال پاسخ"
+                            title="ارسال پیام"
+                            aria-label="ارسال پیام"
                           >
                             <Icon name="send" size={15} />
                           </button>
@@ -1817,8 +2009,7 @@ export default async function SupportPage({
           </section>
 
           <footer className="footer">
-            Trading AI Support Center · درخواست‌ها مستقیماً با حساب کاربری
-            شما ثبت و مدیریت می‌شوند.
+            Trading AI Support Center · سیستم پشتیبانی متصل به حساب کاربری
           </footer>
         </section>
       </div>
