@@ -1,30 +1,28 @@
-import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ALLOWED_EMOJIS = [
+  "😎",
   "🤖",
   "🧠",
   "🚀",
-  "📈",
   "💎",
-  "⚡",
   "🔥",
-  "👑",
-  "🦁",
+  "🦾",
   "🐺",
   "🦊",
-  "🐉",
-  "🌟",
-  "💰",
+  "👑",
+  "⚡",
   "🎯",
-  "🛡️",
 ];
 
-function errorResponse(message: string, status: number) {
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+
+function jsonError(message: string, status = 400) {
   return NextResponse.json(
     {
       success: false,
@@ -34,115 +32,66 @@ function errorResponse(message: string, status: number) {
   );
 }
 
-function getSubscriptionInfo(
-  plan: string,
-  subscriptionStartedAt: Date | null,
-  subscriptionExpiresAt: Date | null
-) {
-  const isFree = plan.toUpperCase() === "FREE";
-
-  if (isFree) {
-    return {
-      active: false,
-      plan: "FREE",
-      startedAt: subscriptionStartedAt,
-      expiresAt: subscriptionExpiresAt,
-      remainingDays: 0,
-      expired: false,
-      unlimited: false,
-    };
-  }
-
-  if (!subscriptionExpiresAt) {
-    return {
-      active: true,
-      plan,
-      startedAt: subscriptionStartedAt,
-      expiresAt: null,
-      remainingDays: null,
-      expired: false,
-      unlimited: true,
-    };
-  }
-
-  const now = Date.now();
-  const expiresTime = subscriptionExpiresAt.getTime();
-  const remainingMilliseconds = expiresTime - now;
-
-  const remainingDays = Math.max(
-    0,
-    Math.ceil(
-      remainingMilliseconds /
-        (1000 * 60 * 60 * 24)
-    )
+function isValidAvatarDataUrl(value: string) {
+  return /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(
+    value
   );
-
-  const expired = remainingMilliseconds <= 0;
-
-  return {
-    active: !expired,
-    plan,
-    startedAt: subscriptionStartedAt,
-    expiresAt: subscriptionExpiresAt,
-    remainingDays,
-    expired,
-    unlimited: false,
-  };
 }
 
-function serializeUser(user: any) {
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    plan: user.plan,
+function estimateBase64Size(value: string) {
+  const commaIndex = value.indexOf(",");
 
-    avatarUrl: user.avatarUrl ?? null,
-    avatarEmoji: user.avatarEmoji ?? null,
-    bio: user.bio ?? null,
+  if (commaIndex === -1) {
+    return 0;
+  }
 
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
+  const base64 = value.slice(commaIndex + 1);
 
-    subscription: getSubscriptionInfo(
-      user.plan,
-      user.subscriptionStartedAt ?? null,
-      user.subscriptionExpiresAt ?? null
-    ),
-  };
+  return Math.floor((base64.length * 3) / 4);
 }
 
-async function getAuthenticatedUserId() {
-  const session = await getSession();
-
-  if (!session?.userId) {
+function calculateRemainingDays(expiresAt: Date | null) {
+  if (!expiresAt) {
     return null;
   }
 
-  return session.userId;
+  const difference = expiresAt.getTime() - Date.now();
+
+  return Math.max(
+    0,
+    Math.ceil(difference / (1000 * 60 * 60 * 24))
+  );
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET /api/profile
-|--------------------------------------------------------------------------
-*/
+function getSubscriptionStatus(
+  plan: string,
+  expiresAt: Date | null
+) {
+  if (!expiresAt) {
+    return plan === "FREE" ? "FREE" : "ACTIVE";
+  }
 
+  return expiresAt.getTime() > Date.now()
+    ? "ACTIVE"
+    : "EXPIRED";
+}
+
+/**
+ * GET /api/profile
+ *
+ * دریافت اطلاعات واقعی کاربر لاگین‌شده
+ */
 export async function GET() {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await getSession();
 
-    if (!userId) {
-      return errorResponse(
-        "برای مشاهده پروفایل ابتدا وارد حساب خود شوید.",
-        401
-      );
+    if (!session?.userId) {
+      return jsonError("برای مشاهده پروفایل ابتدا وارد حساب شوید.", 401);
     }
 
     const user = await prisma.user.findUnique({
       where: {
-        id: userId,
+        id: session.userId,
       },
       select: {
         id: true,
@@ -150,56 +99,92 @@ export async function GET() {
         email: true,
         role: true,
         plan: true,
-
         avatarUrl: true,
         avatarEmoji: true,
         bio: true,
-
         subscriptionStartedAt: true,
         subscriptionExpiresAt: true,
-
         createdAt: true,
         updatedAt: true,
       },
     });
 
     if (!user) {
-      return errorResponse(
-        "کاربر پیدا نشد.",
-        404
-      );
+      return jsonError("کاربر پیدا نشد.", 404);
     }
+
+    const plan = user.plan || "FREE";
+
+    const remainingDays = calculateRemainingDays(
+      user.subscriptionExpiresAt
+    );
+
+    const status = getSubscriptionStatus(
+      plan,
+      user.subscriptionExpiresAt
+    );
 
     return NextResponse.json({
       success: true,
-      user: serializeUser(user),
+
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        plan: user.plan,
+
+        avatarUrl: user.avatarUrl,
+        avatarEmoji: user.avatarEmoji,
+        bio: user.bio,
+
+        subscriptionStartedAt:
+          user.subscriptionStartedAt,
+
+        subscriptionExpiresAt:
+          user.subscriptionExpiresAt,
+
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+
+      subscription: {
+        plan,
+        status,
+
+        startedAt:
+          user.subscriptionStartedAt,
+
+        expiresAt:
+          user.subscriptionExpiresAt,
+
+        remainingDays,
+      },
+
+      allowedEmojis: ALLOWED_EMOJIS,
     });
   } catch (error) {
-    console.error(
-      "PROFILE GET ERROR:",
-      error
-    );
+    console.error("GET /api/profile error:", error);
 
-    return errorResponse(
-      "خطای داخلی سرور هنگام دریافت پروفایل.",
+    return jsonError(
+      "خطایی هنگام دریافت اطلاعات پروفایل رخ داد.",
       500
     );
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| PUT /api/profile
-|--------------------------------------------------------------------------
-*/
-
-export async function PUT(request: Request) {
+/**
+ * PUT /api/profile
+ *
+ * ویرایش واقعی پروفایل
+ */
+export async function PUT(request: NextRequest) {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await getSession();
 
-    if (!userId) {
-      return errorResponse(
-        "برای ویرایش پروفایل ابتدا وارد حساب خود شوید.",
+    if (!session?.userId) {
+      return jsonError(
+        "برای ویرایش پروفایل ابتدا وارد حساب شوید.",
         401
       );
     }
@@ -215,361 +200,240 @@ export async function PUT(request: Request) {
     try {
       body = await request.json();
     } catch {
-      return errorResponse(
-        "اطلاعات ارسال‌شده معتبر نیست.",
-        400
-      );
+      return jsonError("اطلاعات ارسال‌شده معتبر نیست.");
     }
 
-    const updateData: {
-      name?: string;
-      bio?: string | null;
-      avatarUrl?: string | null;
-      avatarEmoji?: string | null;
-    } = {};
+    const name =
+      typeof body.name === "string"
+        ? body.name.trim()
+        : undefined;
 
-    /*
-    |--------------------------------------------------------------------------
-    | NAME
-    |--------------------------------------------------------------------------
-    */
+    const bio =
+      typeof body.bio === "string"
+        ? body.bio.trim()
+        : undefined;
 
-    if (body.name !== undefined) {
-      if (typeof body.name !== "string") {
-        return errorResponse(
-          "نام کاربر معتبر نیست.",
-          400
-        );
-      }
+    const avatarUrl =
+      typeof body.avatarUrl === "string"
+        ? body.avatarUrl.trim()
+        : null;
 
-      const name = body.name.trim();
+    const avatarEmoji =
+      typeof body.avatarEmoji === "string"
+        ? body.avatarEmoji.trim()
+        : null;
 
+    const removeAvatar = body.removeAvatar === true;
+
+    if (name !== undefined) {
       if (name.length < 2) {
-        return errorResponse(
-          "نام باید حداقل ۲ کاراکتر باشد.",
-          400
+        return jsonError(
+          "نام کاربری باید حداقل ۲ کاراکتر باشد."
         );
       }
 
       if (name.length > 80) {
-        return errorResponse(
-          "نام نمی‌تواند بیشتر از ۸۰ کاراکتر باشد.",
-          400
+        return jsonError(
+          "نام کاربری نمی‌تواند بیشتر از ۸۰ کاراکتر باشد."
         );
-      }
-
-      updateData.name = name;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | BIO
-    |--------------------------------------------------------------------------
-    */
-
-    if (body.bio !== undefined) {
-      if (
-        body.bio !== null &&
-        typeof body.bio !== "string"
-      ) {
-        return errorResponse(
-          "متن معرفی معتبر نیست.",
-          400
-        );
-      }
-
-      const bio =
-        typeof body.bio === "string"
-          ? body.bio.trim()
-          : "";
-
-      if (bio.length > 500) {
-        return errorResponse(
-          "متن معرفی نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد.",
-          400
-        );
-      }
-
-      updateData.bio =
-        bio.length > 0 ? bio : null;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | REMOVE AVATAR
-    |--------------------------------------------------------------------------
-    */
-
-    if (body.removeAvatar === true) {
-      updateData.avatarUrl = null;
-      updateData.avatarEmoji = null;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | EMOJI
-    |--------------------------------------------------------------------------
-    */
-
-    if (body.avatarEmoji !== undefined) {
-      if (
-        body.avatarEmoji !== null &&
-        typeof body.avatarEmoji !== "string"
-      ) {
-        return errorResponse(
-          "ایموجی پروفایل معتبر نیست.",
-          400
-        );
-      }
-
-      const emoji =
-        typeof body.avatarEmoji === "string"
-          ? body.avatarEmoji.trim()
-          : "";
-
-      if (
-        emoji &&
-        !ALLOWED_EMOJIS.includes(emoji)
-      ) {
-        return errorResponse(
-          "این ایموجی در لیست آواتارهای مجاز نیست.",
-          400
-        );
-      }
-
-      updateData.avatarEmoji =
-        emoji || null;
-
-      if (emoji) {
-        updateData.avatarUrl = null;
       }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | AVATAR IMAGE
-    |--------------------------------------------------------------------------
-    */
-
-    if (body.avatarUrl !== undefined) {
-      if (
-        body.avatarUrl !== null &&
-        typeof body.avatarUrl !== "string"
-      ) {
-        return errorResponse(
-          "تصویر پروفایل معتبر نیست.",
-          400
-        );
-      }
-
-      const avatarUrl =
-        typeof body.avatarUrl === "string"
-          ? body.avatarUrl.trim()
-          : "";
-
-      if (!avatarUrl) {
-        updateData.avatarUrl = null;
-      } else {
-        if (
-          !avatarUrl.startsWith("data:image/")
-        ) {
-          return errorResponse(
-            "فرمت تصویر معتبر نیست.",
-            400
-          );
-        }
-
-        const commaIndex =
-          avatarUrl.indexOf(",");
-
-        if (commaIndex === -1) {
-          return errorResponse(
-            "ساختار تصویر معتبر نیست.",
-            400
-          );
-        }
-
-        const header = avatarUrl
-          .slice(0, commaIndex)
-          .toLowerCase();
-
-        const imageData =
-          avatarUrl.slice(
-            commaIndex + 1
-          );
-
-        const allowedType =
-          [
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/gif",
-          ].some((type) =>
-            header.includes(type)
-          );
-
-        if (!allowedType) {
-          return errorResponse(
-            "فرمت تصویر باید JPG، PNG، WEBP یا GIF باشد.",
-            400
-          );
-        }
-
-        if (
-          !header.includes(";base64")
-        ) {
-          return errorResponse(
-            "تصویر باید به صورت Base64 ارسال شود.",
-            400
-          );
-        }
-
-        const estimatedSize = Math.floor(
-          (imageData.length * 3) / 4
-        );
-
-        const maxSize =
-          2 * 1024 * 1024;
-
-        if (estimatedSize > maxSize) {
-          return errorResponse(
-            "حجم تصویر نباید بیشتر از ۲ مگابایت باشد.",
-            400
-          );
-        }
-
-        updateData.avatarUrl =
-          avatarUrl;
-
-        updateData.avatarEmoji =
-          null;
-      }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | NOTHING TO UPDATE
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-      Object.keys(updateData).length === 0
-    ) {
-      return errorResponse(
-        "هیچ تغییری برای ذخیره وجود ندارد.",
-        400
+    if (bio !== undefined && bio.length > 500) {
+      return jsonError(
+        "توضیحات نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد."
       );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | DATABASE UPDATE
-    |--------------------------------------------------------------------------
-    */
+    if (
+      avatarEmoji &&
+      !ALLOWED_EMOJIS.includes(avatarEmoji)
+    ) {
+      return jsonError(
+        "ایموجی انتخاب‌شده معتبر نیست."
+      );
+    }
 
-    const updatedUser =
-      await prisma.user.update({
-        where: {
-          id: userId,
-        },
-        data: updateData,
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          plan: true,
+    if (avatarUrl) {
+      if (!isValidAvatarDataUrl(avatarUrl)) {
+        return jsonError(
+          "فرمت تصویر معتبر نیست. فقط JPG، PNG، WEBP و GIF مجاز است."
+        );
+      }
 
-          avatarUrl: true,
-          avatarEmoji: true,
-          bio: true,
+      const imageSize = estimateBase64Size(avatarUrl);
 
-          subscriptionStartedAt: true,
-          subscriptionExpiresAt: true,
+      if (imageSize > MAX_IMAGE_SIZE) {
+        return jsonError(
+          "حجم تصویر نباید بیشتر از ۲ مگابایت باشد."
+        );
+      }
+    }
 
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
+    const currentUser = await prisma.user.findUnique({
+      where: {
+        id: session.userId,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        plan: true,
+        avatarUrl: true,
+        avatarEmoji: true,
+        bio: true,
+        subscriptionStartedAt: true,
+        subscriptionExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!currentUser) {
+      return jsonError("کاربر پیدا نشد.", 404);
+    }
+
+    const updateData: {
+      name?: string;
+      bio?: string;
+      avatarUrl?: string | null;
+      avatarEmoji?: string | null;
+    } = {};
+
+    if (name !== undefined) {
+      updateData.name = name;
+    }
+
+    if (bio !== undefined) {
+      updateData.bio = bio;
+    }
+
+    if (removeAvatar) {
+      updateData.avatarUrl = null;
+      updateData.avatarEmoji = null;
+    } else if (avatarUrl) {
+      updateData.avatarUrl = avatarUrl;
+      updateData.avatarEmoji = null;
+    } else if (avatarEmoji) {
+      updateData.avatarEmoji = avatarEmoji;
+      updateData.avatarUrl = null;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: {
+        id: session.userId,
+      },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        plan: true,
+        avatarUrl: true,
+        avatarEmoji: true,
+        bio: true,
+        subscriptionStartedAt: true,
+        subscriptionExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const plan = updatedUser.plan || "FREE";
+
+    const remainingDays = calculateRemainingDays(
+      updatedUser.subscriptionExpiresAt
+    );
+
+    const status = getSubscriptionStatus(
+      plan,
+      updatedUser.subscriptionExpiresAt
+    );
 
     return NextResponse.json({
       success: true,
-      message:
-        "پروفایل با موفقیت بروزرسانی شد.",
-      user: serializeUser(updatedUser),
+
+      message: "اطلاعات پروفایل با موفقیت ذخیره شد.",
+
+      user: updatedUser,
+
+      subscription: {
+        plan,
+        status,
+
+        startedAt:
+          updatedUser.subscriptionStartedAt,
+
+        expiresAt:
+          updatedUser.subscriptionExpiresAt,
+
+        remainingDays,
+      },
+
+      allowedEmojis: ALLOWED_EMOJIS,
     });
   } catch (error) {
-    console.error(
-      "PROFILE PUT ERROR:",
-      error
-    );
+    console.error("PUT /api/profile error:", error);
 
-    return errorResponse(
-      "خطای داخلی سرور هنگام بروزرسانی پروفایل.",
+    return jsonError(
+      "ذخیره اطلاعات پروفایل انجام نشد.",
       500
     );
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| DELETE /api/profile
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * DELETE /api/profile
+ *
+ * حذف عکس/ایموجی پروفایل
+ */
 export async function DELETE() {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await getSession();
 
-    if (!userId) {
-      return errorResponse(
-        "ابتدا وارد حساب خود شوید.",
+    if (!session?.userId) {
+      return jsonError(
+        "برای انجام این کار ابتدا وارد حساب شوید.",
         401
       );
     }
 
-    const updatedUser =
-      await prisma.user.update({
-        where: {
-          id: userId,
-        },
-        data: {
-          avatarUrl: null,
-          avatarEmoji: null,
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          plan: true,
-
-          avatarUrl: true,
-          avatarEmoji: true,
-          bio: true,
-
-          subscriptionStartedAt: true,
-          subscriptionExpiresAt: true,
-
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
+    const user = await prisma.user.update({
+      where: {
+        id: session.userId,
+      },
+      data: {
+        avatarUrl: null,
+        avatarEmoji: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        plan: true,
+        avatarUrl: true,
+        avatarEmoji: true,
+        bio: true,
+        subscriptionStartedAt: true,
+        subscriptionExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
     return NextResponse.json({
       success: true,
-      message:
-        "تصویر پروفایل حذف شد.",
-      user: serializeUser(updatedUser),
+      message: "تصویر پروفایل حذف شد.",
+      user,
     });
   } catch (error) {
-    console.error(
-      "PROFILE DELETE ERROR:",
-      error
-    );
+    console.error("DELETE /api/profile error:", error);
 
-    return errorResponse(
-      "خطای داخلی سرور هنگام حذف تصویر.",
+    return jsonError(
+      "حذف تصویر پروفایل انجام نشد.",
       500
     );
   }
