@@ -7,14 +7,39 @@ import {
   useState,
 } from "react";
 
+type SignalStatus =
+  | "ACTIVE"
+  | "WAITING"
+  | "TP1"
+  | "TP2"
+  | "TP3"
+  | "STOP_LOSS"
+  | "EXPIRED"
+  | "CLOSED"
+  | "WIN"
+  | "LOSS"
+  | "BREAKEVEN"
+  | string;
+
+type SignalResult =
+  | "WIN"
+  | "LOSS"
+  | "BREAKEVEN"
+  | "OPEN"
+  | "PENDING"
+  | string;
+
 type Signal = {
   id: string;
+
   symbol: string;
   name: string;
+
   market:
     | "FOREX"
     | "CRYPTO"
-    | "COMMODITY";
+    | "COMMODITY"
+    | string;
 
   interval: string;
 
@@ -40,7 +65,8 @@ type Signal = {
   trend:
     | "BULLISH"
     | "BEARISH"
-    | "NEUTRAL";
+    | "NEUTRAL"
+    | string;
 
   rsi: number;
 
@@ -63,10 +89,36 @@ type Signal = {
   generatedAt: string;
 
   reasons: string[];
+
+  /* Optional fields from the real signal engine */
+  status?: SignalStatus;
+  result?: SignalResult;
+
+  telegramSent?: boolean;
+
+  currentPrice?: number | null;
+  lastCheckedAt?: string | null;
+
+  createdAt?: string;
+  expiresAt?: string | null;
+  closedAt?: string | null;
+
+  tp1HitAt?: string | null;
+  tp2HitAt?: string | null;
+  tp3HitAt?: string | null;
+  stopLossHitAt?: string | null;
+
+  realizedProfitLoss?: number | null;
+  riskUsd?: number | null;
+
+  takeProfit1Usd?: number | null;
+  takeProfit2Usd?: number | null;
+  takeProfit3Usd?: number | null;
 };
 
 type APIResponse = {
   success: boolean;
+
   source?: string;
   generatedAt?: string;
   interval?: string;
@@ -91,126 +143,305 @@ type APIResponse = {
 const TIMEFRAMES = [
   {
     value: "5min",
-    label: "5 دقیقه",
+    label: "۵ دقیقه",
   },
   {
     value: "15min",
-    label: "15 دقیقه",
+    label: "۱۵ دقیقه",
   },
   {
     value: "30min",
-    label: "30 دقیقه",
+    label: "۳۰ دقیقه",
   },
   {
     value: "1h",
-    label: "1 ساعت",
+    label: "۱ ساعت",
   },
   {
     value: "4h",
-    label: "4 ساعت",
+    label: "۴ ساعت",
   },
 ];
 
 function formatPrice(
-  value: number | null
+  value: number | null | undefined
 ) {
-  if (value === null) {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
     return "—";
   }
 
+  if (value >= 10000) {
+    return value.toLocaleString("en-US", {
+      maximumFractionDigits: 2,
+    });
+  }
+
   if (value >= 1000) {
-    return value.toLocaleString(
-      "en-US",
-      {
-        maximumFractionDigits: 2,
-      }
-    );
+    return value.toLocaleString("en-US", {
+      maximumFractionDigits: 2,
+    });
   }
 
   if (value >= 100) {
-    return value.toLocaleString(
-      "en-US",
-      {
-        maximumFractionDigits: 3,
-      }
-    );
+    return value.toLocaleString("en-US", {
+      maximumFractionDigits: 3,
+    });
   }
 
-  return value.toLocaleString(
-    "en-US",
-    {
-      maximumFractionDigits: 5,
-    }
-  );
+  if (value >= 10) {
+    return value.toLocaleString("en-US", {
+      maximumFractionDigits: 4,
+    });
+  }
+
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: 6,
+  });
+}
+
+function formatNumber(
+  value: number | null | undefined,
+  digits = 2
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+  });
 }
 
 function formatDate(
-  value?: string
+  value?: string | null
 ) {
   if (!value) {
     return "—";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return value;
   }
 
-  return date.toLocaleString(
-    "fa-IR",
-    {
-      dateStyle: "short",
-      timeStyle: "short",
-    }
-  );
+  return date.toLocaleString("fa-IR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }
 
-function symbolIcon(
-  symbol: string
-) {
+function symbolIcon(symbol: string) {
+  const normalized =
+    symbol.toUpperCase();
+
   if (
-    symbol === "XAU/USD"
+    normalized === "XAU/USD" ||
+    normalized.includes("XAU")
   ) {
     return "Au";
   }
 
   if (
-    symbol === "EUR/USD"
+    normalized === "EUR/USD" ||
+    normalized.includes("EUR")
   ) {
     return "€";
   }
 
   if (
-    symbol === "GBP/USD"
+    normalized === "GBP/USD" ||
+    normalized.includes("GBP")
   ) {
     return "£";
   }
 
   if (
-    symbol === "USD/JPY"
+    normalized === "USD/JPY" ||
+    normalized.includes("JPY")
   ) {
     return "¥";
   }
 
   if (
-    symbol === "BTC/USD"
+    normalized === "BTC/USD" ||
+    normalized.includes("BTC")
   ) {
     return "₿";
   }
 
   if (
-    symbol === "ETH/USD"
+    normalized === "ETH/USD" ||
+    normalized.includes("ETH")
   ) {
     return "Ξ";
   }
 
   return "◎";
+}
+
+function marketLabel(
+  market: string
+) {
+  if (market === "FOREX") {
+    return "FOREX";
+  }
+
+  if (market === "CRYPTO") {
+    return "CRYPTO";
+  }
+
+  if (market === "COMMODITY") {
+    return "COMMODITY";
+  }
+
+  return market;
+}
+
+function timeframeLabel(
+  timeframe: string
+) {
+  const item =
+    TIMEFRAMES.find(
+      (item) =>
+        item.value === timeframe
+    );
+
+  return (
+    item?.label ||
+    timeframe
+  );
+}
+
+function trendLabel(
+  trend: Signal["trend"]
+) {
+  if (trend === "BULLISH") {
+    return "صعودی";
+  }
+
+  if (trend === "BEARISH") {
+    return "نزولی";
+  }
+
+  return "خنثی";
+}
+
+function statusLabel(
+  signal: Signal
+) {
+  const status =
+    signal.status ||
+    "ACTIVE";
+
+  if (
+    status === "TP1"
+  ) {
+    return "TP1 فعال شد";
+  }
+
+  if (
+    status === "TP2"
+  ) {
+    return "TP2 فعال شد";
+  }
+
+  if (
+    status === "TP3"
+  ) {
+    return "TP3 تکمیل شد";
+  }
+
+  if (
+    status ===
+      "STOP_LOSS" ||
+    status === "SL"
+  ) {
+    return "حد ضرر";
+  }
+
+  if (
+    status ===
+    "EXPIRED"
+  ) {
+    return "منقضی شده";
+  }
+
+  if (
+    status ===
+      "CLOSED" ||
+    status === "WIN"
+  ) {
+    return "بسته شده";
+  }
+
+  if (
+    status === "LOSS"
+  ) {
+    return "زیان";
+  }
+
+  if (
+    status ===
+    "BREAKEVEN"
+  ) {
+    return "سر‌به‌سر";
+  }
+
+  if (
+    status ===
+      "WAITING" ||
+    signal.side === "WAIT"
+  ) {
+    return "در انتظار";
+  }
+
+  return "فعال";
+}
+
+function statusClass(
+  signal: Signal
+) {
+  const status =
+    signal.status ||
+    "ACTIVE";
+
+  if (
+    status === "TP1" ||
+    status === "TP2" ||
+    status === "TP3" ||
+    status === "WIN"
+  ) {
+    return "status-success";
+  }
+
+  if (
+    status ===
+      "STOP_LOSS" ||
+    status === "SL" ||
+    status === "LOSS"
+  ) {
+    return "status-danger";
+  }
+
+  if (
+    status ===
+      "EXPIRED" ||
+    status ===
+      "BREAKEVEN"
+  ) {
+    return "status-warning";
+  }
+
+  return "status-active";
 }
 
 function Side({
@@ -220,8 +451,10 @@ function Side({
 }) {
   if (side === "BUY") {
     return (
-      <span className="side buy">
-        <b>↗</b>
+      <span className="side side-buy">
+        <span className="side-icon">
+          ↗
+        </span>
         BUY
       </span>
     );
@@ -229,16 +462,20 @@ function Side({
 
   if (side === "SELL") {
     return (
-      <span className="side sell">
-        <b>↘</b>
+      <span className="side side-sell">
+        <span className="side-icon">
+          ↘
+        </span>
         SELL
       </span>
     );
   }
 
   return (
-    <span className="side wait">
-      <b>◌</b>
+    <span className="side side-wait">
+      <span className="side-icon">
+        ◌
+      </span>
       WAIT
     </span>
   );
@@ -247,14 +484,65 @@ function Side({
 function Metric({
   title,
   value,
+  tone = "",
 }: {
   title: string;
   value: string;
+  tone?: string;
 }) {
   return (
     <div className="metric">
-      <span>{title}</span>
-      <strong>{value}</strong>
+      <span className="metric-title">
+        {title}
+      </span>
+
+      <strong
+        className={
+          tone
+            ? `metric-value ${tone}`
+            : "metric-value"
+        }
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function TargetBox({
+  label,
+  value,
+  tone,
+  hit,
+}: {
+  label: string;
+  value: number | null | undefined;
+  tone: "entry" | "sl" | "tp";
+  hit?: boolean;
+}) {
+  return (
+    <div
+      className={`target-box ${tone} ${
+        hit
+          ? "target-hit"
+          : ""
+      }`}
+    >
+      <div className="target-head">
+        <span>
+          {label}
+        </span>
+
+        {hit && (
+          <span className="hit-mark">
+            ✓
+          </span>
+        )}
+      </div>
+
+      <strong>
+        {formatPrice(value)}
+      </strong>
     </div>
   );
 }
@@ -262,6 +550,14 @@ function Metric({
 export default function SignalsPage() {
   const [signals, setSignals] =
     useState<Signal[]>([]);
+
+  const [summary, setSummary] =
+    useState({
+      total: 0,
+      buy: 0,
+      sell: 0,
+      wait: 0,
+    });
 
   const [timeframe, setTimeframe] =
     useState("15min");
@@ -282,6 +578,14 @@ export default function SignalsPage() {
 
   const [lastUpdate, setLastUpdate] =
     useState("");
+
+  const [apiErrors, setApiErrors] =
+    useState<
+      Array<{
+        symbol: string;
+        error: string;
+      }>
+    >([]);
 
   const loadSignals =
     useCallback(
@@ -305,7 +609,6 @@ export default function SignalsPage() {
               {
                 method: "GET",
                 cache: "no-store",
-
                 headers: {
                   Accept:
                     "application/json",
@@ -352,8 +655,40 @@ export default function SignalsPage() {
             );
           }
 
+          const nextSignals =
+            data.signals || [];
+
           setSignals(
-            data.signals || []
+            nextSignals
+          );
+
+          setSummary(
+            data.summary || {
+              total:
+                nextSignals.length,
+              buy:
+                nextSignals.filter(
+                  (item) =>
+                    item.side ===
+                    "BUY"
+                ).length,
+              sell:
+                nextSignals.filter(
+                  (item) =>
+                    item.side ===
+                    "SELL"
+                ).length,
+              wait:
+                nextSignals.filter(
+                  (item) =>
+                    item.side ===
+                    "WAIT"
+                ).length,
+            }
+          );
+
+          setApiErrors(
+            data.errors || []
           );
 
           setLastUpdate(
@@ -413,21 +748,32 @@ export default function SignalsPage() {
     ]);
 
   const buyCount =
-    signals.filter(
-      (signal) =>
-        signal.side === "BUY"
-    ).length;
+    summary.buy;
 
   const sellCount =
-    signals.filter(
-      (signal) =>
-        signal.side === "SELL"
-    ).length;
+    summary.sell;
 
   const waitCount =
+    summary.wait;
+
+  const activeCount =
     signals.filter(
-      (signal) =>
-        signal.side === "WAIT"
+      (signal) => {
+        const status =
+          signal.status ||
+          "ACTIVE";
+
+        return (
+          status ===
+            "ACTIVE" ||
+          status ===
+            "WAITING" ||
+          status ===
+            "TP1" ||
+          status ===
+            "TP2"
+        );
+      }
     ).length;
 
   return (
@@ -444,8 +790,8 @@ export default function SignalsPage() {
         body {
           margin: 0;
           padding: 0;
-          background: #050914;
-          color: #eef7ff;
+          background: #050505;
+          color: #f5f1e8;
           font-family:
             Tahoma,
             Arial,
@@ -461,39 +807,43 @@ export default function SignalsPage() {
           font: inherit;
         }
 
+        button {
+          -webkit-tap-highlight-color:
+            transparent;
+        }
+
         .page {
           min-height: 100vh;
 
+          overflow-x: hidden;
+
           background:
             radial-gradient(
-              circle at 8% 0%,
+              circle at 50% -10%,
               rgba(
-                0,
-                210,
-                255,
+                212,
+                175,
+                55,
                 0.14
+              ),
+              transparent 30%
+            ),
+            radial-gradient(
+              circle at 100% 35%,
+              rgba(
+                212,
+                175,
+                55,
+                0.06
               ),
               transparent 25%
             ),
-
-            radial-gradient(
-              circle at 92% 5%,
-              rgba(
-                94,
-                78,
-                255,
-                0.15
-              ),
-              transparent 28%
-            ),
-
             linear-gradient(
               180deg,
-              #07101d 0%,
-              #040811 100%
+              #090909 0%,
+              #050505 50%,
+              #030303 100%
             );
-
-          overflow-x: hidden;
         }
 
         .container {
@@ -502,138 +852,228 @@ export default function SignalsPage() {
             calc(100% - 30px)
           );
 
-          margin: auto;
+          margin: 0 auto;
 
           padding:
-            24px 0 60px;
+            22px 0 70px;
         }
 
         .topbar {
-          min-height: 72px;
+          position: relative;
+
+          min-height: 78px;
 
           display: flex;
+
           align-items: center;
+
           justify-content:
             space-between;
 
-          gap: 20px;
+          gap: 18px;
 
           padding:
-            12px 16px;
+            13px 16px;
 
           border:
             1px solid
             rgba(
-              255,
-              255,
-              255,
-              0.09
+              212,
+              175,
+              55,
+              0.2
             );
 
-          border-radius: 22px;
+          border-radius:
+            22px;
 
           background:
-            rgba(
-              10,
-              22,
-              37,
-              0.76
+            linear-gradient(
+              135deg,
+              rgba(
+                24,
+                22,
+                16,
+                0.96
+              ),
+              rgba(
+                8,
+                8,
+                8,
+                0.95
+              )
             );
 
           backdrop-filter:
-            blur(24px);
+            blur(22px);
 
           box-shadow:
-            0 25px 70px
+            0 22px 80px
             rgba(
               0,
               0,
               0,
-              0.35
+              0.5
+            );
+        }
+
+        .topbar::after {
+          content: "";
+
+          position: absolute;
+
+          left: 15%;
+
+          right: 15%;
+
+          bottom: -1px;
+
+          height: 1px;
+
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(
+                212,
+                175,
+                55,
+                0.65
+              ),
+              transparent
             );
         }
 
         .brand {
           display: flex;
+
           align-items: center;
+
           gap: 12px;
         }
 
         .brand-logo {
-          width: 48px;
-          height: 48px;
+          width: 52px;
+          height: 52px;
 
           display: grid;
+
           place-items: center;
 
-          border-radius: 16px;
+          position: relative;
 
-          color: #03131e;
+          border-radius:
+            16px;
 
-          font-size: 16px;
-          font-weight: 900;
+          color: #050505;
+
+          font-size: 15px;
+
+          font-weight: 1000;
 
           background:
             linear-gradient(
               135deg,
-              #5ceaff,
-              #7786ff
+              #fff1a8 0%,
+              #d4af37 38%,
+              #8e6815 100%
             );
 
           box-shadow:
-            0 0 35px
+            0 0 30px
             rgba(
-              54,
-              220,
+              212,
+              175,
+              55,
+              0.18
+            ),
+            inset 0 1px 0
+            rgba(
               255,
+              255,
+              255,
+              0.5
+            );
+        }
+
+        .brand-logo::before {
+          content: "";
+
+          position: absolute;
+
+          inset: 4px;
+
+          border-radius:
+            12px;
+
+          border:
+            1px solid
+            rgba(
+              0,
+              0,
+              0,
               0.25
             );
         }
 
         .brand-title {
           margin: 0;
-          font-size: 17px;
+
+          font-size: 18px;
+
+          color: #f6f1df;
+
+          letter-spacing:
+            0.2px;
         }
 
         .brand-subtitle {
           margin:
-            4px 0 0;
+            5px 0 0;
 
-          color: #72869e;
+          color: #80765d;
 
-          font-size: 10px;
+          font-size: 9px;
+
+          letter-spacing:
+            1.1px;
+
+          text-transform:
+            uppercase;
         }
 
         .live {
           display: inline-flex;
+
           align-items: center;
-          gap: 7px;
+
+          gap: 8px;
 
           padding:
-            8px 12px;
+            9px 13px;
 
           border-radius:
             999px;
 
-          color: #63efb1;
+          color: #b9f2c9;
 
-          font-size: 10px;
-
-          background:
-            rgba(
-              48,
-              224,
-              157,
-              0.07
-            );
+          font-size: 9px;
 
           border:
             1px solid
             rgba(
-              48,
-              224,
-              157,
+              73,
+              219,
+              139,
               0.2
+            );
+
+          background:
+            rgba(
+              73,
+              219,
+              139,
+              0.05
             );
         }
 
@@ -644,11 +1084,16 @@ export default function SignalsPage() {
           border-radius: 50%;
 
           background:
-            #58edaa;
+            #63e89b;
 
           box-shadow:
             0 0 13px
-            #58edaa;
+            rgba(
+              99,
+              232,
+              155,
+              0.9
+            );
         }
 
         .hero {
@@ -657,36 +1102,46 @@ export default function SignalsPage() {
           margin-top: 15px;
 
           padding:
-            30px 28px;
-
-          border-radius: 28px;
+            34px 30px;
 
           overflow: hidden;
+
+          border-radius:
+            28px;
 
           border:
             1px solid
             rgba(
-              255,
-              255,
-              255,
-              0.08
+              212,
+              175,
+              55,
+              0.2
             );
 
           background:
             linear-gradient(
               135deg,
               rgba(
-                13,
-                34,
-                52,
-                0.95
+                29,
+                26,
+                18,
+                0.96
               ),
               rgba(
-                7,
-                15,
-                28,
-                0.96
+                10,
+                10,
+                10,
+                0.97
               )
+            );
+
+          box-shadow:
+            0 25px 80px
+            rgba(
+              0,
+              0,
+              0,
+              0.4
             );
         }
 
@@ -695,46 +1150,89 @@ export default function SignalsPage() {
 
           position: absolute;
 
-          width: 420px;
-          height: 420px;
+          width: 450px;
+          height: 450px;
+
+          top: -270px;
+          left: -120px;
 
           border-radius: 50%;
 
-          left: -180px;
-          top: -220px;
-
           background:
             rgba(
-              0,
-              213,
-              255,
+              212,
+              175,
+              55,
               0.08
             );
 
           filter:
-            blur(50px);
+            blur(65px);
+        }
+
+        .hero::after {
+          content: "";
+
+          position: absolute;
+
+          right: -130px;
+          bottom: -180px;
+
+          width: 360px;
+          height: 360px;
+
+          border-radius: 50%;
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.06
+            );
         }
 
         .hero-content {
           position: relative;
-          z-index: 1;
+
+          z-index: 2;
         }
 
         .eyebrow {
-          color: #5ddfff;
+          display: inline-flex;
 
-          font-size: 10px;
+          align-items: center;
+
+          gap: 8px;
+
+          color: #d4af37;
+
+          font-size: 9px;
+
+          font-weight: 900;
 
           letter-spacing:
-            1.4px;
+            1.8px;
 
-          font-weight: 800;
+          margin-bottom: 11px;
+        }
 
-          margin-bottom: 9px;
+        .eyebrow::before {
+          content: "";
+
+          width: 24px;
+
+          height: 1px;
+
+          background:
+            #d4af37;
         }
 
         .hero h1 {
           margin: 0;
+
+          color: #f8f2df;
 
           font-size:
             clamp(
@@ -743,35 +1241,37 @@ export default function SignalsPage() {
               46px
             );
 
-          line-height: 1.2;
+          line-height: 1.25;
+
+          font-weight: 900;
         }
 
         .hero-description {
-          max-width: 800px;
-
-          color: #899cb3;
-
-          font-size: 13px;
-
-          line-height: 2;
+          max-width: 900px;
 
           margin:
-            13px 0 0;
+            14px 0 0;
+
+          color: #928a77;
+
+          font-size: 12px;
+
+          line-height: 2.1;
         }
 
         .toolbar {
           display: flex;
 
+          align-items: center;
+
           justify-content:
             space-between;
 
-          align-items: center;
-
           flex-wrap: wrap;
 
-          gap: 12px;
+          gap: 13px;
 
-          margin-top: 23px;
+          margin-top: 25px;
         }
 
         .filters {
@@ -783,7 +1283,15 @@ export default function SignalsPage() {
         }
 
         .filter {
+          min-width: 70px;
+
           cursor: pointer;
+
+          padding:
+            10px 15px;
+
+          border-radius:
+            11px;
 
           border:
             1px solid
@@ -794,42 +1302,58 @@ export default function SignalsPage() {
               0.08
             );
 
+          color: #837b69;
+
           background:
             rgba(
               255,
               255,
               255,
-              0.035
+              0.025
             );
 
-          color: #8fa1b5;
+          transition:
+            0.2s ease;
+        }
 
-          border-radius:
-            11px;
+        .filter:hover {
+          border-color:
+            rgba(
+              212,
+              175,
+              55,
+              0.3
+            );
 
-          padding:
-            9px 14px;
-
-          font-size: 11px;
+          color: #d4af37;
         }
 
         .filter.active {
-          color: white;
+          color: #0a0905;
 
           border-color:
             rgba(
-              70,
-              220,
-              255,
-              0.35
+              212,
+              175,
+              55,
+              0.75
             );
 
           background:
+            linear-gradient(
+              135deg,
+              #f4dc82,
+              #d4af37,
+              #9d7519
+            );
+
+          box-shadow:
+            0 7px 25px
             rgba(
-              70,
-              220,
-              255,
-              0.1
+              212,
+              175,
+              55,
+              0.13
             );
         }
 
@@ -841,42 +1365,84 @@ export default function SignalsPage() {
 
         .select,
         .refresh {
-          min-height: 40px;
+          min-height: 42px;
 
           border:
             1px solid
             rgba(
-              255,
-              255,
-              255,
-              0.09
+              212,
+              175,
+              55,
+              0.18
             );
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.04
-            );
-
-          color: white;
 
           border-radius:
             11px;
 
           padding:
-            0 12px;
+            0 13px;
+
+          color: #e9dfc4;
+
+          background:
+            #0c0c0b;
+
+          outline: none;
+        }
+
+        .select {
+          min-width: 150px;
+
+          cursor: pointer;
+        }
+
+        .select option {
+          background: #11100d;
+
+          color: #eee4c8;
         }
 
         .refresh {
           cursor: pointer;
+
+          color: #080705;
+
+          font-weight: 800;
+
+          background:
+            linear-gradient(
+              135deg,
+              #f2d779,
+              #d4af37,
+              #99701a
+            );
+
+          transition:
+            0.2s ease;
+        }
+
+        .refresh:hover {
+          transform:
+            translateY(-1px);
+
+          box-shadow:
+            0 8px 25px
+            rgba(
+              212,
+              175,
+              55,
+              0.16
+            );
         }
 
         .refresh:disabled {
           opacity: 0.5;
+
           cursor:
             not-allowed;
+
+          transform:
+            none;
         }
 
         .stats {
@@ -892,8 +1458,14 @@ export default function SignalsPage() {
         }
 
         .stat {
+          position: relative;
+
+          overflow: hidden;
+
+          min-height: 105px;
+
           padding:
-            17px;
+            18px;
 
           border-radius:
             19px;
@@ -901,51 +1473,176 @@ export default function SignalsPage() {
           border:
             1px solid
             rgba(
-              255,
-              255,
-              255,
-              0.07
+              212,
+              175,
+              55,
+              0.11
             );
 
           background:
+            linear-gradient(
+              145deg,
+              rgba(
+                20,
+                19,
+                15,
+                0.94
+              ),
+              rgba(
+                8,
+                8,
+                8,
+                0.95
+              )
+            );
+
+          box-shadow:
+            0 15px 45px
             rgba(
-              10,
-              21,
-              35,
-              0.82
+              0,
+              0,
+              0,
+              0.25
             );
         }
 
-        .stat-label {
-          color: #71849b;
+        .stat::after {
+          content: "";
 
-          font-size: 10px;
+          position: absolute;
+
+          width: 80px;
+          height: 80px;
+
+          left: -35px;
+          bottom: -45px;
+
+          border-radius: 50%;
+
+          background:
+            rgba(
+              212,
+              175,
+              55,
+              0.07
+            );
+
+          filter:
+            blur(10px);
+        }
+
+        .stat-label {
+          display: block;
+
+          color: #756d5b;
+
+          font-size: 9px;
         }
 
         .stat-value {
           display: block;
 
-          margin-top: 7px;
+          margin-top: 8px;
 
-          font-size: 25px;
+          font-size: 27px;
 
           font-weight: 900;
         }
 
-        .cyan {
-          color: #5bdfff;
+        .stat-value.gold {
+          color: #d4af37;
         }
 
-        .green {
-          color: #58efad;
+        .stat-value.green {
+          color: #65e6a0;
         }
 
-        .red {
-          color: #ff7185;
+        .stat-value.red {
+          color: #ff7181;
         }
 
-        .yellow {
-          color: #ffd76c;
+        .stat-value.gray {
+          color: #aaa18e;
+        }
+
+        .engine-row {
+          display: flex;
+
+          align-items: center;
+
+          justify-content:
+            space-between;
+
+          gap: 10px;
+
+          margin:
+            12px 0;
+        }
+
+        .engine-status {
+          display: inline-flex;
+
+          align-items: center;
+
+          gap: 8px;
+
+          color: #bcb39f;
+
+          font-size: 9px;
+        }
+
+        .engine-status strong {
+          color: #d4af37;
+        }
+
+        .engine-line {
+          height: 1px;
+
+          flex: 1;
+
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(
+                212,
+                175,
+                55,
+                0.2
+              ),
+              transparent
+            );
+        }
+
+        .api-error-bar {
+          margin-bottom: 13px;
+
+          padding:
+            11px 14px;
+
+          border-radius:
+            13px;
+
+          color: #e8b9a4;
+
+          border:
+            1px solid
+            rgba(
+              217,
+              116,
+              75,
+              0.18
+            );
+
+          background:
+            rgba(
+              150,
+              63,
+              38,
+              0.08
+            );
+
+          font-size: 9px;
         }
 
         .cards {
@@ -977,36 +1674,53 @@ export default function SignalsPage() {
           border:
             1px solid
             rgba(
-              255,
-              255,
-              255,
-              0.075
+              212,
+              175,
+              55,
+              0.14
             );
 
           background:
             linear-gradient(
               145deg,
               rgba(
-                15,
-                29,
-                46,
-                0.96
+                20,
+                19,
+                16,
+                0.98
               ),
               rgba(
-                6,
-                13,
-                24,
-                0.96
+                8,
+                8,
+                8,
+                0.98
               )
             );
 
           box-shadow:
-            0 18px 55px
+            0 20px 65px
             rgba(
               0,
               0,
               0,
-              0.23
+              0.35
+            );
+
+          transition:
+            transform 0.2s ease,
+            border-color 0.2s ease;
+        }
+
+        .card:hover {
+          transform:
+            translateY(-2px);
+
+          border-color:
+            rgba(
+              212,
+              175,
+              55,
+              0.28
             );
         }
 
@@ -1025,7 +1739,9 @@ export default function SignalsPage() {
             linear-gradient(
               90deg,
               transparent,
-              #57dcff,
+              #d4af37,
+              #fff1a8,
+              #d4af37,
               transparent
             );
         }
@@ -1033,10 +1749,10 @@ export default function SignalsPage() {
         .card-head {
           display: flex;
 
+          align-items: center;
+
           justify-content:
             space-between;
-
-          align-items: center;
 
           gap: 10px;
         }
@@ -1046,12 +1762,12 @@ export default function SignalsPage() {
 
           align-items: center;
 
-          gap: 10px;
+          gap: 11px;
         }
 
         .asset-icon {
-          width: 46px;
-          height: 46px;
+          width: 48px;
+          height: 48px;
 
           display: grid;
 
@@ -1060,43 +1776,56 @@ export default function SignalsPage() {
           border-radius:
             14px;
 
-          font-size: 14px;
+          color: #e7c85d;
 
-          font-weight: 900;
+          font-size: 15px;
 
-          color: #dffbff;
+          font-weight: 1000;
 
           border:
             1px solid
             rgba(
-              88,
-              220,
-              255,
-              0.18
+              212,
+              175,
+              55,
+              0.3
             );
 
           background:
             linear-gradient(
               135deg,
               rgba(
-                57,
-                207,
-                240,
-                0.18
+                212,
+                175,
+                55,
+                0.16
               ),
               rgba(
-                105,
-                95,
-                255,
-                0.18
+                212,
+                175,
+                55,
+                0.03
               )
+            );
+
+          box-shadow:
+            inset 0 1px 0
+            rgba(
+              255,
+              255,
+              255,
+              0.08
             );
         }
 
         .asset-name {
           margin: 0;
 
+          color: #f4eedf;
+
           font-size: 15px;
+
+          font-weight: 900;
         }
 
         .asset-description {
@@ -1104,9 +1833,42 @@ export default function SignalsPage() {
 
           margin-top: 4px;
 
-          color: #6f829a;
+          color: #6f6757;
 
           font-size: 9px;
+        }
+
+        .market-badge {
+          display: inline-flex;
+
+          margin-top: 5px;
+
+          padding:
+            3px 7px;
+
+          border-radius:
+            999px;
+
+          color: #a89b7b;
+
+          background:
+            rgba(
+              212,
+              175,
+              55,
+              0.045
+            );
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.1
+            );
+
+          font-size: 7px;
         }
 
         .side {
@@ -1124,70 +1886,245 @@ export default function SignalsPage() {
 
           font-size: 10px;
 
-          font-weight: 900;
+          font-weight: 1000;
         }
 
-        .side.buy {
-          color: #61f0ae;
+        .side-icon {
+          font-size: 13px;
+        }
 
-          background:
-            rgba(
-              49,
-              224,
-              157,
-              0.09
-            );
+        .side-buy {
+          color: #65e6a0;
 
           border:
             1px solid
             rgba(
-              49,
-              224,
-              157,
+              65,
+              223,
+              147,
               0.2
             );
-        }
-
-        .side.sell {
-          color: #ff7085;
 
           background:
             rgba(
-              255,
-              72,
-              103,
-              0.09
+              65,
+              223,
+              147,
+              0.06
             );
+        }
+
+        .side-sell {
+          color: #ff7181;
 
           border:
             1px solid
             rgba(
               255,
-              72,
-              103,
+              84,
+              106,
               0.2
             );
-        }
-
-        .side.wait {
-          color: #ffd66c;
 
           background:
             rgba(
               255,
-              214,
-              108,
-              0.08
+              84,
+              106,
+              0.06
             );
+        }
+
+        .side-wait {
+          color: #d4af37;
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.2
+            );
+
+          background:
+            rgba(
+              212,
+              175,
+              55,
+              0.05
+            );
+        }
+
+        .status-row {
+          display: flex;
+
+          align-items: center;
+
+          justify-content:
+            space-between;
+
+          gap: 8px;
+
+          margin-top: 12px;
+        }
+
+        .status {
+          display: inline-flex;
+
+          align-items: center;
+
+          gap: 6px;
+
+          padding:
+            6px 9px;
+
+          border-radius:
+            8px;
+
+          font-size: 8px;
+
+          font-weight: 800;
+        }
+
+        .status-dot {
+          width: 6px;
+          height: 6px;
+
+          border-radius: 50%;
+        }
+
+        .status-active {
+          color: #e2bd4e;
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.18
+            );
+
+          background:
+            rgba(
+              212,
+              175,
+              55,
+              0.05
+            );
+        }
+
+        .status-active
+          .status-dot {
+          background:
+            #d4af37;
+
+          box-shadow:
+            0 0 8px
+            rgba(
+              212,
+              175,
+              55,
+              0.8
+            );
+        }
+
+        .status-success {
+          color: #65e6a0;
+
+          border:
+            1px solid
+            rgba(
+              65,
+              223,
+              147,
+              0.17
+            );
+
+          background:
+            rgba(
+              65,
+              223,
+              147,
+              0.05
+            );
+        }
+
+        .status-success
+          .status-dot {
+          background:
+            #65e6a0;
+        }
+
+        .status-danger {
+          color: #ff7181;
 
           border:
             1px solid
             rgba(
               255,
-              214,
-              108,
-              0.15
+              84,
+              106,
+              0.17
             );
+
+          background:
+            rgba(
+              255,
+              84,
+              106,
+              0.05
+            );
+        }
+
+        .status-danger
+          .status-dot {
+          background:
+            #ff7181;
+        }
+
+        .status-warning {
+          color: #d4af37;
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.17
+            );
+
+          background:
+            rgba(
+              212,
+              175,
+              55,
+              0.05
+            );
+        }
+
+        .status-warning
+          .status-dot {
+          background:
+            #d4af37;
+        }
+
+        .telegram {
+          display: inline-flex;
+
+          align-items: center;
+
+          gap: 6px;
+
+          color: #77705f;
+
+          font-size: 8px;
+        }
+
+        .telegram.sent {
+          color: #65e6a0;
         }
 
         .main-price {
@@ -1202,28 +2139,46 @@ export default function SignalsPage() {
           gap: 15px;
 
           margin:
-            20px 0 15px;
+            18px 0 14px;
+
+          padding-bottom:
+            14px;
+
+          border-bottom:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.07
+            );
         }
 
         .price-label {
-          color: #6f8299;
+          color: #716956;
 
-          font-size: 9px;
+          font-size: 8px;
         }
 
         .price {
           margin-top: 5px;
 
+          color: #f7f0df;
+
           font-size: 27px;
 
-          font-weight: 900;
+          font-weight: 1000;
 
           letter-spacing:
-            -1px;
+            -0.7px;
+        }
+
+        .price.gold {
+          color: #e4c75c;
         }
 
         .confidence {
-          width: 105px;
+          width: 120px;
         }
 
         .confidence-top {
@@ -1232,15 +2187,21 @@ export default function SignalsPage() {
           justify-content:
             space-between;
 
+          gap: 8px;
+
           margin-bottom: 6px;
 
-          color: #71849b;
+          color: #746c5c;
 
-          font-size: 9px;
+          font-size: 8px;
+        }
+
+        .confidence-top b {
+          color: #d4af37;
         }
 
         .progress {
-          height: 6px;
+          height: 5px;
 
           overflow: hidden;
 
@@ -1252,7 +2213,7 @@ export default function SignalsPage() {
               255,
               255,
               255,
-              0.07
+              0.06
             );
         }
 
@@ -1267,34 +2228,38 @@ export default function SignalsPage() {
           background:
             linear-gradient(
               90deg,
-              #50defe,
-              #7b82ff
+              #9d7519,
+              #d4af37,
+              #fff0a1
+            );
+
+          box-shadow:
+            0 0 10px
+            rgba(
+              212,
+              175,
+              55,
+              0.25
             );
         }
 
-        .levels {
+        .target-grid {
           display: grid;
 
           grid-template-columns:
-            repeat(4, 1fr);
+            repeat(5, 1fr);
 
           gap: 6px;
         }
 
-        .level {
+        .target-box {
+          min-width: 0;
+
           padding:
             10px 7px;
 
           border-radius:
-            12px;
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.032
-            );
+            11px;
 
           border:
             1px solid
@@ -1302,45 +2267,112 @@ export default function SignalsPage() {
               255,
               255,
               255,
-              0.05
+              0.055
+            );
+
+          background:
+            rgba(
+              255,
+              255,
+              255,
+              0.018
             );
         }
 
-        .level-label {
-          display: block;
+        .target-head {
+          display: flex;
 
-          margin-bottom: 5px;
+          align-items: center;
 
-          color: #667991;
+          justify-content:
+            space-between;
 
-          font-size: 8px;
+          gap: 3px;
+
+          margin-bottom: 6px;
         }
 
-        .level-value {
+        .target-head span:first-child {
+          color: #686052;
+
+          font-size: 7px;
+
+          white-space: nowrap;
+        }
+
+        .target-box strong {
           display: block;
 
           overflow: hidden;
 
-          text-overflow: ellipsis;
+          text-overflow:
+            ellipsis;
 
           white-space: nowrap;
 
-          font-size: 10px;
+          font-size: 9px;
         }
 
-        .entry {
-          color: #dbefff;
+        .target-box.entry {
+          border-color:
+            rgba(
+              212,
+              175,
+              55,
+              0.13
+            );
         }
 
-        .stop {
-          color: #ff7387;
+        .target-box.entry strong {
+          color: #e8dfc8;
         }
 
-        .target {
-          color: #59edaa;
+        .target-box.sl {
+          border-color:
+            rgba(
+              255,
+              84,
+              106,
+              0.13
+            );
         }
 
-        .indicators {
+        .target-box.sl strong {
+          color: #ff7181;
+        }
+
+        .target-box.tp {
+          border-color:
+            rgba(
+              65,
+              223,
+              147,
+              0.13
+            );
+        }
+
+        .target-box.tp strong {
+          color: #65e6a0;
+        }
+
+        .target-hit {
+          box-shadow:
+            inset 0 0 0 1px
+            rgba(
+              101,
+              230,
+              160,
+              0.1
+            );
+        }
+
+        .hit-mark {
+          color: #65e6a0;
+
+          font-size: 9px;
+        }
+
+        .secondary-grid {
           display: grid;
 
           grid-template-columns:
@@ -1352,6 +2384,8 @@ export default function SignalsPage() {
         }
 
         .metric {
+          min-width: 0;
+
           padding:
             10px;
 
@@ -1363,39 +2397,7 @@ export default function SignalsPage() {
               255,
               255,
               255,
-              0.025
-            );
-        }
-
-        .metric span {
-          display: block;
-
-          color: #657990;
-
-          font-size: 8px;
-
-          margin-bottom: 4px;
-        }
-
-        .metric strong {
-          font-size: 10px;
-        }
-
-        .levels-box {
-          margin-top: 10px;
-
-          padding:
-            12px;
-
-          border-radius:
-            14px;
-
-          background:
-            rgba(
-              4,
-              10,
-              18,
-              0.42
+              0.018
             );
 
           border:
@@ -1404,16 +2406,84 @@ export default function SignalsPage() {
               255,
               255,
               255,
-              0.05
+              0.045
             );
         }
 
-        .levels-title {
-          color: #8598af;
+        .metric-title {
+          display: block;
+
+          margin-bottom: 4px;
+
+          color: #625c4f;
+
+          font-size: 7px;
+        }
+
+        .metric-value {
+          display: block;
+
+          overflow: hidden;
+
+          text-overflow:
+            ellipsis;
+
+          white-space: nowrap;
+
+          color: #cfc7b5;
 
           font-size: 9px;
+        }
 
-          margin-bottom: 9px;
+        .metric-value.gold {
+          color: #d4af37;
+        }
+
+        .metric-value.green {
+          color: #65e6a0;
+        }
+
+        .metric-value.red {
+          color: #ff7181;
+        }
+
+        .levels-box,
+        .reason-box {
+          margin-top: 9px;
+
+          padding:
+            12px;
+
+          border-radius:
+            14px;
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.07
+            );
+
+          background:
+            rgba(
+              0,
+              0,
+              0,
+              0.22
+            );
+        }
+
+        .levels-title,
+        .reason-title {
+          color: #827966;
+
+          font-size: 8px;
+
+          margin-bottom: 8px;
+
+          font-weight: 800;
         }
 
         .sr {
@@ -1422,7 +2492,7 @@ export default function SignalsPage() {
           grid-template-columns:
             1fr 1fr;
 
-          gap: 7px;
+          gap: 6px;
         }
 
         .sr-item {
@@ -1432,6 +2502,8 @@ export default function SignalsPage() {
 
           justify-content:
             space-between;
+
+          gap: 5px;
 
           padding:
             8px;
@@ -1444,111 +2516,61 @@ export default function SignalsPage() {
               255,
               255,
               255,
-              0.025
+              0.018
             );
         }
 
         .sr-item span {
-          color: #687b92;
+          color: #625d50;
 
-          font-size: 8px;
+          font-size: 7px;
         }
 
         .sr-item strong {
-          font-size: 9px;
+          font-size: 8px;
         }
 
         .support {
-          color: #59d9ff;
+          color: #aab8a9;
         }
 
         .resistance {
-          color: #ff8294;
-        }
-
-        .reason-box {
-          margin-top: 10px;
-
-          padding:
-            12px;
-
-          border-radius:
-            14px;
-
-          background:
-            rgba(
-              4,
-              10,
-              18,
-              0.38
-            );
-
-          border:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.05
-            );
-        }
-
-        .reason-title {
-          color: #8497ae;
-
-          font-size: 9px;
-
-          margin-bottom: 7px;
+          color: #c49b96;
         }
 
         .reason {
           display: flex;
 
-          gap: 6px;
-
-          color: #b4c2d2;
-
-          font-size: 9px;
-
-          line-height: 1.7;
-
-          margin-top: 3px;
-        }
-
-        .reason b {
-          color: #5be4aa;
-        }
-
-        .footer {
-          display: flex;
-
-          justify-content:
-            space-between;
+          align-items:
+            flex-start;
 
           gap: 7px;
 
-          margin-top: 12px;
+          margin-top: 5px;
 
-          padding-top: 10px;
-
-          border-top:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.055
-            );
-
-          color: #5e7188;
+          color: #9d9686;
 
           font-size: 8px;
+
+          line-height: 1.8;
+        }
+
+        .reason:first-of-type {
+          margin-top: 0;
+        }
+
+        .reason-check {
+          flex: 0 0 auto;
+
+          color: #d4af37;
+
+          font-weight: 900;
         }
 
         .empty,
         .error {
           padding:
-            55px 20px;
+            60px 20px;
 
           text-align: center;
 
@@ -1558,30 +2580,99 @@ export default function SignalsPage() {
           border:
             1px solid
             rgba(
-              255,
-              255,
-              255,
-              0.07
+              212,
+              175,
+              55,
+              0.11
+            );
+
+          background:
+            linear-gradient(
+              145deg,
+              rgba(
+                20,
+                19,
+                15,
+                0.95
+              ),
+              rgba(
+                7,
+                7,
+                7,
+                0.96
+              )
+            );
+
+          color: #8d8574;
+
+          font-size: 11px;
+
+          line-height: 2;
+        }
+
+        .empty-title {
+          color: #d4af37;
+
+          font-size: 14px;
+
+          font-weight: 900;
+
+          margin-bottom: 8px;
+        }
+
+        .empty-icon {
+          width: 55px;
+          height: 55px;
+
+          display: grid;
+
+          place-items: center;
+
+          margin:
+            0 auto 13px;
+
+          border-radius:
+            16px;
+
+          color: #d4af37;
+
+          border:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.18
             );
 
           background:
             rgba(
-              9,
-              19,
-              32,
-              0.8
+              212,
+              175,
+              55,
+              0.04
             );
+
+          font-size: 21px;
         }
 
         .error {
-          color: #ff8496;
+          color: #e18b91;
+
+          border-color:
+            rgba(
+              255,
+              84,
+              106,
+              0.14
+            );
         }
 
         .retry {
           margin-top: 15px;
 
           padding:
-            10px 18px;
+            10px 19px;
 
           border: 0;
 
@@ -1590,19 +2681,24 @@ export default function SignalsPage() {
 
           cursor: pointer;
 
-          color: white;
+          color: #090806;
+
+          font-size: 10px;
+
+          font-weight: 900;
 
           background:
             linear-gradient(
               135deg,
-              #1196bc,
-              #5c62db
+              #f2d779,
+              #d4af37,
+              #99701a
             );
         }
 
         .loading {
           animation:
-            loadingPulse 1.3s
+            loadingPulse 1.4s
             infinite;
         }
 
@@ -1612,24 +2708,171 @@ export default function SignalsPage() {
           }
         }
 
-        .source {
-          text-align: center;
+        .footer {
+          display: flex;
 
-          color: #566b83;
+          align-items: center;
 
-          font-size: 8px;
+          justify-content:
+            space-between;
 
-          margin-top: 24px;
+          gap: 8px;
 
-          line-height: 2;
+          margin-top: 12px;
+
+          padding-top: 10px;
+
+          border-top:
+            1px solid
+            rgba(
+              212,
+              175,
+              55,
+              0.07
+            );
+
+          color: #625c4f;
+
+          font-size: 7px;
         }
 
-        @media (max-width: 850px) {
+        .footer-right {
+          display: flex;
+
+          align-items: center;
+
+          gap: 8px;
+
+          flex-wrap: wrap;
+        }
+
+        .result-profit {
+          color: #65e6a0;
+        }
+
+        .result-loss {
+          color: #ff7181;
+        }
+
+        .source {
+          margin-top: 24px;
+
+          text-align: center;
+
+          color: #504b40;
+
+          font-size: 7px;
+
+          line-height: 2;
+
+          padding:
+            0 10px;
+        }
+
+        @media (max-width: 1000px) {
+          .cards {
+            grid-template-columns:
+              repeat(
+                2,
+                minmax(
+                  0,
+                  1fr
+                )
+              );
+          }
+
+          .target-grid {
+            grid-template-columns:
+              repeat(3, 1fr);
+          }
+
+          .secondary-grid {
+            grid-template-columns:
+              repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 760px) {
           .container {
             width:
               calc(100% - 16px);
 
-            padding-top: 8px;
+            padding:
+              8px 0 45px;
+          }
+
+          .topbar {
+            min-height: 68px;
+
+            border-radius:
+              18px;
+          }
+
+          .brand-logo {
+            width: 45px;
+            height: 45px;
+
+            border-radius:
+              14px;
+          }
+
+          .brand-title {
+            font-size: 15px;
+          }
+
+          .live {
+            padding:
+              7px 9px;
+
+            font-size: 8px;
+          }
+
+          .hero {
+            padding:
+              25px 17px;
+
+            border-radius:
+              22px;
+          }
+
+          .hero h1 {
+            font-size: 29px;
+          }
+
+          .hero-description {
+            font-size: 10px;
+          }
+
+          .toolbar {
+            align-items:
+              stretch;
+          }
+
+          .filters {
+            width: 100%;
+          }
+
+          .filter {
+            flex: 1;
+
+            min-width: 0;
+
+            padding:
+              9px 7px;
+
+            font-size: 9px;
+          }
+
+          .actions {
+            width: 100%;
+
+            flex-direction:
+              column;
+          }
+
+          .select,
+          .refresh {
+            width: 100%;
           }
 
           .stats {
@@ -1641,84 +2884,99 @@ export default function SignalsPage() {
             grid-template-columns:
               1fr;
           }
-
-          .toolbar {
-            align-items:
-              stretch;
-          }
-
-          .actions {
-            width: 100%;
-          }
-
-          .select,
-          .refresh {
-            flex: 1;
-          }
         }
 
         @media (max-width: 480px) {
           .topbar {
-            border-radius:
-              18px;
+            padding:
+              10px;
           }
 
           .brand-subtitle {
             display: none;
           }
 
-          .hero {
-            padding:
-              24px 17px;
+          .brand-logo {
+            width: 42px;
+            height: 42px;
 
             border-radius:
-              22px;
+              13px;
+          }
+
+          .brand-title {
+            font-size: 14px;
+          }
+
+          .live {
+            padding:
+              6px 8px;
           }
 
           .hero h1 {
-            font-size: 28px;
+            font-size: 26px;
           }
 
-          .hero-description {
-            font-size: 11px;
+          .stats {
+            gap: 8px;
           }
 
-          .filters {
-            width: 100%;
-          }
-
-          .filter {
-            flex: 1;
+          .stat {
+            min-height: 91px;
 
             padding:
-              9px 7px;
+              14px;
           }
 
-          .actions {
+          .stat-value {
+            font-size: 23px;
+          }
+
+          .card {
+            padding:
+              15px;
+
+            border-radius:
+              19px;
+          }
+
+          .target-grid {
+            grid-template-columns:
+              repeat(2, 1fr);
+          }
+
+          .target-box:last-child {
+            grid-column:
+              span 2;
+          }
+
+          .secondary-grid {
+            grid-template-columns:
+              repeat(2, 1fr);
+          }
+
+          .main-price {
+            align-items:
+              flex-start;
+
             flex-direction:
               column;
           }
 
-          .select,
-          .refresh {
+          .confidence {
             width: 100%;
-          }
-
-          .levels {
-            grid-template-columns:
-              repeat(2, 1fr);
-          }
-
-          .indicators {
-            grid-template-columns:
-              repeat(2, 1fr);
           }
 
           .footer {
+            align-items:
+              flex-start;
+
             flex-direction:
               column;
+          }
 
-            text-align: center;
+          .footer-right {
+            width: 100%;
           }
         }
       `}</style>
@@ -1743,37 +3001,38 @@ export default function SignalsPage() {
 
           <div className="live">
             <span className="live-dot" />
-            داده بازار زنده
+
+            موتور بازار فعال
           </div>
         </header>
 
         <section className="hero">
           <div className="hero-content">
             <div className="eyebrow">
-              REAL-TIME MARKET ENGINE
+              REAL MARKET SIGNAL ENGINE
             </div>
 
             <h1>
-              سیگنال‌های معاملاتی
-              هوشمند
+              مرکز سیگنال
+              <br />
+              Trading AI
             </h1>
 
             <p className="hero-description">
-              موتور تحلیل Trading AI
-              قیمت واقعی بازار را
-              دریافت کرده و بر اساس
-              روند، EMA، RSI، MACD،
-              ATR و ساختار قیمت،
-              وضعیت بازار را محاسبه
-              می‌کند. در صورت نبود
-              شرایط معتبر، سیستم
-              سیگنال ساختگی تولید
-              نمی‌کند.
+              این صفحه فقط داده‌ای را
+              نمایش می‌دهد که از موتور
+              تحلیل بازار دریافت شده است.
+              قیمت، Entry، Stop Loss،
+              TP1، TP2 و TP3 از داده
+              واقعی API دریافت می‌شوند و
+              Frontend هیچ سیگنال یا قیمت
+              ساختگی ایجاد نمی‌کند.
             </p>
 
             <div className="toolbar">
               <div className="filters">
                 <button
+                  type="button"
                   className={
                     filter === "ALL"
                       ? "filter active"
@@ -1787,6 +3046,7 @@ export default function SignalsPage() {
                 </button>
 
                 <button
+                  type="button"
                   className={
                     filter === "BUY"
                       ? "filter active"
@@ -1800,6 +3060,7 @@ export default function SignalsPage() {
                 </button>
 
                 <button
+                  type="button"
                   className={
                     filter === "SELL"
                       ? "filter active"
@@ -1841,6 +3102,7 @@ export default function SignalsPage() {
                 </select>
 
                 <button
+                  type="button"
                   className="refresh"
                   onClick={() =>
                     loadSignals(true)
@@ -1850,22 +3112,50 @@ export default function SignalsPage() {
                   }
                 >
                   {refreshing
-                    ? "در حال دریافت..."
-                    : "↻ بروزرسانی"}
+                    ? "در حال تحلیل..."
+                    : "↻ بروزرسانی بازار"}
                 </button>
               </div>
             </div>
           </div>
         </section>
 
+        <div className="engine-row">
+          <div className="engine-status">
+            <span className="live-dot" />
+
+            <span>
+              موتور تحلیل:
+            </span>
+
+            <strong>
+              REAL DATA
+            </strong>
+          </div>
+
+          <div className="engine-line" />
+
+          <div className="engine-status">
+            <span>
+              تایم‌فریم:
+            </span>
+
+            <strong>
+              {timeframeLabel(
+                timeframe
+              )}
+            </strong>
+          </div>
+        </div>
+
         <section className="stats">
           <div className="stat">
             <span className="stat-label">
-              بازارهای بررسی‌شده
+              بازار / خروجی تحلیل
             </span>
 
-            <strong className="stat-value cyan">
-              {signals.length}
+            <strong className="stat-value gold">
+              {summary.total}
             </strong>
           </div>
 
@@ -1891,36 +3181,61 @@ export default function SignalsPage() {
 
           <div className="stat">
             <span className="stat-label">
-              WAIT
+              فعال
             </span>
 
-            <strong className="stat-value yellow">
-              {waitCount}
+            <strong className="stat-value gray">
+              {activeCount}
             </strong>
           </div>
         </section>
 
+        {apiErrors.length > 0 && (
+          <div className="api-error-bar">
+            <strong>
+              بعضی بازارها پاسخ
+              نداده‌اند:
+            </strong>{" "}
+            {apiErrors
+              .slice(0, 3)
+              .map(
+                (item) =>
+                  `${item.symbol}: ${item.error}`
+              )
+              .join(" | ")}
+          </div>
+        )}
+
         {loading ? (
           <div className="empty loading">
-            در حال دریافت قیمت واقعی
-            بازار و محاسبه تحلیل...
+            <div className="empty-icon">
+              ◌
+            </div>
+
+            <div className="empty-title">
+              در حال تحلیل بازار
+            </div>
+
+            دریافت قیمت واقعی،
+            محاسبه اندیکاتورها و بررسی
+            شرایط سیگنال...
           </div>
         ) : error ? (
           <div className="error">
-            <strong>
-              دریافت داده بازار ناموفق
-              بود
-            </strong>
+            <div className="empty-icon">
+              !
+            </div>
 
-            <div
-              style={{
-                marginTop: 10,
-              }}
-            >
+            <div className="empty-title">
+              دریافت داده بازار ناموفق بود
+            </div>
+
+            <div>
               {error}
             </div>
 
             <button
+              type="button"
               className="retry"
               onClick={() =>
                 loadSignals()
@@ -1932,12 +3247,29 @@ export default function SignalsPage() {
         ) : visibleSignals.length ===
           0 ? (
           <div className="empty">
-            در حال حاضر سیگنال معتبری
-            در این فیلتر وجود ندارد.
-            <br />
-            سیستم برای ساخت سیگنال
-            جعلی، بازار را مجبور به
-            BUY یا SELL نمی‌کند.
+            <div className="empty-icon">
+              ◇
+            </div>
+
+            <div className="empty-title">
+              سیگنال معتبر فعالی وجود ندارد
+            </div>
+
+            <div>
+              در تایم‌فریم{" "}
+              <strong>
+                {timeframeLabel(
+                  timeframe
+                )}
+              </strong>{" "}
+              و فیلتر انتخاب‌شده،
+              موتور تحلیل در حال حاضر
+              شرایط لازم برای BUY یا SELL
+              را تأیید نکرده است.
+              <br />
+              سیستم برای پر کردن صفحه،
+              سیگنال ساختگی تولید نمی‌کند.
+            </div>
           </div>
         ) : (
           <section className="cards">
@@ -1963,6 +3295,12 @@ export default function SignalsPage() {
                         <span className="asset-description">
                           {signal.name}
                         </span>
+
+                        <span className="market-badge">
+                          {marketLabel(
+                            signal.market
+                          )}
+                        </span>
                       </div>
                     </div>
 
@@ -1973,15 +3311,42 @@ export default function SignalsPage() {
                     />
                   </div>
 
+                  <div className="status-row">
+                    <span
+                      className={`status ${statusClass(
+                        signal
+                      )}`}
+                    >
+                      <span className="status-dot" />
+
+                      {statusLabel(
+                        signal
+                      )}
+                    </span>
+
+                    <span
+                      className={
+                        signal.telegramSent
+                          ? "telegram sent"
+                          : "telegram"
+                      }
+                    >
+                      {signal.telegramSent
+                        ? "✓ ارسال به Telegram"
+                        : "○ Telegram"}
+                    </span>
+                  </div>
+
                   <div className="main-price">
                     <div>
                       <div className="price-label">
                         قیمت فعلی بازار
                       </div>
 
-                      <div className="price">
+                      <div className="price gold">
                         {formatPrice(
-                          signal.price
+                          signal.currentPrice ??
+                            signal.price
                         )}
                       </div>
                     </div>
@@ -1989,13 +3354,14 @@ export default function SignalsPage() {
                     <div className="confidence">
                       <div className="confidence-top">
                         <span>
-                          قدرت
+                          قدرت سیگنال
                         </span>
 
                         <b>
-                          {
-                            signal.strength
-                          }
+                          {formatNumber(
+                            signal.strength,
+                            0
+                          )}
                           %
                         </b>
                       </div>
@@ -2005,7 +3371,11 @@ export default function SignalsPage() {
                           style={{
                             width: `${Math.min(
                               100,
-                              signal.strength
+                              Math.max(
+                                0,
+                                signal.strength ||
+                                  0
+                              )
                             )}%`,
                           }}
                         />
@@ -2013,131 +3383,113 @@ export default function SignalsPage() {
                     </div>
                   </div>
 
-                  <div className="levels">
-                    <div className="level">
-                      <span className="level-label">
-                        ENTRY
-                      </span>
+                  <div className="target-grid">
+                    <TargetBox
+                      label="ENTRY"
+                      value={
+                        signal.entry
+                      }
+                      tone="entry"
+                    />
 
-                      <strong className="level-value entry">
-                        {formatPrice(
-                          signal.entry
-                        )}
-                      </strong>
-                    </div>
+                    <TargetBox
+                      label="SL"
+                      value={
+                        signal.stopLoss
+                      }
+                      tone="sl"
+                      hit={
+                        !!signal.stopLossHitAt
+                      }
+                    />
 
-                    <div className="level">
-                      <span className="level-label">
-                        STOP LOSS
-                      </span>
+                    <TargetBox
+                      label="TP1"
+                      value={
+                        signal.takeProfit1
+                      }
+                      tone="tp"
+                      hit={
+                        !!signal.tp1HitAt
+                      }
+                    />
 
-                      <strong className="level-value stop">
-                        {formatPrice(
-                          signal.stopLoss
-                        )}
-                      </strong>
-                    </div>
+                    <TargetBox
+                      label="TP2"
+                      value={
+                        signal.takeProfit2
+                      }
+                      tone="tp"
+                      hit={
+                        !!signal.tp2HitAt
+                      }
+                    />
 
-                    <div className="level">
-                      <span className="level-label">
-                        TP 1
-                      </span>
-
-                      <strong className="level-value target">
-                        {formatPrice(
-                          signal.takeProfit1
-                        )}
-                      </strong>
-                    </div>
-
-                    <div className="level">
-                      <span className="level-label">
-                        TP 2
-                      </span>
-
-                      <strong className="level-value target">
-                        {formatPrice(
-                          signal.takeProfit2
-                        )}
-                      </strong>
-                    </div>
+                    <TargetBox
+                      label="TP3"
+                      value={
+                        signal.takeProfit3
+                      }
+                      tone="tp"
+                      hit={
+                        !!signal.tp3HitAt
+                      }
+                    />
                   </div>
 
-                  <div
-                    className="levels"
-                    style={{
-                      marginTop: 6,
-                    }}
-                  >
-                    <div className="level">
-                      <span className="level-label">
-                        TP 3
-                      </span>
+                  <div className="secondary-grid">
+                    <Metric
+                      title="R:R"
+                      value={
+                        signal.riskReward
+                          ? `1:${formatNumber(
+                              signal.riskReward,
+                              2
+                            )}`
+                          : "—"
+                      }
+                      tone="gold"
+                    />
 
-                      <strong className="level-value target">
-                        {formatPrice(
-                          signal.takeProfit3
-                        )}
-                      </strong>
-                    </div>
+                    <Metric
+                      title="CONFIDENCE"
+                      value={`${formatNumber(
+                        signal.confidence,
+                        0
+                      )}%`}
+                      tone="gold"
+                    />
 
-                    <div className="level">
-                      <span className="level-label">
-                        R:R
-                      </span>
-
-                      <strong className="level-value">
-                        {signal.riskReward
-                          ? `1:${signal.riskReward}`
-                          : "—"}
-                      </strong>
-                    </div>
-
-                    <div className="level">
-                      <span className="level-label">
-                        CONFIDENCE
-                      </span>
-
-                      <strong className="level-value">
-                        {
-                          signal.confidence
-                        }
-                        %
-                      </strong>
-                    </div>
-
-                    <div className="level">
-                      <span className="level-label">
-                        TREND
-                      </span>
-
-                      <strong
-                        className={`level-value ${
-                          signal.trend ===
-                          "BULLISH"
-                            ? "target"
-                            : signal.trend ===
-                              "BEARISH"
-                            ? "stop"
-                            : ""
-                        }`}
-                      >
-                        {signal.trend ===
+                    <Metric
+                      title="TREND"
+                      value={trendLabel(
+                        signal.trend
+                      )}
+                      tone={
+                        signal.trend ===
                         "BULLISH"
-                          ? "صعودی"
+                          ? "green"
                           : signal.trend ===
                             "BEARISH"
-                          ? "نزولی"
-                          : "خنثی"}
-                      </strong>
-                    </div>
+                          ? "red"
+                          : ""
+                      }
+                    />
+
+                    <Metric
+                      title="TIMEFRAME"
+                      value={timeframeLabel(
+                        signal.interval
+                      )}
+                    />
                   </div>
 
-                  <div className="indicators">
+                  <div className="secondary-grid">
                     <Metric
                       title="RSI"
-                      value={String(
-                        signal.rsi
+                      value={formatNumber(
+                        signal.rsi,
+                        2
                       )}
                     />
 
@@ -2163,39 +3515,43 @@ export default function SignalsPage() {
                     />
                   </div>
 
-                  <div className="indicators">
+                  <div className="secondary-grid">
                     <Metric
                       title="MACD"
-                      value={formatPrice(
-                        signal.macd
+                      value={formatNumber(
+                        signal.macd,
+                        5
                       )}
                     />
 
                     <Metric
-                      title="SIGNAL"
-                      value={formatPrice(
-                        signal.macdSignal
+                      title="MACD SIGNAL"
+                      value={formatNumber(
+                        signal.macdSignal,
+                        5
                       )}
                     />
 
                     <Metric
                       title="HISTOGRAM"
-                      value={formatPrice(
-                        signal.macdHistogram
+                      value={formatNumber(
+                        signal.macdHistogram,
+                        5
                       )}
                     />
 
                     <Metric
-                      title="TF"
-                      value={
-                        signal.interval
-                      }
+                      title="CURRENT"
+                      value={formatPrice(
+                        signal.currentPrice ??
+                          signal.price
+                      )}
                     />
                   </div>
 
                   <div className="levels-box">
                     <div className="levels-title">
-                      حمایت و مقاومت
+                      حمایت و مقاومت بازار
                     </div>
 
                     <div className="sr">
@@ -2251,50 +3607,200 @@ export default function SignalsPage() {
 
                   <div className="reason-box">
                     <div className="reason-title">
-                      منطق تولید سیگنال
+                      دلایل تأیید سیگنال
                     </div>
 
-                    {signal.reasons
-                      .slice(
-                        0,
-                        5
-                      )
-                      .map(
-                        (
-                          reason,
-                          index
-                        ) => (
-                          <div
-                            className="reason"
-                            key={`${signal.id}-${index}`}
-                          >
-                            <b>
-                              ✓
-                            </b>
-
-                            <span>
-                              {reason}
-                            </span>
-                          </div>
+                    {signal.reasons &&
+                    signal.reasons.length >
+                      0 ? (
+                      signal.reasons
+                        .slice(
+                          0,
+                          6
                         )
-                      )}
+                        .map(
+                          (
+                            reason,
+                            index
+                          ) => (
+                            <div
+                              className="reason"
+                              key={`${signal.id}-${index}`}
+                            >
+                              <span className="reason-check">
+                                ✓
+                              </span>
+
+                              <span>
+                                {reason}
+                              </span>
+                            </div>
+                          )
+                        )
+                    ) : (
+                      <div className="reason">
+                        <span className="reason-check">
+                          •
+                        </span>
+
+                        <span>
+                          اطلاعات تحلیل
+                          برای این سیگنال
+                          در API ثبت نشده
+                          است.
+                        </span>
+                      </div>
+                    )}
                   </div>
+
+                  {(signal.riskUsd !==
+                    null &&
+                    signal.riskUsd !==
+                      undefined) ||
+                  (signal.realizedProfitLoss !==
+                    null &&
+                    signal.realizedProfitLoss !==
+                      undefined) ? (
+                    <div className="levels-box">
+                      <div className="levels-title">
+                        مدیریت مالی سیگنال
+                      </div>
+
+                      <div className="secondary-grid">
+                        <Metric
+                          title="RISK USD"
+                          value={
+                            signal.riskUsd !==
+                            null &&
+                            signal.riskUsd !==
+                              undefined
+                              ? `$${formatNumber(
+                                  signal.riskUsd,
+                                  2
+                                )}`
+                              : "—"
+                          }
+                          tone="red"
+                        />
+
+                        <Metric
+                          title="TP1 USD"
+                          value={
+                            signal.takeProfit1Usd !==
+                              null &&
+                            signal.takeProfit1Usd !==
+                              undefined
+                              ? `$${formatNumber(
+                                  signal.takeProfit1Usd,
+                                  2
+                                )}`
+                              : "—"
+                          }
+                          tone="green"
+                        />
+
+                        <Metric
+                          title="TP2 USD"
+                          value={
+                            signal.takeProfit2Usd !==
+                              null &&
+                            signal.takeProfit2Usd !==
+                              undefined
+                              ? `$${formatNumber(
+                                  signal.takeProfit2Usd,
+                                  2
+                                )}`
+                              : "—"
+                          }
+                          tone="green"
+                        />
+
+                        <Metric
+                          title="TP3 USD"
+                          value={
+                            signal.takeProfit3Usd !==
+                              null &&
+                            signal.takeProfit3Usd !==
+                              undefined
+                              ? `$${formatNumber(
+                                  signal.takeProfit3Usd,
+                                  2
+                                )}`
+                              : "—"
+                          }
+                          tone="green"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="footer">
-                    <span>
-                      کندل:{" "}
-                      {formatDate(
-                        signal.candleTime
+                    <div className="footer-right">
+                      <span>
+                        ایجاد:{" "}
+                        {formatDate(
+                          signal.createdAt ||
+                            signal.generatedAt
+                        )}
+                      </span>
+
+                      <span>
+                        کندل:{" "}
+                        {formatDate(
+                          signal.candleTime
+                        )}
+                      </span>
+
+                      {signal.lastCheckedAt && (
+                        <span>
+                          بررسی:{" "}
+                          {formatDate(
+                            signal.lastCheckedAt
+                          )}
+                        </span>
                       )}
-                    </span>
+                    </div>
 
                     <span>
-                      بروزرسانی:{" "}
-                      {formatDate(
-                        signal.generatedAt
-                      )}
+                      {signal.expiresAt
+                        ? `انقضا: ${formatDate(
+                            signal.expiresAt
+                          )}`
+                        : `بروزرسانی: ${formatDate(
+                            signal.generatedAt
+                          )}`}
                     </span>
                   </div>
+
+                  {signal.realizedProfitLoss !==
+                    null &&
+                    signal.realizedProfitLoss !==
+                      undefined && (
+                      <div
+                        className={
+                          signal.realizedProfitLoss >=
+                          0
+                            ? "result-profit"
+                            : "result-loss"
+                        }
+                        style={{
+                          marginTop: 9,
+                          fontSize: 9,
+                          fontWeight: 800,
+                        }}
+                      >
+                        نتیجه ثبت‌شده:{" "}
+                        {signal.realizedProfitLoss >=
+                        0
+                          ? "+"
+                          : ""}
+                        $
+                        {formatNumber(
+                          signal.realizedProfitLoss,
+                          2
+                        )}
+                      </div>
+                    )}
                 </article>
               )
             )}
@@ -2302,15 +3808,17 @@ export default function SignalsPage() {
         )}
 
         <div className="source">
-          منبع قیمت: Twelve Data ·
-          تحلیل الگوریتمی بر اساس
-          داده بازار ·
+          منبع قیمت و بازار:
+          Twelve Data ·
+          نمایش فقط داده دریافت‌شده از
+          موتور تحلیل ·
           بروزرسانی خودکار هر ۶۰ ثانیه
           <br />
-          این سیستم تضمین‌کننده سود
-          یا نتیجه معامله نیست.
-          تصمیم معامله باید با مدیریت
-          ریسک انجام شود.
+          این صفحه قیمت، سیگنال یا نتیجه
+          ساختگی تولید نمی‌کند. نتیجه
+          معامله فقط زمانی نمایش داده
+          می‌شود که Backend آن را ثبت
+          کرده باشد.
           {lastUpdate
             ? ` · آخرین دریافت: ${formatDate(
                 lastUpdate
