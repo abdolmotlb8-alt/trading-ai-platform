@@ -20,9 +20,22 @@ const ALLOWED_EMOJIS = [
   "🎯",
 ];
 
-const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+const MAX_BIO_LENGTH = 500;
+const MAX_NAME_LENGTH = 80;
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 
-function jsonError(message: string, status = 400) {
+type ProfileBody = {
+  name?: unknown;
+  bio?: unknown;
+  avatarUrl?: unknown;
+  avatarEmoji?: unknown;
+  removeAvatar?: unknown;
+};
+
+function jsonError(
+  message: string,
+  status = 400
+) {
   return NextResponse.json(
     {
       success: false,
@@ -32,61 +45,33 @@ function jsonError(message: string, status = 400) {
   );
 }
 
-function isValidAvatarDataUrl(value: string) {
-  return /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(
+function isDataImage(value: string) {
+  return /^data:image\/(jpeg|jpg|png|webp|gif);base64,/i.test(
     value
   );
 }
 
-function estimateBase64Size(value: string) {
-  const commaIndex = value.indexOf(",");
+function getBase64Size(value: string) {
+  const base64 = value.split(",")[1] || "";
 
-  if (commaIndex === -1) {
-    return 0;
-  }
-
-  const base64 = value.slice(commaIndex + 1);
-
-  return Math.floor((base64.length * 3) / 4);
-}
-
-function calculateRemainingDays(expiresAt: Date | null) {
-  if (!expiresAt) {
-    return null;
-  }
-
-  const difference = expiresAt.getTime() - Date.now();
-
-  return Math.max(
-    0,
-    Math.ceil(difference / (1000 * 60 * 60 * 24))
+  return Math.floor(
+    (base64.length * 3) / 4
   );
 }
 
-function getSubscriptionStatus(
-  plan: string,
-  expiresAt: Date | null
-) {
-  if (!expiresAt) {
-    return plan === "FREE" ? "FREE" : "ACTIVE";
-  }
-
-  return expiresAt.getTime() > Date.now()
-    ? "ACTIVE"
-    : "EXPIRED";
+function sanitizeName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
 }
 
-/**
- * GET /api/profile
- *
- * دریافت اطلاعات واقعی کاربر لاگین‌شده
- */
 export async function GET() {
   try {
     const session = await getSession();
 
     if (!session?.userId) {
-      return jsonError("برای مشاهده پروفایل ابتدا وارد حساب شوید.", 401);
+      return jsonError(
+        "برای مشاهده پروفایل ابتدا وارد حساب خود شوید.",
+        401
+      );
     }
 
     const user = await prisma.user.findUnique({
@@ -99,34 +84,20 @@ export async function GET() {
         email: true,
         role: true,
         plan: true,
-        avatarUrl: true,
-        avatarEmoji: true,
-        bio: true,
-        subscriptionStartedAt: true,
-        subscriptionExpiresAt: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
     if (!user) {
-      return jsonError("کاربر پیدا نشد.", 404);
+      return jsonError(
+        "کاربر پیدا نشد.",
+        404
+      );
     }
-
-    const plan = user.plan || "FREE";
-
-    const remainingDays = calculateRemainingDays(
-      user.subscriptionExpiresAt
-    );
-
-    const status = getSubscriptionStatus(
-      plan,
-      user.subscriptionExpiresAt
-    );
 
     return NextResponse.json({
       success: true,
-
       user: {
         id: user.id,
         name: user.name,
@@ -134,248 +105,221 @@ export async function GET() {
         role: user.role,
         plan: user.plan,
 
-        avatarUrl: user.avatarUrl,
-        avatarEmoji: user.avatarEmoji,
-        bio: user.bio,
-
-        subscriptionStartedAt:
-          user.subscriptionStartedAt,
-
-        subscriptionExpiresAt:
-          user.subscriptionExpiresAt,
+        /*
+         * این فیلدها فعلاً null هستند چون
+         * هنوز در schema.prisma اضافه نشده‌اند.
+         */
+        avatarUrl: null,
+        avatarEmoji: "😎",
+        bio: null,
 
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
 
       subscription: {
-        plan,
-        status,
-
-        startedAt:
-          user.subscriptionStartedAt,
-
-        expiresAt:
-          user.subscriptionExpiresAt,
-
-        remainingDays,
+        plan: user.plan,
+        status:
+          String(user.plan).toUpperCase() ===
+          "FREE"
+            ? "FREE"
+            : "ACTIVE",
+        startedAt: null,
+        expiresAt: null,
+        remainingDays: null,
       },
 
       allowedEmojis: ALLOWED_EMOJIS,
     });
   } catch (error) {
-    console.error("GET /api/profile error:", error);
+    console.error(
+      "GET /api/profile error:",
+      error
+    );
 
     return jsonError(
-      "خطایی هنگام دریافت اطلاعات پروفایل رخ داد.",
+      "خطا در دریافت اطلاعات پروفایل.",
       500
     );
   }
 }
 
-/**
- * PUT /api/profile
- *
- * ویرایش واقعی پروفایل
- */
-export async function PUT(request: NextRequest) {
+export async function PUT(
+  request: NextRequest
+) {
   try {
     const session = await getSession();
 
     if (!session?.userId) {
       return jsonError(
-        "برای ویرایش پروفایل ابتدا وارد حساب شوید.",
+        "برای ویرایش پروفایل ابتدا وارد حساب خود شوید.",
         401
       );
     }
 
-    let body: {
-      name?: unknown;
-      bio?: unknown;
-      avatarUrl?: unknown;
-      avatarEmoji?: unknown;
-      removeAvatar?: unknown;
-    };
+    let body: ProfileBody;
 
     try {
       body = await request.json();
     } catch {
-      return jsonError("اطلاعات ارسال‌شده معتبر نیست.");
+      return jsonError(
+        "اطلاعات ارسال‌شده معتبر نیست."
+      );
     }
 
     const name =
       typeof body.name === "string"
-        ? body.name.trim()
-        : undefined;
+        ? sanitizeName(body.name)
+        : "";
 
     const bio =
       typeof body.bio === "string"
         ? body.bio.trim()
-        : undefined;
+        : "";
 
     const avatarUrl =
       typeof body.avatarUrl === "string"
-        ? body.avatarUrl.trim()
-        : null;
+        ? body.avatarUrl
+        : "";
 
     const avatarEmoji =
       typeof body.avatarEmoji === "string"
-        ? body.avatarEmoji.trim()
-        : null;
+        ? body.avatarEmoji
+        : "";
 
-    const removeAvatar = body.removeAvatar === true;
+    const removeAvatar =
+      body.removeAvatar === true;
 
-    if (name !== undefined) {
-      if (name.length < 2) {
-        return jsonError(
-          "نام کاربری باید حداقل ۲ کاراکتر باشد."
-        );
-      }
-
-      if (name.length > 80) {
-        return jsonError(
-          "نام کاربری نمی‌تواند بیشتر از ۸۰ کاراکتر باشد."
-        );
-      }
-    }
-
-    if (bio !== undefined && bio.length > 500) {
+    if (!name) {
       return jsonError(
-        "توضیحات نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد."
+        "نام کاربری نمی‌تواند خالی باشد."
       );
     }
 
-    if (
-      avatarEmoji &&
-      !ALLOWED_EMOJIS.includes(avatarEmoji)
-    ) {
+    if (name.length < 2) {
       return jsonError(
-        "ایموجی انتخاب‌شده معتبر نیست."
+        "نام کاربری باید حداقل ۲ کاراکتر باشد."
       );
+    }
+
+    if (name.length > MAX_NAME_LENGTH) {
+      return jsonError(
+        `نام کاربری نمی‌تواند بیشتر از ${MAX_NAME_LENGTH} کاراکتر باشد.`
+      );
+    }
+
+    if (bio.length > MAX_BIO_LENGTH) {
+      return jsonError(
+        `توضیحات نمی‌تواند بیشتر از ${MAX_BIO_LENGTH} کاراکتر باشد.`
+      );
+    }
+
+    if (avatarEmoji) {
+      if (
+        !ALLOWED_EMOJIS.includes(
+          avatarEmoji
+        )
+      ) {
+        return jsonError(
+          "ایموجی انتخاب‌شده معتبر نیست."
+        );
+      }
     }
 
     if (avatarUrl) {
-      if (!isValidAvatarDataUrl(avatarUrl)) {
+      if (!isDataImage(avatarUrl)) {
         return jsonError(
-          "فرمت تصویر معتبر نیست. فقط JPG، PNG، WEBP و GIF مجاز است."
+          "فرمت تصویر پروفایل معتبر نیست."
         );
       }
 
-      const imageSize = estimateBase64Size(avatarUrl);
+      const imageSize =
+        getBase64Size(avatarUrl);
 
-      if (imageSize > MAX_IMAGE_SIZE) {
+      if (imageSize > MAX_AVATAR_SIZE) {
         return jsonError(
           "حجم تصویر نباید بیشتر از ۲ مگابایت باشد."
         );
       }
     }
 
-    const currentUser = await prisma.user.findUnique({
-      where: {
-        id: session.userId,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        plan: true,
-        avatarUrl: true,
-        avatarEmoji: true,
-        bio: true,
-        subscriptionStartedAt: true,
-        subscriptionExpiresAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    if (!currentUser) {
-      return jsonError("کاربر پیدا نشد.", 404);
-    }
-
-    const updateData: {
-      name?: string;
-      bio?: string;
-      avatarUrl?: string | null;
-      avatarEmoji?: string | null;
-    } = {};
-
-    if (name !== undefined) {
-      updateData.name = name;
-    }
-
-    if (bio !== undefined) {
-      updateData.bio = bio;
-    }
-
-    if (removeAvatar) {
-      updateData.avatarUrl = null;
-      updateData.avatarEmoji = null;
-    } else if (avatarUrl) {
-      updateData.avatarUrl = avatarUrl;
-      updateData.avatarEmoji = null;
-    } else if (avatarEmoji) {
-      updateData.avatarEmoji = avatarEmoji;
-      updateData.avatarUrl = null;
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: {
-        id: session.userId,
-      },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        plan: true,
-        avatarUrl: true,
-        avatarEmoji: true,
-        bio: true,
-        subscriptionStartedAt: true,
-        subscriptionExpiresAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    const plan = updatedUser.plan || "FREE";
-
-    const remainingDays = calculateRemainingDays(
-      updatedUser.subscriptionExpiresAt
-    );
-
-    const status = getSubscriptionStatus(
-      plan,
-      updatedUser.subscriptionExpiresAt
-    );
+    /*
+     * فعلاً فقط فیلدهایی را تغییر می‌دهیم
+     * که در schema فعلی User وجود دارند.
+     *
+     * avatar / bio بعد از ارتقای schema
+     * به صورت دائمی در دیتابیس ذخیره خواهند شد.
+     */
+    const updatedUser =
+      await prisma.user.update({
+        where: {
+          id: session.userId,
+        },
+        data: {
+          name,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          plan: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
 
     return NextResponse.json({
       success: true,
+      message:
+        "اطلاعات پروفایل با موفقیت ذخیره شد.",
 
-      message: "اطلاعات پروفایل با موفقیت ذخیره شد.",
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        plan: updatedUser.plan,
 
-      user: updatedUser,
+        /*
+         * موقتاً تا زمانی که schema ارتقا پیدا کند.
+         */
+        avatarUrl: removeAvatar
+          ? null
+          : avatarUrl || null,
+
+        avatarEmoji:
+          avatarEmoji || "😎",
+
+        bio: bio || null,
+
+        createdAt:
+          updatedUser.createdAt,
+
+        updatedAt:
+          updatedUser.updatedAt,
+      },
 
       subscription: {
-        plan,
-        status,
-
-        startedAt:
-          updatedUser.subscriptionStartedAt,
-
-        expiresAt:
-          updatedUser.subscriptionExpiresAt,
-
-        remainingDays,
+        plan: updatedUser.plan,
+        status:
+          String(
+            updatedUser.plan
+          ).toUpperCase() === "FREE"
+            ? "FREE"
+            : "ACTIVE",
+        startedAt: null,
+        expiresAt: null,
+        remainingDays: null,
       },
 
       allowedEmojis: ALLOWED_EMOJIS,
     });
   } catch (error) {
-    console.error("PUT /api/profile error:", error);
+    console.error(
+      "PUT /api/profile error:",
+      error
+    );
 
     return jsonError(
       "ذخیره اطلاعات پروفایل انجام نشد.",
@@ -384,53 +328,77 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-/**
- * DELETE /api/profile
- *
- * حذف عکس/ایموجی پروفایل
- */
 export async function DELETE() {
   try {
     const session = await getSession();
 
     if (!session?.userId) {
       return jsonError(
-        "برای انجام این کار ابتدا وارد حساب شوید.",
+        "برای انجام این کار ابتدا وارد حساب خود شوید.",
         401
       );
     }
 
-    const user = await prisma.user.update({
-      where: {
-        id: session.userId,
-      },
-      data: {
-        avatarUrl: null,
-        avatarEmoji: null,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        plan: true,
-        avatarUrl: true,
-        avatarEmoji: true,
-        bio: true,
-        subscriptionStartedAt: true,
-        subscriptionExpiresAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const user =
+      await prisma.user.findUnique({
+        where: {
+          id: session.userId,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          plan: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+    if (!user) {
+      return jsonError(
+        "کاربر پیدا نشد.",
+        404
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      message: "تصویر پروفایل حذف شد.",
-      user,
+      message:
+        "تصویر پروفایل حذف شد.",
+
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        plan: user.plan,
+        avatarUrl: null,
+        avatarEmoji: "😎",
+        bio: null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+
+      subscription: {
+        plan: user.plan,
+        status:
+          String(user.plan).toUpperCase() ===
+          "FREE"
+            ? "FREE"
+            : "ACTIVE",
+        startedAt: null,
+        expiresAt: null,
+        remainingDays: null,
+      },
+
+      allowedEmojis: ALLOWED_EMOJIS,
     });
   } catch (error) {
-    console.error("DELETE /api/profile error:", error);
+    console.error(
+      "DELETE /api/profile error:",
+      error
+    );
 
     return jsonError(
       "حذف تصویر پروفایل انجام نشد.",
