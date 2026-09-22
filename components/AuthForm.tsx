@@ -30,7 +30,8 @@ export default function AuthForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
 
   const [rememberMe, setRememberMe] = useState(false);
 
@@ -51,6 +52,7 @@ export default function AuthForm() {
     setMode(nextMode);
 
     setName("");
+    setEmail("");
     setPassword("");
     setConfirmPassword("");
 
@@ -170,11 +172,6 @@ export default function AuthForm() {
 
       /*
        * ثبت‌نام موفق
-       *
-       * API فعلی register بعد از ساخت حساب،
-       * کاربر را وارد نمی‌کند.
-       *
-       * بنابراین بعد از ثبت‌نام، فرم ورود نمایش داده می‌شود.
        */
       if (mode === "register") {
         setMessage(
@@ -185,6 +182,7 @@ export default function AuthForm() {
 
         setMode("login");
 
+        setName("");
         setPassword("");
         setConfirmPassword("");
 
@@ -194,19 +192,37 @@ export default function AuthForm() {
       /*
        * ورود موفق
        *
-       * login API باید session cookie بسازد.
+       * API ورود role واقعی کاربر را از دیتابیس
+       * برمی‌گرداند.
+       *
+       * ADMIN → /admin
+       * USER  → /dashboard
        */
       if (data.user) {
-        setMessage("ورود موفق بود. در حال انتقال...");
+        const userRole = String(
+          data.user.role || ""
+        )
+          .trim()
+          .toUpperCase();
+
+        setMessage(
+          userRole === "ADMIN"
+            ? "ورود مدیر با موفقیت انجام شد. در حال انتقال به پنل مدیریت..."
+            : "ورود موفق بود. در حال انتقال..."
+        );
 
         setMessageType("success");
 
         /*
-         * کمی فرصت می‌دهیم پیام موفقیت دیده شود
-         * سپس کاربر وارد داشبورد می‌شود.
+         * مسیر مقصد بر اساس role واقعی دیتابیس
          */
+        const destination =
+          userRole === "ADMIN"
+            ? "/admin"
+            : "/dashboard";
+
         setTimeout(() => {
-          router.replace("/dashboard");
+          router.replace(destination);
           router.refresh();
         }, 250);
 
