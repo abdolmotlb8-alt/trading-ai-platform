@@ -1,9 +1,7 @@
 "use client";
 
-import {
-  FormEvent,
-  useState,
-} from "react";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type AuthMode = "login" | "register";
 
@@ -22,51 +20,46 @@ type ApiResponse = {
 };
 
 export default function AuthForm() {
+  const router = useRouter();
+
   const [mode, setMode] = useState<AuthMode>("login");
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const [rememberMe, setRememberMe] = useState(false);
+
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<
     "success" | "error" | ""
   >("");
 
-  const [loading, setLoading] = useState(false);
-
-  function clearMessage() {
+  function resetMessage() {
     setMessage("");
     setMessageType("");
   }
 
-  function changeMode(nextMode: AuthMode) {
+  function switchMode(nextMode: AuthMode) {
     if (loading) return;
 
     setMode(nextMode);
+
     setName("");
     setPassword("");
-    clearMessage();
+    setConfirmPassword("");
+
+    resetMessage();
   }
 
-  function showError(errorMessage: string) {
-    setMessage(errorMessage);
-    setMessageType("error");
-  }
-
-  function showSuccess(successMessage: string) {
-    setMessage(successMessage);
-    setMessageType("success");
-  }
-
-  function validateForm(): string {
+  function validate(): string {
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
-
-    if (mode === "register" && cleanName.length < 2) {
-      return "لطفاً نام معتبر وارد کنید.";
-    }
 
     if (!cleanEmail) {
       return "لطفاً ایمیل خود را وارد کنید.";
@@ -80,8 +73,18 @@ export default function AuthForm() {
       return "لطفاً رمز عبور را وارد کنید.";
     }
 
-    if (mode === "register" && password.length < 8) {
-      return "رمز عبور باید حداقل ۸ کاراکتر باشد.";
+    if (mode === "register") {
+      if (cleanName.length < 2) {
+        return "لطفاً نام معتبر وارد کنید.";
+      }
+
+      if (password.length < 8) {
+        return "رمز عبور باید حداقل ۸ کاراکتر باشد.";
+      }
+
+      if (password !== confirmPassword) {
+        return "تکرار رمز عبور با رمز عبور یکسان نیست.";
+      }
     }
 
     return "";
@@ -94,12 +97,13 @@ export default function AuthForm() {
 
     if (loading) return;
 
-    clearMessage();
+    resetMessage();
 
-    const validationError = validateForm();
+    const validationError = validate();
 
     if (validationError) {
-      showError(validationError);
+      setMessage(validationError);
+      setMessageType("error");
       return;
     }
 
@@ -108,18 +112,19 @@ export default function AuthForm() {
     const cleanEmail = email.trim().toLowerCase();
 
     const endpoint =
-      mode === "register"
-        ? "/api/register"
-        : "/api/auth/login";
+      mode === "login"
+        ? "/api/auth/login"
+        : "/api/register";
 
-    const requestBody =
-      mode === "register"
+    const body =
+      mode === "login"
         ? {
-            name: name.trim(),
             email: cleanEmail,
             password,
+            rememberMe,
           }
         : {
+            name: name.trim(),
             email: cleanEmail,
             password,
           };
@@ -133,7 +138,7 @@ export default function AuthForm() {
         },
         credentials: "include",
         cache: "no-store",
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(body),
       });
 
       const contentType =
@@ -142,259 +147,419 @@ export default function AuthForm() {
       let data: ApiResponse = {};
 
       if (contentType.includes("application/json")) {
-        try {
-          data = (await response.json()) as ApiResponse;
-        } catch {
-          showError("پاسخ سرور قابل پردازش نیست.");
-          return;
-        }
+        data = await response.json();
       } else {
-        showError(
-          `پاسخ نامعتبر از سرور دریافت شد. کد: ${response.status}`
-        );
-        return;
+        const text = await response.text();
+
+        data = {
+          message:
+            text ||
+            `پاسخ نامعتبر از سرور دریافت شد. کد: ${response.status}`,
+        };
       }
 
       if (!response.ok || data.success === false) {
-        showError(
+        setMessage(
           data.message ||
-            `عملیات ناموفق بود. کد خطا: ${response.status}`
+            `عملیات انجام نشد. کد خطا: ${response.status}`
         );
+
+        setMessageType("error");
         return;
       }
 
+      /*
+       * ثبت‌نام موفق
+       *
+       * API فعلی register بعد از ساخت حساب،
+       * کاربر را وارد نمی‌کند.
+       *
+       * بنابراین بعد از ثبت‌نام، فرم ورود نمایش داده می‌شود.
+       */
       if (mode === "register") {
-        showSuccess(
-          data.message ||
-            "ثبت‌نام موفق بود. اکنون وارد حساب خود شوید."
+        setMessage(
+          "حساب شما با موفقیت ساخته شد. اکنون با ایمیل و رمز عبور وارد شوید."
         );
+
+        setMessageType("success");
 
         setMode("login");
-        setName("");
+
         setPassword("");
+        setConfirmPassword("");
+
         return;
       }
 
-      if (mode === "login") {
-        if (!data.success || !data.user) {
-          showError(
-            "ورود تأیید نشد؛ اطلاعات پاسخ سرور ناقص است."
-          );
-          return;
-        }
+      /*
+       * ورود موفق
+       *
+       * login API باید session cookie بسازد.
+       */
+      if (data.user) {
+        setMessage("ورود موفق بود. در حال انتقال...");
 
-        showSuccess("ورود موفق بود. در حال انتقال...");
+        setMessageType("success");
 
         /*
-         * انتقال کامل صفحه باعث می‌شود:
-         * 1. کوکی Session توسط مرورگر ذخیره شود.
-         * 2. صفحه Dashboard از سمت سرور دوباره درخواست شود.
-         * 3. وضعیت احراز هویت تازه خوانده شود.
+         * کمی فرصت می‌دهیم پیام موفقیت دیده شود
+         * سپس کاربر وارد داشبورد می‌شود.
          */
-        window.location.assign("/dashboard");
-      }
-    } catch (error) {
-      console.error("AUTH_FORM_ERROR:", error);
+        setTimeout(() => {
+          router.replace("/dashboard");
+          router.refresh();
+        }, 250);
 
-      showError(
-        "ارتباط با سرور برقرار نشد. اتصال اینترنت و وضعیت سرور را بررسی کنید."
+        return;
+      }
+
+      setMessage(
+        "ورود انجام شد اما اطلاعات حساب از سرور دریافت نشد."
       );
+
+      setMessageType("error");
+    } catch (error) {
+      console.error("AUTH FORM ERROR:", error);
+
+      setMessage(
+        "ارتباط با سرور برقرار نشد. اتصال اینترنت، Render و API را بررسی کنید."
+      );
+
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <section dir="rtl" className="auth-page">
-      <style>{`
-        .auth-page {
+    <section className="auth-wrapper" dir="rtl">
+      <style jsx>{`
+        .auth-wrapper {
           width: 100%;
+          min-height: 100%;
           color: #f8fafc;
-          font-family: Arial, Tahoma, sans-serif;
+          font-family:
+            Tahoma,
+            Arial,
+            sans-serif;
+        }
+
+        .auth-shell {
+          width: 100%;
+          max-width: 1100px;
+          margin: 0 auto;
+        }
+
+        .brand {
+          text-align: center;
+          margin-bottom: 28px;
+        }
+
+        .logo {
+          width: 82px;
+          height: 82px;
+          margin: 0 auto 14px;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 25px;
+          border: 1px solid rgba(34, 211, 238, 0.35);
+          background:
+            radial-gradient(
+              circle at 30% 20%,
+              rgba(34, 211, 238, 0.25),
+              transparent 50%
+            ),
+            linear-gradient(
+              145deg,
+              rgba(15, 38, 65, 0.98),
+              rgba(5, 17, 35, 0.98)
+            );
+          box-shadow:
+            0 20px 60px rgba(0, 0, 0, 0.35),
+            0 0 40px rgba(34, 211, 238, 0.08);
+          overflow: hidden;
+        }
+
+        .logo::before {
+          content: "";
+          position: absolute;
+          width: 54px;
+          height: 4px;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            #22d3ee,
+            #60a5fa
+          );
+          transform: rotate(-35deg);
+          box-shadow: 0 0 14px rgba(34, 211, 238, 0.5);
+        }
+
+        .logo::after {
+          content: "";
+          position: absolute;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #22d3ee;
+          right: 17px;
+          top: 19px;
+          box-shadow: 0 0 16px #22d3ee;
+        }
+
+        .logo-text {
+          position: relative;
+          z-index: 2;
+          font-size: 27px;
+          font-weight: 950;
+          letter-spacing: -2px;
+          color: #f8fafc;
+        }
+
+        .logo-text span {
+          color: #22d3ee;
+        }
+
+        .brand-name {
+          margin: 0;
+          font-size: 30px;
+          line-height: 1.2;
+          font-weight: 950;
+          letter-spacing: -1px;
+        }
+
+        .brand-name span {
+          color: #22d3ee;
+        }
+
+        .brand-description {
+          margin: 8px 0 0;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .auth-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 18px;
         }
 
         .auth-card {
-          width: 100%;
+          position: relative;
           padding: 30px;
-          border-radius: 28px;
+          border-radius: 26px;
+          border: 1px solid rgba(148, 163, 184, 0.14);
           background:
             linear-gradient(
               145deg,
-              rgba(8, 30, 52, .97),
-              rgba(3, 15, 30, .99)
+              rgba(10, 27, 48, 0.94),
+              rgba(4, 16, 32, 0.96)
             );
-          border: 1px solid rgba(34, 211, 238, .18);
           box-shadow:
-            0 25px 80px rgba(0, 0, 0, .35),
-            0 0 35px rgba(6, 182, 212, .04);
+            0 25px 80px rgba(0, 0, 0, 0.28),
+            inset 0 1px 0 rgba(255, 255, 255, 0.025);
+          overflow: hidden;
         }
 
-        .auth-tabs {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 6px;
-          padding: 5px;
-          margin-bottom: 28px;
-          border-radius: 15px;
-          background: rgba(255, 255, 255, .04);
+        .auth-card::before {
+          content: "";
+          position: absolute;
+          width: 180px;
+          height: 180px;
+          top: -110px;
+          right: -80px;
+          border-radius: 50%;
+          background: rgba(34, 211, 238, 0.08);
+          filter: blur(30px);
+          pointer-events: none;
         }
 
-        .auth-tab {
-          min-height: 45px;
-          border: 0;
-          border-radius: 11px;
-          color: #64748b;
-          background: transparent;
-          cursor: pointer;
-          font: inherit;
-          font-size: 12px;
-          font-weight: 800;
+        .card-header {
+          position: relative;
+          margin-bottom: 25px;
         }
 
-        .auth-tab.active {
-          color: #fff;
-          background: linear-gradient(135deg, #06b6d4, #2563eb);
-          box-shadow: 0 8px 22px rgba(6, 182, 212, .18);
-        }
-
-        .auth-tab:disabled,
-        .submit-button:disabled,
-        .password-toggle:disabled,
-        .switch-button:disabled {
-          cursor: not-allowed;
-          opacity: .6;
-        }
-
-        .form-header {
-          margin-bottom: 24px;
-        }
-
-        .form-icon {
+        .card-icon {
           width: 48px;
           height: 48px;
           display: grid;
           place-items: center;
-          margin-bottom: 14px;
-          border-radius: 14px;
+          margin-bottom: 15px;
+          border-radius: 15px;
+          border: 1px solid rgba(34, 211, 238, 0.2);
           color: #22d3ee;
-          background: rgba(6, 182, 212, .09);
-          border: 1px solid rgba(34, 211, 238, .13);
+          background: rgba(34, 211, 238, 0.07);
           font-size: 22px;
         }
 
-        .form-header h1 {
+        .card-header h2 {
           margin: 0;
-          font-size: 23px;
-          line-height: 1.8;
+          font-size: 22px;
+          line-height: 1.7;
+          font-weight: 900;
         }
 
-        .form-header p {
-          margin: 6px 0 0;
-          color: #718198;
+        .card-header p {
+          margin: 5px 0 0;
+          color: #64748b;
           font-size: 11px;
           line-height: 2;
         }
 
-        .auth-form {
+        .form {
           display: grid;
-          gap: 16px;
+          gap: 15px;
         }
 
         .field {
           display: grid;
-          gap: 8px;
+          gap: 7px;
         }
 
         .field label {
           color: #cbd5e1;
           font-size: 11px;
-          font-weight: 700;
+          font-weight: 800;
         }
 
-        .input-wrapper {
+        .input-box {
           position: relative;
         }
 
-        .field-icon {
+        .input-icon {
           position: absolute;
-          top: 50%;
           right: 15px;
+          top: 50%;
           transform: translateY(-50%);
           color: #64748b;
-          font-size: 16px;
+          font-size: 15px;
           pointer-events: none;
         }
 
-        .auth-input {
+        .input {
           width: 100%;
-          height: 54px;
-          padding: 0 45px 0 48px;
-          border: 1px solid rgba(148, 163, 184, .15);
-          border-radius: 14px;
+          height: 52px;
+          box-sizing: border-box;
+          padding: 0 44px 0 46px;
+          border-radius: 13px;
           outline: none;
-          color: #fff;
-          background: rgba(255, 255, 255, .035);
+          border: 1px solid rgba(148, 163, 184, 0.16);
+          color: #f8fafc;
+          background: rgba(255, 255, 255, 0.035);
           font: inherit;
           font-size: 12px;
-          direction: rtl;
-          transition: .2s;
-          box-sizing: border-box;
+          transition:
+            border-color 0.2s,
+            background 0.2s,
+            box-shadow 0.2s;
         }
 
-        .auth-input:focus {
-          border-color: rgba(34, 211, 238, .65);
-          background: rgba(6, 182, 212, .04);
-          box-shadow: 0 0 0 3px rgba(34, 211, 238, .07);
+        .input:focus {
+          border-color: rgba(34, 211, 238, 0.65);
+          background: rgba(34, 211, 238, 0.035);
+          box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.07);
         }
 
-        .auth-input::placeholder {
+        .input::placeholder {
           color: #475569;
         }
 
-        .auth-input:disabled {
-          opacity: .65;
-          cursor: not-allowed;
-        }
-
-        .password-toggle {
+        .password-button {
           position: absolute;
+          left: 11px;
           top: 50%;
-          left: 13px;
           transform: translateY(-50%);
-          padding: 5px;
+          width: 32px;
+          height: 32px;
+          display: grid;
+          place-items: center;
           border: 0;
+          border-radius: 8px;
           color: #94a3b8;
           background: transparent;
           cursor: pointer;
           font-size: 15px;
         }
 
-        .submit-button {
-          width: 100%;
-          min-height: 55px;
-          margin-top: 3px;
-          border: 0;
-          border-radius: 15px;
-          color: #02111f;
-          background: linear-gradient(135deg, #22d3ee, #0ea5e9);
-          box-shadow: 0 14px 32px rgba(34, 211, 238, .15);
-          cursor: pointer;
-          font: inherit;
-          font-size: 13px;
-          font-weight: 900;
-          transition: .2s;
+        .password-button:hover {
+          color: #22d3ee;
+          background: rgba(34, 211, 238, 0.06);
         }
 
-        .submit-button:hover:not(:disabled) {
+        .options {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 1px;
+        }
+
+        .remember {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          color: #94a3b8;
+          font-size: 10px;
+          cursor: pointer;
+        }
+
+        .remember input {
+          width: 15px;
+          height: 15px;
+          accent-color: #22d3ee;
+          cursor: pointer;
+        }
+
+        .forgot {
+          color: #22d3ee;
+          font-size: 10px;
+          text-decoration: none;
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        .submit {
+          width: 100%;
+          min-height: 53px;
+          margin-top: 5px;
+          border: 0;
+          border-radius: 14px;
+          color: #03131f;
+          background: linear-gradient(
+            135deg,
+            #22d3ee,
+            #38bdf8
+          );
+          box-shadow:
+            0 15px 35px rgba(34, 211, 238, 0.13);
+          cursor: pointer;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 950;
+          transition:
+            transform 0.2s,
+            box-shadow 0.2s,
+            opacity 0.2s;
+        }
+
+        .submit:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 18px 38px rgba(34, 211, 238, .22);
+          box-shadow:
+            0 20px 45px rgba(34, 211, 238, 0.2);
+        }
+
+        .submit:disabled {
+          opacity: 0.55;
+          cursor: wait;
         }
 
         .message {
-          min-height: 20px;
-          margin: 0;
+          min-height: 22px;
+          margin: 2px 0 0;
           text-align: center;
-          font-size: 11px;
+          font-size: 10px;
           line-height: 1.9;
         }
 
@@ -406,245 +571,469 @@ export default function AuthForm() {
           color: #fb7185;
         }
 
-        .security-note {
+        .switch {
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 7px;
+          margin-top: 20px;
+          padding-top: 18px;
+          border-top: 1px solid rgba(148, 163, 184, 0.1);
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .switch button {
+          border: 0;
+          padding: 0;
+          color: #22d3ee;
+          background: transparent;
+          cursor: pointer;
+          font: inherit;
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .security {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
           margin-top: 20px;
           color: #64748b;
           font-size: 9px;
           text-align: center;
         }
 
-        .switch-box {
-          margin-top: 20px;
-          padding: 16px;
-          border: 1px solid rgba(34, 211, 238, .08);
-          border-radius: 16px;
-          text-align: center;
-          background: rgba(6, 182, 212, .035);
-        }
-
-        .switch-box p {
-          margin: 0 0 9px;
-          color: #64748b;
-          font-size: 10px;
-        }
-
-        .switch-button {
-          border: 0;
+        .security-icon {
           color: #22d3ee;
-          background: transparent;
-          cursor: pointer;
-          font: inherit;
-          font-size: 11px;
-          font-weight: 800;
+          font-size: 15px;
         }
 
-        @media (max-width: 600px) {
-          .auth-card {
-            padding: 21px;
-            border-radius: 23px;
+        @media (max-width: 850px) {
+          .auth-grid {
+            grid-template-columns: 1fr;
           }
 
-          .form-header h1 {
+          .auth-card {
+            padding: 25px;
+          }
+        }
+
+        @media (max-width: 500px) {
+          .auth-card {
+            padding: 21px;
+            border-radius: 22px;
+          }
+
+          .brand-name {
+            font-size: 26px;
+          }
+
+          .logo {
+            width: 70px;
+            height: 70px;
+          }
+
+          .card-header h2 {
             font-size: 20px;
           }
         }
       `}</style>
 
-      <div className="auth-card">
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={
-              mode === "login"
-                ? "auth-tab active"
-                : "auth-tab"
-            }
-            onClick={() => changeMode("login")}
-            disabled={loading}
-          >
-            ورود به حساب
-          </button>
-
-          <button
-            type="button"
-            className={
-              mode === "register"
-                ? "auth-tab active"
-                : "auth-tab"
-            }
-            onClick={() => changeMode("register")}
-            disabled={loading}
-          >
-            ثبت‌نام
-          </button>
-        </div>
-
-        <div className="form-header">
-          <div className="form-icon">
-            {mode === "login" ? "🔐" : "✦"}
+      <div className="auth-shell">
+        <div className="brand">
+          <div className="logo" aria-label="Trading AI">
+            <div className="logo-text">
+              T<span>AI</span>
+            </div>
           </div>
 
-          <h1>
-            {mode === "login"
-              ? "ورود به حساب کاربری"
-              : "ساخت حساب جدید"}
+          <h1 className="brand-name">
+            Trading <span>AI</span>
           </h1>
 
-          <p>
-            {mode === "login"
-              ? "برای ورود به پنل Trading AI اطلاعات خود را وارد کنید."
-              : "برای شروع کار با Trading AI حساب کاربری بسازید."}
+          <p className="brand-description">
+            پلتفرم هوشمند تحلیل و مدیریت معاملات
           </p>
         </div>
 
-        <form
-          className="auth-form"
-          onSubmit={handleSubmit}
-          noValidate
-        >
-          {mode === "register" && (
-            <div className="field">
-              <label htmlFor="auth-name">نام کاربر</label>
+        <div className="auth-grid">
+          {/* LOGIN */}
+          <div className="auth-card">
+            <div className="card-header">
+              <div className="card-icon">🔐</div>
 
-              <div className="input-wrapper">
-                <span className="field-icon">👤</span>
+              <h2>ورود به حساب کاربری</h2>
 
-                <input
-                  id="auth-name"
-                  className="auth-input"
-                  type="text"
-                  name="name"
-                  placeholder="نام خود را وارد کنید"
-                  value={name}
-                  onChange={(event) =>
-                    setName(event.target.value)
-                  }
-                  autoComplete="name"
-                  disabled={loading}
-                  required
-                />
+              <p>
+                برای دسترسی به پنل Trading AI وارد حساب خود شوید.
+              </p>
+            </div>
+
+            <form
+              className="form"
+              onSubmit={handleSubmit}
+            >
+              <div className="field">
+                <label htmlFor="login-email">
+                  ایمیل
+                </label>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    ✉
+                  </span>
+
+                  <input
+                    id="login-email"
+                    className="input"
+                    type="email"
+                    name="email"
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(event.target.value)
+                    }
+                    placeholder="example@email.com"
+                    autoComplete="email"
+                    dir="ltr"
+                    disabled={loading}
+                    required
+                  />
+                </div>
               </div>
-            </div>
-          )}
 
-          <div className="field">
-            <label htmlFor="auth-email">ایمیل</label>
+              <div className="field">
+                <label htmlFor="login-password">
+                  رمز عبور
+                </label>
 
-            <div className="input-wrapper">
-              <span className="field-icon">✉️</span>
+                <div className="input-box">
+                  <span className="input-icon">
+                    🔒
+                  </span>
 
-              <input
-                id="auth-email"
-                className="auth-input"
-                type="email"
-                name="email"
-                placeholder="example@email.com"
-                value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
-                autoComplete="email"
+                  <input
+                    id="login-password"
+                    className="input"
+                    type={
+                      showPassword
+                        ? "text"
+                        : "password"
+                    }
+                    name="password"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                    placeholder="رمز عبور خود را وارد کنید"
+                    autoComplete="current-password"
+                    dir="ltr"
+                    disabled={loading}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="password-button"
+                    onClick={() =>
+                      setShowPassword(
+                        (value) => !value
+                      )
+                    }
+                    disabled={loading}
+                    aria-label={
+                      showPassword
+                        ? "مخفی کردن رمز"
+                        : "نمایش رمز"
+                    }
+                  >
+                    {showPassword ? "🙈" : "👁"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="options">
+                <label className="remember">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(event) =>
+                      setRememberMe(
+                        event.target.checked
+                      )
+                    }
+                    disabled={loading}
+                  />
+
+                  مرا به خاطر بسپار
+                </label>
+
+                <span
+                  className="forgot"
+                  title="این قابلیت بعد از اتصال سرویس ایمیل فعال می‌شود"
+                >
+                  فراموشی رمز عبور
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                className="submit"
                 disabled={loading}
-                required
-                dir="ltr"
-              />
-            </div>
-          </div>
+              >
+                {loading
+                  ? "در حال ورود..."
+                  : "ورود به حساب ←"}
+              </button>
 
-          <div className="field">
-            <label htmlFor="auth-password">رمز عبور</label>
+              <p
+                className={`message ${messageType}`}
+                role="status"
+                aria-live="polite"
+              >
+                {message}
+              </p>
+            </form>
 
-            <div className="input-wrapper">
-              <span className="field-icon">🔒</span>
-
-              <input
-                id="auth-password"
-                className="auth-input"
-                type={showPassword ? "text" : "password"}
-                name="password"
-                placeholder="رمز عبور خود را وارد کنید"
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-                autoComplete={
-                  mode === "login"
-                    ? "current-password"
-                    : "new-password"
-                }
-                disabled={loading}
-                required
-                dir="ltr"
-              />
+            <div className="switch">
+              <span>حساب کاربری ندارید؟</span>
 
               <button
                 type="button"
-                className="password-toggle"
                 onClick={() =>
-                  setShowPassword((value) => !value)
-                }
-                aria-label={
-                  showPassword
-                    ? "مخفی کردن رمز عبور"
-                    : "نمایش رمز عبور"
+                  switchMode("register")
                 }
                 disabled={loading}
               >
-                {showPassword ? "🙈" : "👁️"}
+                ایجاد حساب جدید
               </button>
             </div>
           </div>
 
-          <button
-            type="submit"
-            className="submit-button"
-            disabled={loading}
-          >
-            {loading
-              ? "در حال پردازش..."
-              : mode === "login"
-              ? "ورود به حساب ←"
-              : "ساخت حساب ←"}
-          </button>
+          {/* REGISTER */}
+          <div className="auth-card">
+            <div className="card-header">
+              <div className="card-icon">✦</div>
 
-          <p
-            className={`message ${messageType}`}
-            role="status"
-            aria-live="polite"
-          >
-            {message}
-          </p>
-        </form>
+              <h2>ایجاد حساب کاربری</h2>
 
-        <div className="security-note">
-          🛡️ اطلاعات حساب شما از طریق اتصال امن ارسال می‌شود.
+              <p>
+                اطلاعات خود را وارد کنید تا حساب جدید شما
+                ساخته شود.
+              </p>
+            </div>
+
+            <form
+              className="form"
+              onSubmit={(event) => {
+                setMode("register");
+                handleSubmit(event);
+              }}
+            >
+              <div className="field">
+                <label htmlFor="register-name">
+                  نام کاربر
+                </label>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    👤
+                  </span>
+
+                  <input
+                    id="register-name"
+                    className="input"
+                    type="text"
+                    name="name"
+                    value={name}
+                    onChange={(event) =>
+                      setName(event.target.value)
+                    }
+                    placeholder="نام کامل خود را وارد کنید"
+                    autoComplete="name"
+                    disabled={loading}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="register-email">
+                  ایمیل
+                </label>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    ✉
+                  </span>
+
+                  <input
+                    id="register-email"
+                    className="input"
+                    type="email"
+                    name="email"
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(event.target.value)
+                    }
+                    placeholder="example@email.com"
+                    autoComplete="email"
+                    dir="ltr"
+                    disabled={loading}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="register-password">
+                  رمز عبور
+                </label>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    🔒
+                  </span>
+
+                  <input
+                    id="register-password"
+                    className="input"
+                    type={
+                      showPassword
+                        ? "text"
+                        : "password"
+                    }
+                    name="password"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                    placeholder="حداقل ۸ کاراکتر"
+                    autoComplete="new-password"
+                    dir="ltr"
+                    disabled={loading}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="password-button"
+                    onClick={() =>
+                      setShowPassword(
+                        (value) => !value
+                      )
+                    }
+                    disabled={loading}
+                    aria-label={
+                      showPassword
+                        ? "مخفی کردن رمز"
+                        : "نمایش رمز"
+                    }
+                  >
+                    {showPassword ? "🙈" : "👁"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="register-confirm-password">
+                  تکرار رمز عبور
+                </label>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    🔒
+                  </span>
+
+                  <input
+                    id="register-confirm-password"
+                    className="input"
+                    type={
+                      showConfirmPassword
+                        ? "text"
+                        : "password"
+                    }
+                    name="confirmPassword"
+                    value={confirmPassword}
+                    onChange={(event) =>
+                      setConfirmPassword(
+                        event.target.value
+                      )
+                    }
+                    placeholder="رمز عبور را دوباره وارد کنید"
+                    autoComplete="new-password"
+                    dir="ltr"
+                    disabled={loading}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="password-button"
+                    onClick={() =>
+                      setShowConfirmPassword(
+                        (value) => !value
+                      )
+                    }
+                    disabled={loading}
+                    aria-label={
+                      showConfirmPassword
+                        ? "مخفی کردن رمز"
+                        : "نمایش رمز"
+                    }
+                  >
+                    {showConfirmPassword
+                      ? "🙈"
+                      : "👁"}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="submit"
+                disabled={loading}
+              >
+                {loading
+                  ? "در حال ساخت حساب..."
+                  : "ایجاد حساب کاربری ✦"}
+              </button>
+
+              <p
+                className={`message ${messageType}`}
+                role="status"
+                aria-live="polite"
+              >
+                {message}
+              </p>
+            </form>
+
+            <div className="switch">
+              <span>قبلاً حساب دارید؟</span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  switchMode("login")
+                }
+                disabled={loading}
+              >
+                ورود به حساب
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="switch-box">
-          <p>
-            {mode === "login"
-              ? "هنوز حساب کاربری ندارید؟"
-              : "قبلاً حساب ساخته‌اید؟"}
-          </p>
+        <div className="security">
+          <span className="security-icon">
+            🛡
+          </span>
 
-          <button
-            type="button"
-            className="switch-button"
-            onClick={() =>
-              changeMode(
-                mode === "login" ? "register" : "login"
-              )
-            }
-            disabled={loading}
-          >
-            {mode === "login"
-              ? "ساخت حساب جدید →"
-              : "ورود به حساب →"}
-          </button>
+          <span>
+            اطلاعات حساب شما از طریق اتصال امن به سرور ارسال
+            می‌شود.
+          </span>
         </div>
       </div>
     </section>
