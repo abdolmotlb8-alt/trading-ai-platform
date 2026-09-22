@@ -1,6 +1,12 @@
 "use client";
 
-import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import React, {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import Link from "next/link";
 
 type Subscription = {
@@ -22,12 +28,8 @@ type ProfileUser = {
   bio?: string | null;
   subscriptionStartedAt?: string | null;
   subscriptionExpiresAt?: string | null;
-};
-
-type ProfileResponse = {
-  user?: ProfileUser;
-  subscription?: Subscription;
-  allowedEmojis?: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 const DEFAULT_EMOJIS = [
@@ -45,35 +47,37 @@ const DEFAULT_EMOJIS = [
   "🎯",
 ];
 
+type IconName =
+  | "user"
+  | "mail"
+  | "shield"
+  | "calendar"
+  | "clock"
+  | "camera"
+  | "image"
+  | "save"
+  | "crown"
+  | "chart"
+  | "bell"
+  | "settings"
+  | "logout"
+  | "support"
+  | "history"
+  | "wallet"
+  | "devices"
+  | "check"
+  | "diamond"
+  | "rocket"
+  | "lock"
+  | "menu"
+  | "close"
+  | "spark";
+
 function Icon({
   name,
   size = 20,
 }: {
-  name:
-    | "user"
-    | "mail"
-    | "shield"
-    | "calendar"
-    | "clock"
-    | "camera"
-    | "image"
-    | "save"
-    | "crown"
-    | "chart"
-    | "bell"
-    | "settings"
-    | "logout"
-    | "support"
-    | "history"
-    | "wallet"
-    | "devices"
-    | "check"
-    | "diamond"
-    | "rocket"
-    | "lock"
-    | "menu"
-    | "close"
-    | "spark";
+  name: IconName;
   size?: number;
 }) {
   const common = {
@@ -287,7 +291,9 @@ function Icon({
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "—";
+  if (!value) {
+    return "—";
+  }
 
   const date = new Date(value);
 
@@ -303,31 +309,46 @@ function formatDate(value?: string | null) {
 }
 
 function calculateRemainingDays(expiresAt?: string | null) {
-  if (!expiresAt) return null;
+  if (!expiresAt) {
+    return null;
+  }
 
   const end = new Date(expiresAt).getTime();
 
-  if (Number.isNaN(end)) return null;
+  if (Number.isNaN(end)) {
+    return null;
+  }
 
-  const now = Date.now();
-  const difference = end - now;
+  const difference = end - Date.now();
 
-  return Math.max(0, Math.ceil(difference / (1000 * 60 * 60 * 24)));
+  return Math.max(
+    0,
+    Math.ceil(difference / (1000 * 60 * 60 * 24))
+  );
 }
 
 function getPlanLabel(plan?: string | null) {
   const normalized = String(plan || "FREE").toUpperCase();
 
-  if (normalized === "PRO") return "PRO";
-  if (normalized === "VIP") return "VIP";
-  if (normalized === "PREMIUM") return "PREMIUM";
+  if (normalized === "PRO") {
+    return "PRO";
+  }
+
+  if (normalized === "VIP") {
+    return "VIP";
+  }
+
+  if (normalized === "PREMIUM") {
+    return "PREMIUM";
+  }
 
   return "رایگان";
 }
 
 export default function ProfilePage() {
   const [user, setUser] = useState<ProfileUser | null>(null);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [subscription, setSubscription] =
+    useState<Subscription | null>(null);
 
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
@@ -335,7 +356,8 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [avatarEmoji, setAvatarEmoji] = useState("😎");
 
-  const [emojis, setEmojis] = useState<string[]>(DEFAULT_EMOJIS);
+  const [emojis, setEmojis] =
+    useState<string[]>(DEFAULT_EMOJIS);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -365,11 +387,15 @@ export default function ProfilePage() {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.message || "دریافت اطلاعات پروفایل انجام نشد.");
+        throw new Error(
+          data?.message ||
+            "دریافت اطلاعات پروفایل انجام نشد."
+        );
       }
 
-      const profileUser = data?.user || data?.profile || null;
-      const profileSubscription = data?.subscription || null;
+      const profileUser = data?.user || null;
+      const profileSubscription =
+        data?.subscription || null;
 
       setUser(profileUser);
 
@@ -377,7 +403,9 @@ export default function ProfilePage() {
       setBio(profileUser?.bio || "");
 
       setAvatarUrl(profileUser?.avatarUrl || "");
-      setAvatarEmoji(profileUser?.avatarEmoji || "😎");
+      setAvatarEmoji(
+        profileUser?.avatarEmoji || "😎"
+      );
 
       setSubscription(profileSubscription);
 
@@ -398,10 +426,14 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleAvatarUpload(event: ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarUpload(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
     const file = event.target.files?.[0];
 
-    if (!file) return;
+    if (!file) {
+      return;
+    }
 
     setError("");
     setMessage("");
@@ -414,13 +446,19 @@ export default function ProfilePage() {
     ];
 
     if (!allowedTypes.includes(file.type)) {
-      setError("فرمت تصویر باید JPG، PNG، WEBP یا GIF باشد.");
+      setError(
+        "فرمت تصویر باید JPG، PNG، WEBP یا GIF باشد."
+      );
+
       event.target.value = "";
       return;
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      setError("حجم تصویر نباید بیشتر از ۲ مگابایت باشد.");
+      setError(
+        "حجم تصویر نباید بیشتر از ۲ مگابایت باشد."
+      );
+
       event.target.value = "";
       return;
     }
@@ -436,7 +474,10 @@ export default function ProfilePage() {
         if (typeof result === "string") {
           setAvatarUrl(result);
           setAvatarEmoji("");
-          setMessage("تصویر انتخاب شد؛ برای ثبت نهایی روی ذخیره تغییرات بزنید.");
+
+          setMessage(
+            "تصویر انتخاب شد؛ برای ثبت نهایی روی ذخیره تغییرات بزنید."
+          );
         }
 
         setUploading(false);
@@ -460,7 +501,10 @@ export default function ProfilePage() {
     setAvatarEmoji(emoji);
     setAvatarUrl("");
     setEmojiOpen(false);
-    setMessage("ایموجی انتخاب شد؛ برای ثبت نهایی ذخیره تغییرات را بزنید.");
+
+    setMessage(
+      "ایموجی انتخاب شد؛ برای ثبت نهایی ذخیره تغییرات را بزنید."
+    );
   }
 
   async function saveProfile(event?: FormEvent) {
@@ -475,12 +519,16 @@ export default function ProfilePage() {
     }
 
     if (name.trim().length < 2) {
-      setError("نام کاربری باید حداقل ۲ کاراکتر باشد.");
+      setError(
+        "نام کاربری باید حداقل ۲ کاراکتر باشد."
+      );
       return;
     }
 
     if (bio.length > 500) {
-      setError("توضیحات شما نباید بیشتر از ۵۰۰ کاراکتر باشد.");
+      setError(
+        "توضیحات شما نباید بیشتر از ۵۰۰ کاراکتر باشد."
+      );
       return;
     }
 
@@ -504,22 +552,31 @@ export default function ProfilePage() {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.message || "ذخیره اطلاعات انجام نشد.");
+        throw new Error(
+          data?.message ||
+            "ذخیره اطلاعات انجام نشد."
+        );
       }
 
       if (data?.user) {
         setUser(data.user);
+
         setName(data.user.name || "");
         setBio(data.user.bio || "");
+
         setAvatarUrl(data.user.avatarUrl || "");
-        setAvatarEmoji(data.user.avatarEmoji || "😎");
+        setAvatarEmoji(
+          data.user.avatarEmoji || "😎"
+        );
       }
 
       if (data?.subscription) {
         setSubscription(data.subscription);
       }
 
-      setMessage("تغییرات پروفایل با موفقیت ذخیره شد.");
+      setMessage(
+        "تغییرات پروفایل با موفقیت ذخیره شد."
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -546,7 +603,10 @@ export default function ProfilePage() {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.message || "حذف تصویر انجام نشد.");
+        throw new Error(
+          data?.message ||
+            "حذف تصویر انجام نشد."
+        );
       }
 
       setAvatarUrl("");
@@ -559,7 +619,9 @@ export default function ProfilePage() {
       setMessage("تصویر پروفایل حذف شد.");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "حذف تصویر انجام نشد."
+        err instanceof Error
+          ? err.message
+          : "حذف تصویر انجام نشد."
       );
     } finally {
       setSaving(false);
@@ -567,18 +629,29 @@ export default function ProfilePage() {
   }
 
   const plan = useMemo(() => {
-    return subscription?.plan || user?.plan || "FREE";
+    return (
+      subscription?.plan ||
+      user?.plan ||
+      "FREE"
+    );
   }, [subscription, user]);
 
   const planLabel = getPlanLabel(plan);
 
   const remainingDays = useMemo(() => {
-    if (typeof subscription?.remainingDays === "number") {
-      return Math.max(0, subscription.remainingDays);
+    if (
+      typeof subscription?.remainingDays ===
+      "number"
+    ) {
+      return Math.max(
+        0,
+        subscription.remainingDays
+      );
     }
 
     return calculateRemainingDays(
-      subscription?.expiresAt || user?.subscriptionExpiresAt
+      subscription?.expiresAt ||
+        user?.subscriptionExpiresAt
     );
   }, [subscription, user]);
 
@@ -586,13 +659,13 @@ export default function ProfilePage() {
     String(plan).toUpperCase() !== "FREE" &&
     String(plan).toUpperCase() !== "";
 
-  const displayAvatar = avatarUrl || user?.avatarUrl || "";
-  const displayEmoji = avatarEmoji || user?.avatarEmoji || "😎";
+  const displayAvatar =
+    avatarUrl || user?.avatarUrl || "";
 
-  const initials =
-    name.trim().charAt(0) ||
-    user?.email?.charAt(0).toUpperCase() ||
-    "U";
+  const displayEmoji =
+    avatarEmoji ||
+    user?.avatarEmoji ||
+    "😎";
 
   if (loading) {
     return (
@@ -629,6 +702,7 @@ export default function ProfilePage() {
       </div>
 
       {/* HEADER */}
+
       <header className="sticky top-0 z-50 px-3 sm:px-5 lg:px-7 pt-3">
         <div className="mx-auto max-w-[1500px] rounded-2xl border border-white/[0.08] bg-[#07101e]/90 backdrop-blur-2xl shadow-2xl shadow-black/30">
           <div className="flex min-h-[72px] items-center justify-between gap-4 px-4 sm:px-6">
@@ -637,7 +711,10 @@ export default function ProfilePage() {
               className="flex items-center gap-3 shrink-0"
             >
               <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-blue-600 shadow-lg shadow-violet-600/20">
-                <span className="text-xl font-black">AI</span>
+                <span className="text-xl font-black">
+                  AI
+                </span>
+
                 <span className="absolute -right-1 -bottom-1 h-3 w-3 rounded-full border-2 border-[#07101e] bg-emerald-400" />
               </div>
 
@@ -645,6 +722,7 @@ export default function ProfilePage() {
                 <div className="text-[15px] font-black tracking-wide">
                   TRADING AI
                 </div>
+
                 <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">
                   Smart Trading Platform
                 </div>
@@ -652,12 +730,30 @@ export default function ProfilePage() {
             </Link>
 
             <nav className="hidden lg:flex items-center gap-1">
-              <NavLink href="/dashboard">داشبورد</NavLink>
-              <NavLink href="/bots">ربات‌ها</NavLink>
-              <NavLink href="/signals">سیگنال‌ها</NavLink>
-              <NavLink href="/subscription">اشتراک</NavLink>
-              <NavLink href="/settings">تنظیمات</NavLink>
-              <NavLink href="/profile" active>
+              <NavLink href="/dashboard">
+                داشبورد
+              </NavLink>
+
+              <NavLink href="/bots">
+                ربات‌ها
+              </NavLink>
+
+              <NavLink href="/signals">
+                سیگنال‌ها
+              </NavLink>
+
+              <NavLink href="/subscription">
+                اشتراک
+              </NavLink>
+
+              <NavLink href="/settings">
+                تنظیمات
+              </NavLink>
+
+              <NavLink
+                href="/profile"
+                active
+              >
                 پروفایل
               </NavLink>
             </nav>
@@ -668,7 +764,11 @@ export default function ProfilePage() {
                 className="relative hidden sm:flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] transition"
                 aria-label="اعلان‌ها"
               >
-                <Icon name="bell" size={18} />
+                <Icon
+                  name="bell"
+                  size={18}
+                />
+
                 <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#07101e]" />
               </button>
 
@@ -689,6 +789,7 @@ export default function ProfilePage() {
                   <div className="max-w-[100px] truncate text-xs font-bold">
                     {name || "کاربر"}
                   </div>
+
                   <div className="text-[9px] text-violet-400">
                     {planLabel}
                   </div>
@@ -697,11 +798,22 @@ export default function ProfilePage() {
 
               <button
                 type="button"
-                onClick={() => setMobileMenu((value) => !value)}
+                onClick={() =>
+                  setMobileMenu(
+                    (value) => !value
+                  )
+                }
                 className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
                 aria-label="منو"
               >
-                <Icon name={mobileMenu ? "close" : "menu"} size={20} />
+                <Icon
+                  name={
+                    mobileMenu
+                      ? "close"
+                      : "menu"
+                  }
+                  size={20}
+                />
               </button>
             </div>
           </div>
@@ -709,12 +821,29 @@ export default function ProfilePage() {
           {mobileMenu && (
             <div className="lg:hidden border-t border-white/[0.07] px-4 py-4">
               <div className="grid grid-cols-2 gap-2">
-                <MobileNav href="/dashboard">داشبورد</MobileNav>
-                <MobileNav href="/bots">ربات‌ها</MobileNav>
-                <MobileNav href="/signals">سیگنال‌ها</MobileNav>
-                <MobileNav href="/subscription">اشتراک</MobileNav>
-                <MobileNav href="/settings">تنظیمات</MobileNav>
-                <MobileNav href="/profile">پروفایل</MobileNav>
+                <MobileNav href="/dashboard">
+                  داشبورد
+                </MobileNav>
+
+                <MobileNav href="/bots">
+                  ربات‌ها
+                </MobileNav>
+
+                <MobileNav href="/signals">
+                  سیگنال‌ها
+                </MobileNav>
+
+                <MobileNav href="/subscription">
+                  اشتراک
+                </MobileNav>
+
+                <MobileNav href="/settings">
+                  تنظیمات
+                </MobileNav>
+
+                <MobileNav href="/profile">
+                  پروفایل
+                </MobileNav>
               </div>
             </div>
           )}
@@ -723,6 +852,7 @@ export default function ProfilePage() {
 
       <div className="mx-auto max-w-[1500px] px-3 sm:px-5 lg:px-7 pb-10">
         {/* PAGE TITLE */}
+
         <section className="py-8 sm:py-10">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
             <div>
@@ -733,19 +863,27 @@ export default function ProfilePage() {
                 >
                   خانه
                 </Link>
+
                 <span>/</span>
-                <span className="text-slate-400">پروفایل</span>
+
+                <span className="text-slate-400">
+                  پروفایل
+                </span>
               </div>
 
               <div className="flex items-center gap-4">
                 <div className="hidden sm:flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/30 bg-violet-500/10 text-violet-400">
-                  <Icon name="user" size={27} />
+                  <Icon
+                    name="user"
+                    size={27}
+                  />
                 </div>
 
                 <div>
                   <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
                     پروفایل کاربری
                   </h1>
+
                   <p className="mt-2 text-sm text-slate-400">
                     مدیریت اطلاعات شخصی، امنیت حساب و وضعیت اشتراک
                   </p>
@@ -755,6 +893,7 @@ export default function ProfilePage() {
 
             <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.06] px-4 py-3">
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
+
               <span className="text-xs text-emerald-300">
                 حساب شما فعال است
               </span>
@@ -763,6 +902,7 @@ export default function ProfilePage() {
         </section>
 
         {/* MESSAGES */}
+
         {message && (
           <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.08] px-4 py-3 text-sm text-emerald-300">
             {message}
@@ -776,10 +916,13 @@ export default function ProfilePage() {
         )}
 
         {/* MAIN GRID */}
+
         <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-5">
           {/* SIDEBAR */}
+
           <aside className="space-y-5">
             {/* SUBSCRIPTION */}
+
             <div className="relative overflow-hidden rounded-3xl border border-violet-500/20 bg-gradient-to-br from-violet-950/80 via-[#111333] to-[#07101e] p-5 shadow-2xl shadow-violet-950/10">
               <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-violet-600/20 blur-3xl" />
 
@@ -790,7 +933,10 @@ export default function ProfilePage() {
                   </span>
 
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-yellow-300">
-                    <Icon name="crown" size={21} />
+                    <Icon
+                      name="crown"
+                      size={21}
+                    />
                   </div>
                 </div>
 
@@ -800,7 +946,9 @@ export default function ProfilePage() {
                   </div>
 
                   <div className="mt-2 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-bold text-emerald-300">
-                    {isPaidPlan ? "فعال" : "رایگان"}
+                    {isPaidPlan
+                      ? "فعال"
+                      : "رایگان"}
                   </div>
                 </div>
 
@@ -827,7 +975,8 @@ export default function ProfilePage() {
                     icon="clock"
                     label="باقی‌مانده"
                     value={
-                      remainingDays === null
+                      remainingDays ===
+                      null
                         ? "نامحدود"
                         : `${remainingDays} روز`
                     }
@@ -844,12 +993,18 @@ export default function ProfilePage() {
             </div>
 
             {/* SECURITY */}
+
             <div className="rounded-3xl border border-white/[0.08] bg-[#07101e]/80 p-5 backdrop-blur-xl">
               <div className="flex items-center justify-between">
-                <h2 className="font-bold">امنیت حساب</h2>
+                <h2 className="font-bold">
+                  امنیت حساب
+                </h2>
 
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                  <Icon name="shield" size={19} />
+                  <Icon
+                    name="shield"
+                    size={19}
+                  />
                 </div>
               </div>
 
@@ -876,8 +1031,11 @@ export default function ProfilePage() {
             </div>
 
             {/* QUICK ACCESS */}
+
             <div className="rounded-3xl border border-white/[0.08] bg-[#07101e]/80 p-5 backdrop-blur-xl">
-              <h2 className="font-bold">دسترسی سریع</h2>
+              <h2 className="font-bold">
+                دسترسی سریع
+              </h2>
 
               <div className="mt-4 space-y-1">
                 <QuickLink
@@ -913,25 +1071,39 @@ export default function ProfilePage() {
             </div>
 
             {/* ACCOUNT STATS */}
+
             <div className="rounded-3xl border border-white/[0.08] bg-[#07101e]/80 p-5 backdrop-blur-xl">
-              <h2 className="font-bold">وضعیت حساب</h2>
+              <h2 className="font-bold">
+                وضعیت حساب
+              </h2>
 
               <div className="mt-4 space-y-3">
                 <StatRow
-                  value={isPaidPlan ? "PRO" : "FREE"}
+                  value={
+                    isPaidPlan
+                      ? "PRO"
+                      : "FREE"
+                  }
                   label="پلن فعال"
                   valueClass="text-violet-300"
                 />
 
                 <StatRow
-                  value={remainingDays === null ? "∞" : String(remainingDays)}
+                  value={
+                    remainingDays ===
+                    null
+                      ? "∞"
+                      : String(
+                          remainingDays
+                        )
+                  }
                   label="روز باقی‌مانده"
                   valueClass="text-blue-300"
                 />
 
                 <StatRow
                   value="✓"
-                  label="حساب تأیید شده"
+                  label="حساب فعال"
                   valueClass="text-emerald-300"
                 />
               </div>
@@ -939,8 +1111,10 @@ export default function ProfilePage() {
           </aside>
 
           {/* CONTENT */}
+
           <section className="space-y-5">
             {/* PROFILE FORM */}
+
             <form
               onSubmit={saveProfile}
               className="rounded-3xl border border-white/[0.08] bg-[#07101e]/80 backdrop-blur-xl overflow-hidden shadow-2xl shadow-black/20"
@@ -948,20 +1122,27 @@ export default function ProfilePage() {
               <div className="border-b border-white/[0.07] px-5 sm:px-7 py-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-xl font-black">اطلاعات پروفایل</h2>
+                    <h2 className="text-xl font-black">
+                      اطلاعات پروفایل
+                    </h2>
+
                     <p className="mt-1 text-xs text-slate-500">
                       اطلاعات حساب خود را شخصی‌سازی کنید
                     </p>
                   </div>
 
                   <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
-                    <Icon name="user" size={20} />
+                    <Icon
+                      name="user"
+                      size={20}
+                    />
                   </div>
                 </div>
               </div>
 
               <div className="p-5 sm:p-7">
                 {/* AVATAR */}
+
                 <div className="flex flex-col items-center">
                   <div className="text-sm font-bold text-slate-200">
                     تصویر پروفایل
@@ -982,7 +1163,9 @@ export default function ProfilePage() {
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <span className="text-7xl">{displayEmoji}</span>
+                        <span className="text-7xl">
+                          {displayEmoji}
+                        </span>
                       )}
                     </div>
 
@@ -991,13 +1174,18 @@ export default function ProfilePage() {
                       className="absolute bottom-0 right-0 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border-4 border-[#07101e] bg-gradient-to-br from-violet-600 to-blue-600 text-white shadow-xl transition hover:scale-105"
                       title="انتخاب تصویر"
                     >
-                      <Icon name="camera" size={18} />
+                      <Icon
+                        name="camera"
+                        size={18}
+                      />
 
                       <input
                         id="avatar-upload"
                         type="file"
                         accept="image/jpeg,image/png,image/webp,image/gif"
-                        onChange={handleAvatarUpload}
+                        onChange={
+                          handleAvatarUpload
+                        }
                         className="hidden"
                       />
                     </label>
@@ -1014,31 +1202,44 @@ export default function ProfilePage() {
                       htmlFor="avatar-upload-2"
                       className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/[0.08] px-4 text-xs font-bold text-violet-300 transition hover:bg-violet-500/[0.14]"
                     >
-                      <Icon name="image" size={16} />
+                      <Icon
+                        name="image"
+                        size={16}
+                      />
+
                       انتخاب عکس
 
                       <input
                         id="avatar-upload-2"
                         type="file"
                         accept="image/jpeg,image/png,image/webp,image/gif"
-                        onChange={handleAvatarUpload}
+                        onChange={
+                          handleAvatarUpload
+                        }
                         className="hidden"
                       />
                     </label>
 
                     <button
                       type="button"
-                      onClick={() => setEmojiOpen((value) => !value)}
+                      onClick={() =>
+                        setEmojiOpen(
+                          (value) => !value
+                        )
+                      }
                       className="inline-flex h-10 items-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/[0.08] px-4 text-xs font-bold text-blue-300 transition hover:bg-blue-500/[0.14]"
                     >
                       <span>☺</span>
                       انتخاب ایموجی
                     </button>
 
-                    {(displayAvatar || user?.avatarUrl) && (
+                    {(displayAvatar ||
+                      user?.avatarUrl) && (
                       <button
                         type="button"
-                        onClick={removeAvatar}
+                        onClick={
+                          removeAvatar
+                        }
                         disabled={saving}
                         className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 text-xs font-bold text-red-300 transition hover:bg-red-500/[0.12] disabled:opacity-50"
                       >
@@ -1058,20 +1259,28 @@ export default function ProfilePage() {
                       </div>
 
                       <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
-                        {emojis.map((emoji) => (
-                          <button
-                            type="button"
-                            key={emoji}
-                            onClick={() => selectEmoji(emoji)}
-                            className={`flex h-11 items-center justify-center rounded-xl border text-2xl transition ${
-                              displayEmoji === emoji && !displayAvatar
-                                ? "border-violet-500 bg-violet-500/15 scale-105"
-                                : "border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.08]"
-                            }`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
+                        {emojis.map(
+                          (emoji) => (
+                            <button
+                              type="button"
+                              key={emoji}
+                              onClick={() =>
+                                selectEmoji(
+                                  emoji
+                                )
+                              }
+                              className={`flex h-11 items-center justify-center rounded-xl border text-2xl transition ${
+                                displayEmoji ===
+                                  emoji &&
+                                !displayAvatar
+                                  ? "border-violet-500 bg-violet-500/15 scale-105"
+                                  : "border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.08]"
+                              }`}
+                            >
+                              {emoji}
+                            </button>
+                          )
+                        )}
                       </div>
                     </div>
                   )}
@@ -1080,6 +1289,7 @@ export default function ProfilePage() {
                 <div className="my-7 h-px bg-white/[0.07]" />
 
                 {/* NAME */}
+
                 <div>
                   <label
                     htmlFor="profile-name"
@@ -1090,13 +1300,20 @@ export default function ProfilePage() {
 
                   <div className="relative">
                     <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-500">
-                      <Icon name="user" size={18} />
+                      <Icon
+                        name="user"
+                        size={18}
+                      />
                     </div>
 
                     <input
                       id="profile-name"
                       value={name}
-                      onChange={(event) => setName(event.target.value)}
+                      onChange={(event) =>
+                        setName(
+                          event.target.value
+                        )
+                      }
                       maxLength={80}
                       className="h-12 w-full rounded-xl border border-white/[0.08] bg-[#040b15] pr-12 pl-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/5"
                       placeholder="نام خود را وارد کنید"
@@ -1105,6 +1322,7 @@ export default function ProfilePage() {
                 </div>
 
                 {/* EMAIL */}
+
                 <div className="mt-5">
                   <label
                     htmlFor="profile-email"
@@ -1115,24 +1333,33 @@ export default function ProfilePage() {
 
                   <div className="relative">
                     <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-500">
-                      <Icon name="mail" size={18} />
+                      <Icon
+                        name="mail"
+                        size={18}
+                      />
                     </div>
 
                     <input
                       id="profile-email"
-                      value={user?.email || ""}
+                      value={
+                        user?.email || ""
+                      }
                       readOnly
                       className="h-12 w-full cursor-not-allowed rounded-xl border border-white/[0.06] bg-white/[0.025] pr-12 pl-4 text-sm text-slate-400 outline-none"
                     />
                   </div>
 
                   <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400">
-                    <Icon name="check" size={13} />
+                    <Icon
+                      name="check"
+                      size={13}
+                    />
                     ایمیل ثبت‌شده حساب
                   </div>
                 </div>
 
                 {/* BIO */}
+
                 <div className="mt-5">
                   <div className="mb-2 flex items-center justify-between">
                     <label
@@ -1150,7 +1377,11 @@ export default function ProfilePage() {
                   <textarea
                     id="profile-bio"
                     value={bio}
-                    onChange={(event) => setBio(event.target.value)}
+                    onChange={(event) =>
+                      setBio(
+                        event.target.value
+                      )
+                    }
                     maxLength={500}
                     rows={5}
                     placeholder="یک توضیح کوتاه درباره خودتان بنویسید..."
@@ -1159,26 +1390,36 @@ export default function ProfilePage() {
                 </div>
 
                 {/* SAVE */}
+
                 <button
                   type="submit"
                   disabled={saving}
                   className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 text-sm font-black shadow-xl shadow-violet-600/15 transition hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Icon name="save" size={18} />
-                  {saving ? "در حال ذخیره..." : "ذخیره تغییرات"}
+                  <Icon
+                    name="save"
+                    size={18}
+                  />
+
+                  {saving
+                    ? "در حال ذخیره..."
+                    : "ذخیره تغییرات"}
                 </button>
               </div>
             </form>
 
             {/* PRO BENEFITS */}
+
             <div className="rounded-3xl border border-white/[0.08] bg-[#07101e]/80 p-5 sm:p-7 backdrop-blur-xl">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Icon
-                      name="diamond"
-                      size={22}
-                    />
+                    <span className="text-violet-400">
+                      <Icon
+                        name="diamond"
+                        size={22}
+                      />
+                    </span>
 
                     <h2 className="text-xl font-black text-violet-300">
                       مزایای اشتراک PRO
@@ -1191,7 +1432,9 @@ export default function ProfilePage() {
                 </div>
 
                 <span className="w-fit rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-1.5 text-[10px] font-bold text-violet-300">
-                  {isPaidPlan ? "فعال" : "قابل ارتقا"}
+                  {isPaidPlan
+                    ? "فعال"
+                    : "قابل ارتقا"}
                 </span>
               </div>
 
@@ -1217,7 +1460,7 @@ export default function ProfilePage() {
                 />
 
                 <Benefit
-                  title="ربات‌های نامحدود"
+                  title="ربات‌های معاملاتی"
                   description="مدیریت ربات‌های معاملاتی"
                 />
 
@@ -1241,14 +1484,25 @@ export default function ProfilePage() {
                 href="/subscription"
                 className="mt-5 flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-sm font-black shadow-xl shadow-violet-600/10 transition hover:brightness-110"
               >
-                <Icon name={isPaidPlan ? "rocket" : "diamond"} size={18} />
-                {isPaidPlan ? "ارتقا / تمدید اشتراک" : "ارتقا به PRO"}
+                <Icon
+                  name={
+                    isPaidPlan
+                      ? "rocket"
+                      : "diamond"
+                  }
+                  size={18}
+                />
+
+                {isPaidPlan
+                  ? "ارتقا / تمدید اشتراک"
+                  : "ارتقا به PRO"}
               </Link>
             </div>
           </section>
         </div>
 
         {/* FOOTER */}
+
         <footer className="mt-5 rounded-3xl border border-white/[0.08] bg-[#07101e]/80 p-6 sm:p-8 backdrop-blur-xl">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             <div>
@@ -1258,7 +1512,10 @@ export default function ProfilePage() {
                 </div>
 
                 <div>
-                  <div className="font-black">TRADING AI</div>
+                  <div className="font-black">
+                    TRADING AI
+                  </div>
+
                   <div className="text-[9px] tracking-[0.2em] text-slate-600">
                     SMART PLATFORM
                   </div>
@@ -1266,8 +1523,7 @@ export default function ProfilePage() {
               </div>
 
               <p className="mt-4 max-w-xs text-xs leading-6 text-slate-500">
-                پلتفرم هوشمند برای تحلیل بازار، مدیریت ربات‌های معاملاتی و
-                دریافت سیگنال‌های حرفه‌ای.
+                پلتفرم هوشمند برای تحلیل بازار، مدیریت ربات‌های معاملاتی و دریافت سیگنال‌های حرفه‌ای.
               </p>
             </div>
 
@@ -1284,10 +1540,22 @@ export default function ProfilePage() {
             <FooterColumn
               title="محصولات"
               links={[
-                ["ربات‌های معاملاتی", "/bots"],
-                ["سیگنال‌ها", "/signals"],
-                ["تحلیل بازار", "/market"],
-                ["دسترسی API", "/api"],
+                [
+                  "ربات‌های معاملاتی",
+                  "/bots",
+                ],
+                [
+                  "سیگنال‌ها",
+                  "/signals",
+                ],
+                [
+                  "تحلیل بازار",
+                  "/market",
+                ],
+                [
+                  "دسترسی API",
+                  "/api",
+                ],
               ]}
             />
 
@@ -1296,15 +1564,26 @@ export default function ProfilePage() {
               links={[
                 ["پروفایل", "/profile"],
                 ["تنظیمات", "/settings"],
-                ["اشتراک", "/subscription"],
-                ["امنیت حساب", "/settings"],
+                [
+                  "اشتراک",
+                  "/subscription",
+                ],
+                [
+                  "امنیت حساب",
+                  "/settings",
+                ],
               ]}
             />
           </div>
 
           <div className="mt-7 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-white/[0.07] pt-5 text-[11px] text-slate-600">
-            <span>© 1405 Trading AI — تمامی حقوق محفوظ است.</span>
-            <span>نسخه 2.0</span>
+            <span>
+              © 1405 Trading AI — تمامی حقوق محفوظ است.
+            </span>
+
+            <span>
+              نسخه 2.0
+            </span>
           </div>
         </footer>
       </div>
@@ -1364,11 +1643,17 @@ function SubscriptionRow({
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
       <div className="flex items-center gap-2 text-slate-500">
-        <Icon name={icon} size={15} />
+        <Icon
+          name={icon}
+          size={15}
+        />
+
         <span>{label}</span>
       </div>
 
-      <span className="font-bold text-slate-200">{value}</span>
+      <span className="font-bold text-slate-200">
+        {value}
+      </span>
     </div>
   );
 }
@@ -1385,11 +1670,17 @@ function SecurityRow({
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
-        <Icon name={icon} size={18} />
+        <Icon
+          name={icon}
+          size={18}
+        />
       </div>
 
       <div className="min-w-0">
-        <div className="text-xs font-bold text-slate-200">{title}</div>
+        <div className="text-xs font-bold text-slate-200">
+          {title}
+        </div>
+
         <div className="mt-1 text-[10px] leading-5 text-slate-500">
           {description}
         </div>
@@ -1409,7 +1700,8 @@ function QuickLink({
     | "spark"
     | "wallet"
     | "support"
-    | "settings";
+    | "settings"
+    | "diamond";
   label: string;
 }) {
   return (
@@ -1418,8 +1710,12 @@ function QuickLink({
       className="flex items-center gap-3 rounded-xl px-3 py-3 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
     >
       <span className="text-violet-400">
-        <Icon name={icon} size={17} />
+        <Icon
+          name={icon}
+          size={17}
+        />
       </span>
+
       <span>{label}</span>
     </Link>
   );
@@ -1436,8 +1732,15 @@ function StatRow({
 }) {
   return (
     <div className="flex items-center justify-between border-b border-white/[0.05] pb-3 last:border-0 last:pb-0">
-      <span className="text-xs text-slate-500">{label}</span>
-      <span className={`text-sm font-black ${valueClass}`}>{value}</span>
+      <span className="text-xs text-slate-500">
+        {label}
+      </span>
+
+      <span
+        className={`text-sm font-black ${valueClass}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -1452,11 +1755,17 @@ function Benefit({
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 transition hover:border-violet-500/20 hover:bg-violet-500/[0.03]">
       <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
-        <Icon name="check" size={16} />
+        <Icon
+          name="check"
+          size={16}
+        />
       </div>
 
       <div>
-        <div className="text-xs font-bold text-slate-200">{title}</div>
+        <div className="text-xs font-bold text-slate-200">
+          {title}
+        </div>
+
         <div className="mt-1 text-[10px] leading-5 text-slate-500">
           {description}
         </div>
@@ -1474,18 +1783,22 @@ function FooterColumn({
 }) {
   return (
     <div>
-      <h3 className="mb-4 text-sm font-black text-slate-200">{title}</h3>
+      <h3 className="mb-4 text-sm font-black text-slate-200">
+        {title}
+      </h3>
 
       <div className="space-y-3">
-        {links.map(([label, href]) => (
-          <Link
-            key={`${label}-${href}`}
-            href={href}
-            className="block text-xs text-slate-500 transition hover:text-violet-300"
-          >
-            {label}
-          </Link>
-        ))}
+        {links.map(
+          ([label, href]) => (
+            <Link
+              key={`${label}-${href}`}
+              href={href}
+              className="block text-xs text-slate-500 transition hover:text-violet-300"
+            >
+              {label}
+            </Link>
+          )
+        )}
       </div>
     </div>
   );
