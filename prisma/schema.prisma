@@ -12,48 +12,47 @@ model User {
   name     String
   email    String @unique
   password String
+  role     String @default("USER")
+  plan     String @default("FREE")
 
-  role String @default("USER")
-  plan String @default("FREE")
-
-  // =========================
-  // Profile
-  // =========================
-
-  avatarUrl   String?
-  avatarEmoji String?
-  bio         String?
-
-  // =========================
-  // Subscription
-  // =========================
-
-  subscriptionStartedAt DateTime?
-  subscriptionExpiresAt DateTime?
-
-  // =========================
-  // Relations
-  // =========================
-
-  sessions          Session[]
-  supportTickets    SupportTicket[]
-  tradingBots       TradingBot[]
-  tradingSignals    TradingSignal[]
-  trades            Trade[]
-  brokerConnections BrokerConnection[]
-
-  passwordResetTokens PasswordResetToken[]
+  sessions       Session[]
+  supportTickets SupportTicket[]
+  tradingBots    TradingBot[]
+  tradingSignals TradingSignal[]
+  trades         Trade[]
 
   newsSetting NewsSetting?
   newsAlerts  NewsAlert[]
+  settings    UserSettings?
+
+  dailyPerformances DailyPerformance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserSettings {
+  id String @id @default(cuid())
+
+  userId String @unique
+
+  language String @default("fa")
+  theme    String @default("dark")
+
+  emailNotifications    Boolean @default(true)
+  tradingNotifications  Boolean @default(true)
+  newsNotifications     Boolean @default(true)
+  securityNotifications Boolean @default(true)
+
+  twoFactorEnabled Boolean @default(false)
+
+  compactMode Boolean @default(false)
+  soundEnabled Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([role])
-  @@index([plan])
-  @@index([subscriptionExpiresAt])
-  @@index([createdAt])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Session {
@@ -69,53 +68,6 @@ model Session {
   @@index([expiresAt])
 }
 
-model PasswordResetToken {
-  id String @id @default(cuid())
-
-  userId String
-
-  tokenHash String @unique
-
-  expiresAt DateTime
-  usedAt    DateTime?
-
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([usedAt])
-}
-
-model BrokerConnection {
-  id String @id @default(cuid())
-
-  userId String
-
-  brokerName    String
-  platform      String
-  server        String
-  accountNumber String
-
-  status String @default("DISCONNECTED")
-
-  isDemo   Boolean @default(true)
-  isActive Boolean @default(false)
-
-  lastConnectedAt DateTime?
-  lastCheckedAt   DateTime?
-  errorMessage    String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([status])
-}
-
 model SupportTicket {
   id        String   @id @default(cuid())
   userId    String
@@ -126,10 +78,14 @@ model SupportTicket {
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages SupportMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model SupportMessage {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   ticketId   String
   senderId   String?
   senderType String
@@ -137,6 +93,9 @@ model SupportMessage {
   createdAt  DateTime @default(now())
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([createdAt])
 }
 
 model TradingBot {
@@ -182,8 +141,8 @@ model TradingBot {
 
   dailyProfitStop    Float?
   dailyLossLimit     Float?
-  maxDailyStopLosses Int   @default(3)
-  maxOpenTrades      Int   @default(1)
+  maxDailyStopLosses Int @default(3)
+  maxOpenTrades      Int @default(1)
 
   buyEnabled  Boolean @default(true)
   sellEnabled Boolean @default(true)
@@ -213,6 +172,7 @@ model TradingBot {
   @@index([isActive])
   @@index([botStatus])
   @@index([executionMode])
+  @@index([symbol])
 }
 
 model MarketCandle {
@@ -242,53 +202,76 @@ model TradingSignal {
   userId String
   botId  String
 
-  // =========================
-  // Market
-  // =========================
-
   symbol    String
   timeframe String?
   direction String
 
-  // =========================
-  // Signal Prices
-  // =========================
+  /*
+   * Entry
+   */
+  entry Float?
 
-  entry      Float?
+  /*
+   * Legacy single TP/SL fields
+   * نگه داشته شده‌اند تا کدهای قبلی سایت خراب نشوند.
+   */
   takeProfit Float?
   stopLoss   Float?
+  riskReward Float?
 
-  // New multi-target TP system
+  /*
+   * Multi Take Profit
+   */
   takeProfit1 Float?
   takeProfit2 Float?
   takeProfit3 Float?
 
-  riskReward Float?
-
-  // =========================
-  // Dollar Risk / Reward
-  // =========================
-
-  riskUsd Float?
-
+  /*
+   * Risk / Target in USD
+   */
+  riskUsd        Float?
   takeProfit1Usd Float?
   takeProfit2Usd Float?
   takeProfit3Usd Float?
 
-  // =========================
-  // Signal Quality
-  // =========================
+  /*
+   * Live market state
+   */
+  currentPrice  Float?
+  lastCheckedAt DateTime?
 
+  /*
+   * Signal quality
+   */
   score      Float?
   confidence Float?
 
   status String @default("WAITING")
-
   source String @default("ANALYSIS")
 
-  // =========================
-  // Analysis Details
-  // =========================
+  /*
+   * Final signal result
+   *
+   * WAITING
+   * ACTIVE
+   * TP1
+   * TP2
+   * TP3
+   * STOP_LOSS
+   * EXPIRED
+   * CANCELLED
+   */
+  result String?
+
+  realizedProfitLoss Float?
+
+  /*
+   * Result timestamps
+   */
+  tp1HitAt      DateTime?
+  tp2HitAt      DateTime?
+  tp3HitAt      DateTime?
+  stopLossHitAt DateTime?
 
   marketStructure            String?
   supportResistance          String?
@@ -305,51 +288,27 @@ model TradingSignal {
   reasons        Json?
   metadata       Json?
 
-  // =========================
-  // Telegram
-  // =========================
-
+  /*
+   * Telegram signal delivery
+   */
   telegramSent      Boolean  @default(false)
   telegramMessageId String?
   telegramSentAt    DateTime?
 
-  // =========================
-  // Signal Lifecycle
-  // =========================
-
+  /*
+   * Signal lifetime
+   */
   expiresAt DateTime?
-
-  currentPrice Float?
-  lastCheckedAt DateTime?
-
-  // =========================
-  // Signal Result
-  // =========================
-
-  result String?
-
-  realizedProfitLoss Float?
-
-  tp1HitAt DateTime?
-  tp2HitAt DateTime?
-  tp3HitAt DateTime?
-  stopLossHitAt DateTime?
-
-  closedAt DateTime?
+  closedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // =========================
-  // Relations
-  // =========================
 
   user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   bot  TradingBot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
   deliveries TelegramDelivery[]
-
-  trade Trade?
+  trades     Trade[]
 
   @@index([userId])
   @@index([botId])
@@ -358,8 +317,8 @@ model TradingSignal {
   @@index([status])
   @@index([direction])
   @@index([result])
-  @@index([expiresAt])
   @@index([createdAt])
+  @@index([expiresAt])
 }
 
 model TelegramDelivery {
@@ -381,6 +340,7 @@ model TelegramDelivery {
   @@index([signalId])
   @@index([channelId])
   @@index([status])
+  @@index([createdAt])
 }
 
 model AnalysisRun {
@@ -419,123 +379,260 @@ model Trade {
   userId String
   botId  String
 
-  // =========================
-  // Connected Signal
-  // =========================
-
-  signalId String? @unique
-
-  // =========================
-  // Market
-  // =========================
+  /*
+   * ارتباط با سیگنال
+   *
+   * @unique عمداً استفاده نشده.
+   * یک سیگنال می‌تواند در آینده چند اجرای واقعی/بخشی داشته باشد.
+   */
+  signalId String?
 
   symbol    String
   direction String
 
-  // =========================
-  // Actual Execution Prices
-  // =========================
-
+  /*
+   * Entry / Exit
+   */
   entryPrice Float?
   exitPrice  Float?
 
-  // =========================
-  // Targets
-  // =========================
-
+  /*
+   * Legacy TP / SL
+   */
   takeProfit Float?
   stopLoss   Float?
 
+  /*
+   * Multi TP
+   */
   takeProfit1 Float?
   takeProfit2 Float?
   takeProfit3 Float?
 
-  // =========================
-  // Position
-  // =========================
-
+  /*
+   * Position sizing
+   */
   quantity Float?
 
-  // =========================
-  // Financial Result
-  // =========================
-
+  /*
+   * Financial result
+   */
   profitLoss Float?
+  fees       Float?
+  swap       Float?
 
-  fees Float?
-  swap Float?
-
-  // =========================
-  // Trade Lifecycle
-  // =========================
-
-  status String @default("OPEN")
-
-  source String @default("SIMULATION")
-
-  openedAt DateTime @default(now())
-  closedAt DateTime?
-
-  expiresAt DateTime?
-
-  currentPrice Float?
+  /*
+   * Current live price
+   */
+  currentPrice  Float?
   lastCheckedAt DateTime?
 
-  // =========================
-  // Target Results
-  // =========================
+  /*
+   * Trade status
+   *
+   * OPEN
+   * TP1
+   * TP2
+   * TP3
+   * CLOSED
+   * STOP_LOSS
+   * EXPIRED
+   * CANCELLED
+   */
+  status String @default("OPEN")
 
-  tp1HitAt DateTime?
-  tp2HitAt DateTime?
-  tp3HitAt DateTime?
+  /*
+   * SIMULATION
+   * MANUAL
+   * BROKER
+   * AUTO
+   */
+  source String @default("SIMULATION")
 
+  /*
+   * Expiry
+   */
+  expiresAt DateTime?
+
+  /*
+   * Open / close
+   */
+  openedAt DateTime  @default(now())
+  closedAt DateTime?
+
+  /*
+   * Target hit timestamps
+   */
+  tp1HitAt      DateTime?
+  tp2HitAt      DateTime?
+  tp3HitAt      DateTime?
   stopLossHitAt DateTime?
 
-  // =========================
-  // Break Even
-  // =========================
-
-  breakEvenActivated Boolean @default(false)
+  /*
+   * Break-even
+   */
+  breakEvenActivated Boolean   @default(false)
   breakEvenAt        DateTime?
   breakEvenPrice     Float?
 
-  // =========================
-  // Trailing Stop
-  // =========================
-
-  trailingStopActivated Boolean @default(false)
+  /*
+   * Trailing stop
+   */
+  trailingStopActivated Boolean   @default(false)
   trailingStopAt        DateTime?
   trailingStopPrice     Float?
 
-  // =========================
-  // Broker Information
-  // =========================
-
+  /*
+   * Broker integration
+   */
   brokerOrderId    String?
   brokerPositionId String?
 
   brokerEntryPrice Float?
   brokerExitPrice  Float?
 
-  // =========================
-  // Relations
-  // =========================
-
-  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bot  TradingBot @relation(fields: [botId], references: [id], onDelete: Cascade)
-
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot  TradingBot   @relation(fields: [botId], references: [id], onDelete: Cascade)
   signal TradingSignal? @relation(fields: [signalId], references: [id], onDelete: SetNull)
+
+  events TradeEvent[]
 
   @@index([userId])
   @@index([botId])
+  @@index([signalId])
   @@index([symbol])
   @@index([status])
   @@index([source])
   @@index([openedAt])
   @@index([closedAt])
   @@index([expiresAt])
-  @@index([brokerOrderId])
-  @@index([brokerPositionId])
+}
+
+model TradeEvent {
+  id String @id @default(cuid())
+
+  tradeId String
+
+  /*
+   * TP1
+   * TP2
+   * TP3
+   * STOP_LOSS
+   * EXPIRED
+   * BREAK_EVEN
+   * TRAILING_STOP
+   * CLOSED
+   */
+  type String
+
+  symbol    String
+  direction String
+
+  price Float?
+
+  /*
+   * سود/زیان ایجادشده در این رویداد
+   */
+  profitLoss Float?
+
+  /*
+   * اطلاعات اضافه
+   */
+  metadata Json?
+
+  /*
+   * Telegram result notification
+   */
+  telegramSent      Boolean  @default(false)
+  telegramMessageId String?
+  telegramSentAt    DateTime?
+  telegramError     String?
+
+  createdAt DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  @@index([tradeId])
+  @@index([type])
+  @@index([symbol])
+  @@index([createdAt])
+  @@index([telegramSent])
+}
+
+model DailyPerformance {
+  id String @id @default(cuid())
+
+  userId String
+
+  /*
+   * تاریخ روز.
+   *
+   * برای هر کاربر یک رکورد در هر روز.
+   */
+  date DateTime
+
+  /*
+   * معاملات
+   */
+  totalTrades  Int @default(0)
+  closedTrades Int @default(0)
+  openTrades   Int @default(0)
+
+  /*
+   * نتیجه
+   */
+  winningTrades Int @default(0)
+  losingTrades  Int @default(0)
+  breakevenTrades Int @default(0)
+
+  /*
+   * TP / SL statistics
+   */
+  tp1Hits Int @default(0)
+  tp2Hits Int @default(0)
+  tp3Hits Int @default(0)
+  stopLossHits Int @default(0)
+
+  /*
+   * Financial performance
+   */
+  grossProfit Float @default(0)
+  grossLoss   Float @default(0)
+
+  profitLoss Float @default(0)
+
+  fees Float @default(0)
+  swap Float @default(0)
+
+  netProfitLoss Float @default(0)
+
+  /*
+   * Win rate
+   */
+  winRate Float @default(0)
+
+  /*
+   * Risk metrics
+   */
+  totalRiskUsd Float @default(0)
+  totalTargetUsd Float @default(0)
+
+  /*
+   * Telegram statistics
+   */
+  telegramSignalsSent Int @default(0)
+  telegramResultsSent Int @default(0)
+  telegramErrors Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@index([netProfitLoss])
 }
 
 model EconomicEvent {
@@ -574,8 +671,8 @@ model EconomicEvent {
   @@index([eventTime])
   @@index([importance])
   @@index([currency])
-  @@index([country])
   @@index([status])
+  @@index([country])
 }
 
 model NewsSetting {
@@ -653,5 +750,4 @@ model NewsDelivery {
 
   @@index([alertId])
   @@index([channel])
-  @@index([status])
 }
