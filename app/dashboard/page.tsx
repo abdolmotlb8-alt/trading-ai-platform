@@ -6,109 +6,13 @@ import { getSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type StatCardProps = {
-  icon: string;
-  title: string;
-  value: string | number;
-  description: string;
-  accent?: "gold" | "green" | "red";
-};
-
-function StatCard({
-  icon,
-  title,
-  value,
-  description,
-  accent = "gold",
-}: StatCardProps) {
-  return (
-    <div className={`stat-card ${accent}`}>
-      <div className="stat-top">
-        <div className="stat-icon">{icon}</div>
-        <span>{title}</span>
-      </div>
-
-      <div className="stat-value">{value}</div>
-
-      <div className="stat-description">{description}</div>
-    </div>
-  );
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
-function FeatureCard({
-  icon,
-  title,
-  description,
-  href,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  href: string;
-}) {
-  return (
-    <Link href={href} className="feature-card">
-      <div className="feature-icon">{icon}</div>
-
-      <div className="feature-title">{title}</div>
-
-      <div className="feature-description">{description}</div>
-
-      <span className="feature-arrow">←</span>
-    </Link>
-  );
-}
-
-function MarketCard({
-  symbol,
-  icon,
-}: {
-  symbol: string;
-  icon: string;
-}) {
-  return (
-    <div className="market-card">
-      <div className="market-icon">{icon}</div>
-
-      <div className="market-info">
-        <strong>{symbol}</strong>
-        <span>داده زنده</span>
-      </div>
-
-      <div className="market-price">
-        <strong>--</strong>
-        <span>در انتظار داده</span>
-      </div>
-
-      <div className="mini-chart">
-        <span />
-        <span />
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
-    </div>
-  );
-}
-
-function EmptySignals() {
-  return (
-    <div className="empty-signals">
-      <div className="empty-icon">⌁</div>
-
-      <h3>هنوز سیگنال فعالی وجود ندارد</h3>
-
-      <p>
-        سیگنال‌های واقعی پس از اتصال موتور تحلیل و دریافت داده بازار در این بخش
-        نمایش داده می‌شوند.
-      </p>
-
-      <Link href="/ai-analysis" className="gold-button small">
-        شروع تحلیل بازار
-      </Link>
-    </div>
-  );
+function getInitial(name?: string | null) {
+  if (!name) return "U";
+  return name.trim().charAt(0).toUpperCase();
 }
 
 export default async function DashboardPage() {
@@ -120,2199 +24,693 @@ export default async function DashboardPage() {
 
   const user = session.user;
 
-  let botsCount = 0;
-  let signalsCount = 0;
-  let tradesCount = 0;
-
-  try {
-    botsCount = await prisma.tradingBot.count({
+  const [
+    botsCount,
+    activeBotsCount,
+    signalsCount,
+    tradesCount,
+    openTradesCount,
+  ] = await Promise.all([
+    prisma.tradingBot.count({
       where: {
         userId: user.id,
       },
-    });
+    }),
 
-    signalsCount = await prisma.tradingSignal.count({
+    prisma.tradingBot.count({
+      where: {
+        userId: user.id,
+        isActive: true,
+      },
+    }),
+
+    prisma.tradingSignal.count({
       where: {
         userId: user.id,
       },
-    });
+    }),
 
-    tradesCount = await prisma.trade.count({
+    prisma.trade.count({
       where: {
         userId: user.id,
       },
-    });
-  } catch {
-    botsCount = 0;
-    signalsCount = 0;
-    tradesCount = 0;
-  }
+    }),
+
+    prisma.trade.count({
+      where: {
+        userId: user.id,
+        status: "OPEN",
+      },
+    }).catch(() => 0),
+  ]);
 
   const userName = user.name || "کاربر";
+  const initial = getInitial(user.name);
 
-  const initial =
-    userName
-      .trim()
-      .charAt(0)
-      .toUpperCase() || "U";
+  const navigation = [
+    {
+      href: "/dashboard",
+      icon: "⌂",
+      title: "داشبورد",
+    },
+    {
+      href: "/signals",
+      icon: "⌁",
+      title: "سیگنال‌ها",
+    },
+    {
+      href: "/bots",
+      icon: "♙",
+      title: "ربات‌ها",
+    },
+    {
+      href: "/market",
+      icon: "◈",
+      title: "بازارها",
+    },
+    {
+      href: "/broker",
+      icon: "▣",
+      title: "اتصال بروکر",
+    },
+    {
+      href: "/payments",
+      icon: "◉",
+      title: "کیف پول",
+    },
+    {
+      href: "/settings",
+      icon: "⚙",
+      title: "تنظیمات",
+    },
+  ];
+
+  const quickActions = [
+    {
+      href: "/ai-analysis",
+      icon: "✦",
+      title: "تحلیل هوش مصنوعی",
+      description: "تحلیل بازار با موتور AI",
+    },
+    {
+      href: "/signals",
+      icon: "↗",
+      title: "سیگنال‌های معاملاتی",
+      description: "مشاهده سیگنال‌های واقعی",
+    },
+    {
+      href: "/bots",
+      icon: "♙",
+      title: "مدیریت ربات‌ها",
+      description: "کنترل و تنظیم ربات‌ها",
+    },
+    {
+      href: "/market",
+      icon: "◈",
+      title: "بازار",
+      description: "بررسی وضعیت بازار",
+    },
+    {
+      href: "/news",
+      icon: "▤",
+      title: "اخبار اقتصادی",
+      description: "اخبار و رویدادهای بازار",
+    },
+    {
+      href: "/support",
+      icon: "◌",
+      title: "پشتیبانی",
+      description: "ارتباط با تیم پشتیبانی",
+    },
+  ];
 
   return (
-    <main className="dashboard-page" dir="rtl">
-      <div className="background-glow glow-one" />
-      <div className="background-glow glow-two" />
-
-      {/* ================= HEADER ================= */}
-
-      <header className="top-header">
-        <div className="header-inner">
-          <Link href="/dashboard" className="brand">
-            <div className="brand-logo">
-              <span>♛</span>
-            </div>
-
-            <div className="brand-text">
-              <strong>TRADING AI</strong>
-              <small>SMART TRADING PLATFORM</small>
-            </div>
-          </Link>
-
-          <nav className="desktop-navigation">
-            <Link href="/dashboard" className="nav-link active">
-              <span>⌂</span>
-              <small>داشبورد</small>
-            </Link>
-
-            <Link href="/signals" className="nav-link">
-              <span>◈</span>
-              <small>سیگنال‌ها</small>
-            </Link>
-
-            <Link href="/bots" className="nav-link">
-              <span>♙</span>
-              <small>ربات‌ها</small>
-            </Link>
-
-            <Link href="/market" className="nav-link">
-              <span>▥</span>
-              <small>بازارها</small>
-            </Link>
-
-            <Link href="/broker" className="nav-link">
-              <span>▣</span>
-              <small>کیف پول</small>
-            </Link>
-
-            <Link href="/settings" className="nav-link">
-              <span>⚙</span>
-              <small>تنظیمات</small>
-            </Link>
-          </nav>
-
-          <div className="header-actions">
-            <button className="notification-button" aria-label="اعلان‌ها">
-              ♧
-              <span />
-            </button>
-
-            <div className="profile-avatar">
-              {initial}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* ================= MAIN ================= */}
-
-      <div className="dashboard-container">
-
-        {/* ================= HERO ================= */}
-
-        <section className="hero-section">
-
-          <div className="hero-content">
-
-            <div className="hero-badge">
-              <span className="live-dot" />
-              سیستم تحلیل بازار فعال است
-            </div>
-
-            <h1>
-              هوش مصنوعی
-              <br />
-              <span>تحلیل بازار</span>
-            </h1>
-
-            <p>
-              تحلیل هوشمند بازارهای مالی با استفاده از داده‌های واقعی،
-              مدیریت ریسک و الگوریتم‌های پیشرفته معاملاتی.
-            </p>
-
-            <div className="hero-actions">
-              <Link href="/signals" className="gold-button">
-                مشاهده سیگنال‌ها
-                <span>←</span>
-              </Link>
-
-              <Link href="/ai-analysis" className="outline-button">
-                تحلیل جدید
-              </Link>
-            </div>
-          </div>
-
-          <div className="hero-visual">
-
-            <div className="gold-grid" />
-
-            <div className="chart-background">
-              <span style={{ height: "25%" }} />
-              <span style={{ height: "40%" }} />
-              <span style={{ height: "32%" }} />
-              <span style={{ height: "52%" }} />
-              <span style={{ height: "45%" }} />
-              <span style={{ height: "66%" }} />
-              <span style={{ height: "58%" }} />
-              <span style={{ height: "75%" }} />
-              <span style={{ height: "68%" }} />
-              <span style={{ height: "88%" }} />
-            </div>
-
-            <div className="bull">
-              ♞
-            </div>
-
-            <div className="hero-glow" />
-          </div>
-
-          <div className="hero-stat-grid">
-
-            <div className="hero-stat">
-              <span>ربات‌های فعال</span>
-              <strong>{botsCount}</strong>
-              <small>ربات متصل به حساب</small>
-            </div>
-
-            <div className="hero-stat">
-              <span>کل سیگنال‌ها</span>
-              <strong>{signalsCount}</strong>
-              <small>سیگنال ثبت‌شده</small>
-            </div>
-
-            <div className="hero-stat">
-              <span>معاملات</span>
-              <strong>{tradesCount}</strong>
-              <small>معاملات ثبت‌شده</small>
-            </div>
-
-            <div className="hero-stat">
-              <span>وضعیت حساب</span>
-              <strong className="green-text">فعال</strong>
-              <small>سیستم آنلاین</small>
-            </div>
-
-          </div>
-        </section>
-
-        {/* ================= MARKET TICKERS ================= */}
-
-        <section className="market-section">
-
-          <div className="section-heading">
-            <div>
-              <span>MARKET OVERVIEW</span>
-              <h2>بازارهای زنده</h2>
-            </div>
-
-            <Link href="/market">
-              مشاهده بازارها ←
-            </Link>
-          </div>
-
-          <div className="market-grid">
-
-            <MarketCard
-              symbol="BTC / USDT"
-              icon="₿"
-            />
-
-            <MarketCard
-              symbol="ETH / USDT"
-              icon="Ξ"
-            />
-
-            <MarketCard
-              symbol="XAU / USD"
-              icon="Au"
-            />
-
-            <MarketCard
-              symbol="EUR / USD"
-              icon="€"
-            />
-
-            <MarketCard
-              symbol="GBP / USD"
-              icon="£"
-            />
-
-          </div>
-        </section>
-
-        {/* ================= DASHBOARD GRID ================= */}
-
-        <section className="main-grid">
-
-          {/* SIGNALS */}
-
-          <div className="panel signals-panel">
-
-            <div className="panel-header">
-
-              <div>
-                <span>AI SIGNAL ENGINE</span>
-                <h2>سیگنال‌های معاملاتی</h2>
-              </div>
-
-              <Link href="/signals" className="panel-link">
-                مشاهده همه
-              </Link>
-
-            </div>
-
-            <div className="signals-table">
-
-              <div className="signal-head">
-                <span>نماد</span>
-                <span>جهت</span>
-                <span>قدرت</span>
-                <span>وضعیت</span>
-                <span>زمان</span>
-              </div>
-
-              <EmptySignals />
-
-            </div>
-          </div>
-
-          {/* PERFORMANCE */}
-
-          <div className="panel performance-panel">
-
-            <div className="panel-header">
-
-              <div>
-                <span>ACCOUNT ANALYTICS</span>
-                <h2>عملکرد سیستم</h2>
-              </div>
-
-              <span className="period-badge">
-                ۳۰ روز
-              </span>
-
-            </div>
-
-            <div className="performance-chart">
-
-              <div className="chart-lines">
-                <i />
-                <i />
-                <i />
-                <i />
-              </div>
-
-              <svg
-                viewBox="0 0 500 220"
-                preserveAspectRatio="none"
-                className="performance-svg"
-              >
-                <defs>
-                  <linearGradient
-                    id="goldArea"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="0%"
-                      stopColor="rgba(214,164,45,0.42)"
-                    />
-                    <stop
-                      offset="100%"
-                      stopColor="rgba(214,164,45,0)"
-                    />
-                  </linearGradient>
-                </defs>
-
-                <path
-                  d="M0 185
-                  L45 160
-                  L90 170
-                  L130 125
-                  L175 142
-                  L215 105
-                  L260 120
-                  L300 82
-                  L340 96
-                  L385 62
-                  L425 78
-                  L465 42
-                  L500 28
-                  L500 220
-                  L0 220 Z"
-                  fill="url(#goldArea)"
-                />
-
-                <path
-                  d="M0 185
-                  L45 160
-                  L90 170
-                  L130 125
-                  L175 142
-                  L215 105
-                  L260 120
-                  L300 82
-                  L340 96
-                  L385 62
-                  L425 78
-                  L465 42
-                  L500 28"
-                  fill="none"
-                  stroke="#d9a72e"
-                  strokeWidth="4"
-                />
-              </svg>
-
-            </div>
-
-            <div className="performance-number">
-              <span>بازدهی حساب</span>
-              <strong>--</strong>
-              <small>
-                پس از ثبت معاملات واقعی محاسبه می‌شود
-              </small>
-            </div>
-
-            <div className="period-buttons">
-              <button>۷ روز</button>
-              <button className="selected">۳۰ روز</button>
-              <button>۹۰ روز</button>
-            </div>
-
-          </div>
-
-        </section>
-
-        {/* ================= FEATURES ================= */}
-
-        <section className="features-section">
-
-          <div className="section-heading">
-            <div>
-              <span>TRADING TOOLS</span>
-              <h2>ابزارهای حرفه‌ای</h2>
-            </div>
-          </div>
-
-          <div className="features-grid">
-
-            <FeatureCard
-              icon="✦"
-              title="تحلیل هوش مصنوعی"
-              description="تحلیل پیشرفته بازار با AI"
-              href="/ai-analysis"
-            />
-
-            <FeatureCard
-              icon="♙"
-              title="ربات‌های معاملاتی"
-              description="مدیریت و اجرای ربات‌ها"
-              href="/bots"
-            />
-
-            <FeatureCard
-              icon="◇"
-              title="مدیریت ریسک"
-              description="کنترل سرمایه و ریسک"
-              href="/risk"
-            />
-
-            <FeatureCard
-              icon="▤"
-              title="اخبار بازار"
-              description="اخبار و تحلیل لحظه‌ای"
-              href="/news"
-            />
-
-            <FeatureCard
-              icon="▱"
-              title="آموزش"
-              description="آموزش تخصصی معامله‌گری"
-              href="/courses"
-            />
-
-            <FeatureCard
-              icon="♧"
-              title="پشتیبانی"
-              description="پشتیبانی و ارتباط با تیم"
-              href="/support"
-            />
-
-          </div>
-        </section>
-
-        {/* ================= BOTTOM GRID ================= */}
-
-        <section className="bottom-grid">
-
-          {/* SIGNAL DISTRIBUTION */}
-
-          <div className="panel bottom-panel">
-
-            <div className="panel-header">
-
-              <div>
-                <span>SIGNAL ANALYTICS</span>
-                <h2>توزیع سیگنال‌ها</h2>
-              </div>
-
-            </div>
-
-            <div className="donut-area">
-
-              <div
-                className="donut"
-                style={{
-                  background:
-                    "conic-gradient(#d9a72e 0deg 0deg, #161616 0deg 360deg)",
-                }}
-              >
-                <div className="donut-center">
-                  <strong>{signalsCount}</strong>
-                  <span>کل سیگنال‌ها</span>
-                </div>
-              </div>
-
-              <div className="legend">
-
-                <div>
-                  <i className="green-dot" />
-                  <span>خرید</span>
-                  <strong>--</strong>
-                </div>
-
-                <div>
-                  <i className="red-dot" />
-                  <span>فروش</span>
-                  <strong>--</strong>
-                </div>
-
-                <div>
-                  <i className="gray-dot" />
-                  <span>خنثی</span>
-                  <strong>--</strong>
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          {/* TOP PERFORMANCE */}
-
-          <div className="panel bottom-panel">
-
-            <div className="panel-header">
-
-              <div>
-                <span>PERFORMANCE</span>
-                <h2>بهترین عملکرد</h2>
-              </div>
-
-            </div>
-
-            <div className="ranking-list">
-
-              <div className="ranking-empty">
-                <div>♛</div>
-                <p>
-                  پس از ثبت معاملات واقعی،
-                  عملکرد نمادها در این بخش نمایش داده می‌شود.
-                </p>
-              </div>
-
-            </div>
-
-          </div>
-
-          {/* ACTIVITY */}
-
-          <div className="panel bottom-panel">
-
-            <div className="panel-header">
-
-              <div>
-                <span>ACTIVITY</span>
-                <h2>آخرین فعالیت‌ها</h2>
-              </div>
-
-            </div>
-
-            <div className="activity-list">
-
-              <div className="activity-item">
-                <span>◈</span>
-                <div>
-                  <strong>سیستم آماده است</strong>
-                  <small>
-                    داشبورد با موفقیت بارگذاری شد
-                  </small>
-                </div>
-              </div>
-
-              <div className="activity-item">
-                <span>◇</span>
-                <div>
-                  <strong>اتصال موتور تحلیل</strong>
-                  <small>
-                    وضعیت اتصال از backend بررسی می‌شود
-                  </small>
-                </div>
-              </div>
-
-              <div className="activity-item">
-                <span>♙</span>
-                <div>
-                  <strong>ربات‌های معاملاتی</strong>
-                  <small>
-                    {botsCount} ربات در حساب شما ثبت شده است
-                  </small>
-                </div>
-              </div>
-
-              <div className="activity-item">
-                <span>▤</span>
-                <div>
-                  <strong>سیگنال‌ها</strong>
-                  <small>
-                    {signalsCount} سیگنال در حساب ثبت شده است
-                  </small>
-                </div>
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-        {/* ================= ACCOUNT ================= */}
-
-        <section className="account-section">
-
-          <div className="account-user">
-
-            <div className="large-avatar">
-              {initial}
-            </div>
-
-            <div>
-              <span>حساب کاربری</span>
-              <h3>{userName}</h3>
-              <small>
-                پلن {user.plan || "FREE"}
-              </small>
-            </div>
-
-          </div>
-
-          <div className="account-status">
-
-            <div className="status-indicator">
-              <span />
-              سیستم آنلاین
-            </div>
-
-            <div className="security">
-              <strong>SSL</strong>
-              <span>اتصال امن</span>
-            </div>
-
-          </div>
-
-        </section>
-
+    <main
+      dir="rtl"
+      className="min-h-screen overflow-x-hidden bg-[#030303] text-white"
+    >
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#030303]">
+        <div className="absolute left-1/2 top-[-220px] h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[#b88918]/[0.07] blur-[150px]" />
+        <div className="absolute right-[-180px] top-[420px] h-[500px] w-[500px] rounded-full bg-[#8a6512]/[0.045] blur-[140px]" />
+        <div className="absolute bottom-[-250px] left-[-180px] h-[500px] w-[500px] rounded-full bg-[#d09a24]/[0.035] blur-[140px]" />
       </div>
 
-      {/* ================= MOBILE NAV ================= */}
-
-      <nav className="mobile-navigation">
-
-        <Link href="/dashboard" className="mobile-nav-item active">
-          <span>⌂</span>
-          <small>داشبورد</small>
-        </Link>
-
-        <Link href="/signals" className="mobile-nav-item">
-          <span>◈</span>
-          <small>سیگنال</small>
-        </Link>
-
-        <Link href="/bots" className="mobile-nav-item">
-          <span>♙</span>
-          <small>ربات‌ها</small>
-        </Link>
-
-        <Link href="/market" className="mobile-nav-item">
-          <span>▥</span>
-          <small>بازار</small>
-        </Link>
-
-        <Link href="/settings" className="mobile-nav-item">
-          <span>⚙</span>
-          <small>تنظیمات</small>
-        </Link>
-
-      </nav>
-
-      <style jsx>{`
-
-        * {
-          box-sizing: border-box;
-        }
-
-        .dashboard-page {
-          min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at 50% -10%,
-              rgba(190, 142, 31, 0.09),
-              transparent 32%
-            ),
-            #030303;
-          color: #f4f0e8;
-          font-family:
-            Arial,
-            Tahoma,
-            sans-serif;
-          overflow-x: hidden;
-          position: relative;
-        }
-
-        .background-glow {
-          position: fixed;
-          width: 450px;
-          height: 450px;
-          border-radius: 50%;
-          filter: blur(130px);
-          pointer-events: none;
-          opacity: 0.07;
-          z-index: 0;
-        }
-
-        .glow-one {
-          background: #d5a52f;
-          top: 10%;
-          right: -250px;
-        }
-
-        .glow-two {
-          background: #9b7118;
-          bottom: 10%;
-          left: -250px;
-        }
-
-        .top-header {
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          background: rgba(3, 3, 3, 0.94);
-          border-bottom: 1px solid rgba(210, 164, 42, 0.17);
-          backdrop-filter: blur(18px);
-        }
-
-        .header-inner {
-          width: min(1450px, calc(100% - 42px));
-          margin: auto;
-          min-height: 92px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 25px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          color: white;
-          text-decoration: none;
-          min-width: 240px;
-        }
-
-        .brand-logo {
-          width: 52px;
-          height: 52px;
-          border: 1px solid #c99a25;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #e4b637;
-          font-size: 30px;
-          box-shadow:
-            0 0 25px rgba(215, 165, 45, 0.15),
-            inset 0 0 20px rgba(215, 165, 45, 0.07);
-        }
-
-        .brand-text {
-          display: flex;
-          flex-direction: column;
-          line-height: 1.1;
-        }
-
-        .brand-text strong {
-          color: #e1ae32;
-          font-size: 20px;
-          letter-spacing: 1px;
-        }
-
-        .brand-text small {
-          color: #8d8a83;
-          font-size: 8px;
-          margin-top: 5px;
-          letter-spacing: 1px;
-          direction: ltr;
-        }
-
-        .desktop-navigation {
-          display: flex;
-          align-items: stretch;
-          height: 92px;
-          gap: 5px;
-        }
-
-        .nav-link {
-          min-width: 82px;
-          padding: 12px 10px;
-          color: #89857d;
-          text-decoration: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-direction: column;
-          gap: 6px;
-          position: relative;
-          transition: 0.25s;
-        }
-
-        .nav-link span {
-          font-size: 21px;
-          color: #aaa59b;
-        }
-
-        .nav-link small {
-          font-size: 12px;
-        }
-
-        .nav-link:hover {
-          color: #e4b637;
-        }
-
-        .nav-link.active {
-          color: #e4b637;
-        }
-
-        .nav-link.active span {
-          color: #e4b637;
-        }
-
-        .nav-link.active::after {
-          content: "";
-          position: absolute;
-          bottom: 0;
-          width: 55%;
-          height: 2px;
-          background: #e1ac2f;
-          box-shadow: 0 0 12px #dca92f;
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .notification-button {
-          width: 42px;
-          height: 42px;
-          border: 0;
-          background: transparent;
-          color: #d9a72e;
-          font-size: 24px;
-          position: relative;
-          cursor: pointer;
-        }
-
-        .notification-button span {
-          position: absolute;
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #e1b039;
-          top: 5px;
-          right: 7px;
-          box-shadow: 0 0 10px #e1b039;
-        }
-
-        .profile-avatar,
-        .large-avatar {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid #b98c24;
-          background:
-            radial-gradient(
-              circle at 35% 25%,
-              #e7b638,
-              #62480e 70%
-            );
-          color: white;
-          font-weight: 800;
-          box-shadow: 0 0 20px rgba(218, 168, 44, 0.12);
-        }
-
-        .profile-avatar {
-          width: 47px;
-          height: 47px;
-          border-radius: 50%;
-        }
-
-        .dashboard-container {
-          position: relative;
-          z-index: 1;
-          width: min(1450px, calc(100% - 42px));
-          margin: 28px auto 80px;
-        }
-
-        /* HERO */
-
-        .hero-section {
-          min-height: 370px;
-          border: 1px solid rgba(218, 170, 44, 0.38);
-          border-radius: 22px;
-          background:
-            linear-gradient(
-              110deg,
-              rgba(10, 10, 10, 0.98),
-              rgba(16, 14, 9, 0.88)
-            );
-          overflow: hidden;
-          display: grid;
-          grid-template-columns: 1.05fr 1fr 0.9fr;
-          position: relative;
-          box-shadow:
-            inset 0 0 60px rgba(212, 163, 40, 0.025),
-            0 15px 70px rgba(0, 0, 0, 0.5);
-        }
-
-        .hero-content {
-          padding: 50px 45px;
-          position: relative;
-          z-index: 3;
-        }
-
-        .hero-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: #aaa59c;
-          font-size: 12px;
-          border: 1px solid rgba(205, 163, 48, 0.18);
-          border-radius: 50px;
-          padding: 8px 13px;
-          background: rgba(255,255,255,0.02);
-        }
-
-        .live-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #43c477;
-          box-shadow: 0 0 10px #43c477;
-        }
-
-        .hero-content h1 {
-          font-size: clamp(32px, 4vw, 60px);
-          line-height: 1.08;
-          margin: 28px 0 12px;
-          font-weight: 900;
-        }
-
-        .hero-content h1 span {
-          color: #dca92f;
-          text-shadow: 0 0 30px rgba(220,169,47,0.16);
-        }
-
-        .hero-content p {
-          color: #98948d;
-          max-width: 480px;
-          line-height: 2;
-          font-size: 14px;
-          margin-bottom: 25px;
-        }
-
-        .hero-actions {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-
-        .gold-button,
-        .outline-button {
-          border-radius: 10px;
-          min-height: 47px;
-          padding: 0 20px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 12px;
-          text-decoration: none;
-          cursor: pointer;
-          transition: 0.25s;
-          font-size: 13px;
-        }
-
-        .gold-button {
-          color: #0b0b0b;
-          background: linear-gradient(
-            135deg,
-            #f1c64f,
-            #bb8415
-          );
-          border: 1px solid #e2b439;
-          box-shadow:
-            0 8px 25px rgba(208, 158, 36, 0.17);
-          font-weight: 800;
-        }
-
-        .gold-button:hover {
-          transform: translateY(-2px);
-          box-shadow:
-            0 12px 30px rgba(208, 158, 36, 0.25);
-        }
-
-        .gold-button.small {
-          min-height: 40px;
-          font-size: 12px;
-        }
-
-        .outline-button {
-          color: #d4a72e;
-          border: 1px solid rgba(211, 167, 44, 0.4);
-          background: rgba(211, 167, 44, 0.04);
-        }
-
-        .hero-visual {
-          position: relative;
-          overflow: hidden;
-          min-height: 370px;
-        }
-
-        .hero-glow {
-          position: absolute;
-          width: 350px;
-          height: 350px;
-          border-radius: 50%;
-          background: rgba(217, 166, 42, 0.08);
-          filter: blur(60px);
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-        }
-
-        .gold-grid {
-          position: absolute;
-          inset: 0;
-          opacity: 0.13;
-          background-image:
-            linear-gradient(
-              rgba(211, 167, 44, 0.18) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(211, 167, 44, 0.18) 1px,
-              transparent 1px
-            );
-          background-size: 35px 35px;
-          transform: perspective(500px) rotateX(50deg) scale(1.5);
-          transform-origin: center bottom;
-        }
-
-        .chart-background {
-          position: absolute;
-          inset: 55px 35px;
-          display: flex;
-          align-items: end;
-          justify-content: center;
-          gap: 10px;
-          opacity: 0.85;
-        }
-
-        .chart-background span {
-          width: 13px;
-          background:
-            linear-gradient(
-              to top,
-              #76550d,
-              #e4b73a
-            );
-          box-shadow:
-            0 0 12px rgba(218, 168, 43, 0.2);
-          position: relative;
-        }
-
-        .chart-background span::before {
-          content: "";
-          position: absolute;
-          width: 1px;
-          height: 20px;
-          background: #e6bd4d;
-          top: -20px;
-          left: 50%;
-        }
-
-        .bull {
-          position: absolute;
-          font-size: 145px;
-          color: rgba(220, 170, 43, 0.74);
-          text-shadow:
-            0 0 35px rgba(218, 167, 42, 0.28);
-          left: 50%;
-          top: 52%;
-          transform: translate(-50%, -50%);
-          z-index: 2;
-          opacity: 0.9;
-        }
-
-        .hero-stat-grid {
-          padding: 50px 30px;
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          align-content: center;
-          position: relative;
-          z-index: 3;
-        }
-
-        .hero-stat {
-          min-height: 110px;
-          border: 1px solid rgba(213, 166, 46, 0.27);
-          background: rgba(10, 10, 10, 0.75);
-          border-radius: 13px;
-          padding: 18px;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-        }
-
-        .hero-stat span {
-          color: #918d85;
-          font-size: 11px;
-        }
-
-        .hero-stat strong {
-          color: #f4f0e8;
-          font-size: 27px;
-          margin: 8px 0;
-        }
-
-        .hero-stat small {
-          color: #77736c;
-          font-size: 9px;
-        }
-
-        .green-text {
-          color: #4fc780 !important;
-        }
-
-        /* SECTION */
-
-        .market-section,
-        .features-section {
-          margin-top: 38px;
-        }
-
-        .section-heading {
-          display: flex;
-          align-items: end;
-          justify-content: space-between;
-          margin-bottom: 15px;
-          gap: 15px;
-        }
-
-        .section-heading span,
-        .panel-header span {
-          display: block;
-          color: #8d8a83;
-          font-size: 9px;
-          letter-spacing: 1.5px;
-          direction: ltr;
-          margin-bottom: 7px;
-        }
-
-        .section-heading h2,
-        .panel-header h2 {
-          margin: 0;
-          font-size: 20px;
-        }
-
-        .section-heading a,
-        .panel-link {
-          color: #cda02a;
-          text-decoration: none;
-          font-size: 11px;
-        }
-
-        .market-grid {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 12px;
-        }
-
-        .market-card {
-          min-height: 94px;
-          border: 1px solid rgba(206, 161, 42, 0.25);
-          border-radius: 13px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(21,21,21,0.96),
-              rgba(7,7,7,0.96)
-            );
-          padding: 15px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .market-card::before {
-          content: "";
-          position: absolute;
-          width: 100px;
-          height: 100px;
-          background: rgba(214, 164, 41, 0.05);
-          border-radius: 50%;
-          left: -45px;
-          top: -45px;
-        }
-
-        .market-icon {
-          width: 39px;
-          height: 39px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(218, 169, 44, 0.35);
-          color: #ddb13b;
-          font-size: 14px;
-          font-weight: 900;
-          background: #111;
-        }
-
-        .market-info {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-
-        .market-info strong {
-          font-size: 10px;
-          direction: ltr;
-        }
-
-        .market-info span {
-          color: #66635d;
-          font-size: 8px;
-        }
-
-        .market-price {
-          margin-right: auto;
-          display: flex;
-          flex-direction: column;
-          align-items: end;
-          gap: 4px;
-        }
-
-        .market-price strong {
-          font-size: 13px;
-        }
-
-        .market-price span {
-          font-size: 7px;
-          color: #716e67;
-        }
-
-        .mini-chart {
-          position: absolute;
-          bottom: 8px;
-          left: 7px;
-          display: flex;
-          gap: 3px;
-          align-items: end;
-          opacity: 0.6;
-        }
-
-        .mini-chart span {
-          width: 2px;
-          background: #d8a72e;
-        }
-
-        .mini-chart span:nth-child(1) { height: 8px; }
-        .mini-chart span:nth-child(2) { height: 14px; }
-        .mini-chart span:nth-child(3) { height: 10px; }
-        .mini-chart span:nth-child(4) { height: 19px; }
-        .mini-chart span:nth-child(5) { height: 15px; }
-        .mini-chart span:nth-child(6) { height: 25px; }
-
-        /* MAIN GRID */
-
-        .main-grid {
-          display: grid;
-          grid-template-columns: 1.45fr 0.75fr;
-          gap: 15px;
-          margin-top: 38px;
-        }
-
-        .panel {
-          border: 1px solid rgba(208, 163, 42, 0.25);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(14,14,14,0.98),
-              rgba(7,7,7,0.98)
-            );
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow:
-            inset 0 0 35px rgba(220, 170, 40, 0.018);
-        }
-
-        .panel-header {
-          min-height: 74px;
-          padding: 17px 20px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          border-bottom: 1px solid rgba(255,255,255,0.055);
-        }
-
-        .panel-header h2 {
-          font-size: 17px;
-        }
-
-        .period-badge {
-          border: 1px solid rgba(213, 166, 43, 0.28);
-          padding: 6px 10px;
-          border-radius: 7px;
-          color: #cda02b !important;
-          font-size: 9px !important;
-          margin: 0 !important;
-          letter-spacing: 0 !important;
-        }
-
-        .signals-table {
-          min-height: 325px;
-        }
-
-        .signal-head {
-          display: grid;
-          grid-template-columns: 1.2fr 0.8fr 0.8fr 1fr 0.8fr;
-          padding: 15px 20px;
-          color: #6e6b64;
-          font-size: 10px;
-          border-bottom: 1px solid rgba(255,255,255,0.035);
-        }
-
-        .empty-signals {
-          min-height: 250px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          padding: 30px;
-        }
-
-        .empty-icon {
-          width: 60px;
-          height: 60px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(216, 166, 43, 0.35);
-          color: #d9a82f;
-          font-size: 27px;
-          margin-bottom: 15px;
-          background: rgba(215, 165, 44, 0.03);
-        }
-
-        .empty-signals h3 {
-          margin: 0 0 8px;
-          font-size: 15px;
-        }
-
-        .empty-signals p {
-          color: #77736c;
-          font-size: 11px;
-          line-height: 1.9;
-          max-width: 400px;
-          margin-bottom: 18px;
-        }
-
-        .performance-panel {
-          min-height: 400px;
-        }
-
-        .performance-chart {
-          height: 210px;
-          position: relative;
-          margin: 15px 18px 0;
-          overflow: hidden;
-        }
-
-        .chart-lines {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-        }
-
-        .chart-lines i {
-          display: block;
-          height: 1px;
-          background: rgba(255,255,255,0.045);
-        }
-
-        .performance-svg {
-          width: 100%;
-          height: 100%;
-          position: relative;
-        }
-
-        .performance-number {
-          padding: 10px 20px 0;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .performance-number span {
-          color: #7d7972;
-          font-size: 10px;
-        }
-
-        .performance-number strong {
-          font-size: 34px;
-          color: #dca82d;
-          margin: 4px 0;
-        }
-
-        .performance-number small {
-          color: #66635d;
-          font-size: 9px;
-        }
-
-        .period-buttons {
-          display: flex;
-          gap: 7px;
-          padding: 20px;
-        }
-
-        .period-buttons button {
-          flex: 1;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: #0b0b0b;
-          color: #77736c;
-          border-radius: 7px;
-          padding: 9px;
-          font-size: 9px;
-        }
-
-        .period-buttons button.selected {
-          border-color: #bd8e21;
-          color: #dcb03b;
-          background: rgba(203, 156, 36, 0.06);
-        }
-
-        /* FEATURES */
-
-        .features-grid {
-          display: grid;
-          grid-template-columns: repeat(6, 1fr);
-          gap: 12px;
-        }
-
-        .feature-card {
-          position: relative;
-          min-height: 160px;
-          padding: 20px 15px;
-          border-radius: 13px;
-          border: 1px solid rgba(209, 163, 41, 0.27);
-          background:
-            linear-gradient(
-              150deg,
-              rgba(18,18,18,0.98),
-              rgba(6,6,6,0.98)
-            );
-          text-decoration: none;
-          color: white;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          transition: 0.25s;
-          overflow: hidden;
-        }
-
-        .feature-card:hover {
-          transform: translateY(-4px);
-          border-color: rgba(222, 175, 48, 0.65);
-          box-shadow:
-            0 15px 35px rgba(0,0,0,0.35);
-        }
-
-        .feature-icon {
-          width: 45px;
-          height: 45px;
-          border: 1px solid rgba(216, 168, 45, 0.45);
-          color: #dca92f;
-          border-radius: 11px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 22px;
-          margin-bottom: 14px;
-          background: rgba(218, 167, 41, 0.035);
-        }
-
-        .feature-title {
-          font-size: 12px;
-          font-weight: 800;
-          margin-bottom: 7px;
-        }
-
-        .feature-description {
-          color: #69665f;
-          font-size: 9px;
-        }
-
-        .feature-arrow {
-          position: absolute;
-          left: 10px;
-          bottom: 9px;
-          color: #ad8320;
-          font-size: 12px;
-        }
-
-        /* BOTTOM */
-
-        .bottom-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 15px;
-          margin-top: 15px;
-        }
-
-        .bottom-panel {
-          min-height: 310px;
-        }
-
-        .donut-area {
-          min-height: 235px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 30px;
-          padding: 20px;
-        }
-
-        .donut {
-          width: 150px;
-          height: 150px;
-          border-radius: 50%;
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .donut::after {
-          content: "";
-          position: absolute;
-          inset: 15px;
-          background: #0a0a0a;
-          border-radius: 50%;
-        }
-
-        .donut-center {
-          position: relative;
-          z-index: 2;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-
-        .donut-center strong {
-          font-size: 27px;
-        }
-
-        .donut-center span {
-          color: #68645d;
-          font-size: 8px;
-          margin-top: 3px;
-        }
-
-        .legend {
-          display: flex;
-          flex-direction: column;
-          gap: 17px;
-        }
-
-        .legend div {
-          display: grid;
-          grid-template-columns: 10px auto auto;
-          gap: 8px;
-          align-items: center;
-          min-width: 100px;
-        }
-
-        .legend i {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-        }
-
-        .green-dot {
-          background: #3ebc72;
-        }
-
-        .red-dot {
-          background: #c94a43;
-        }
-
-        .gray-dot {
-          background: #777;
-        }
-
-        .legend span {
-          color: #77736c;
-          font-size: 10px;
-        }
-
-        .legend strong {
-          font-size: 10px;
-        }
-
-        .ranking-list {
-          padding: 15px;
-        }
-
-        .ranking-empty {
-          min-height: 220px;
-          border: 1px dashed rgba(210, 163, 41, 0.18);
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-direction: column;
-          text-align: center;
-          padding: 25px;
-        }
-
-        .ranking-empty div {
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          border: 1px solid rgba(210, 163, 41, 0.28);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #d7a62e;
-          font-size: 23px;
-          margin-bottom: 13px;
-        }
-
-        .ranking-empty p {
-          color: #77736c;
-          font-size: 10px;
-          line-height: 1.8;
-          max-width: 230px;
-        }
-
-        .activity-list {
-          padding: 10px 15px;
-        }
-
-        .activity-item {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          padding: 14px 7px;
-          border-bottom: 1px solid rgba(255,255,255,0.045);
-        }
-
-        .activity-item:last-child {
-          border-bottom: 0;
-        }
-
-        .activity-item > span {
-          width: 34px;
-          height: 34px;
-          border-radius: 9px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #d8a62d;
-          border: 1px solid rgba(213, 165, 43, 0.25);
-          background: rgba(214, 165, 43, 0.03);
-        }
-
-        .activity-item div {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-
-        .activity-item strong {
-          font-size: 10px;
-        }
-
-        .activity-item small {
-          color: #66635d;
-          font-size: 8px;
-        }
-
-        /* ACCOUNT */
-
-        .account-section {
-          margin-top: 15px;
-          border: 1px solid rgba(207, 161, 41, 0.22);
-          background: #080808;
-          min-height: 105px;
-          border-radius: 16px;
-          padding: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-        }
-
-        .account-user {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-        }
-
-        .large-avatar {
-          width: 55px;
-          height: 55px;
-          border-radius: 14px;
-        }
-
-        .account-user > div:last-child {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-
-        .account-user span {
-          color: #706c65;
-          font-size: 9px;
-        }
-
-        .account-user h3 {
-          margin: 0;
-          font-size: 15px;
-        }
-
-        .account-user small {
-          color: #d5a62e;
-          font-size: 9px;
-        }
-
-        .account-status {
-          display: flex;
-          align-items: center;
-          gap: 25px;
-        }
-
-        .status-indicator {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: #52bf7a;
-          font-size: 10px;
-        }
-
-        .status-indicator span {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #4dc379;
-          box-shadow: 0 0 10px #4dc379;
-        }
-
-        .security {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          border: 1px solid rgba(213, 166, 43, 0.25);
-          border-radius: 9px;
-          padding: 9px 12px;
-        }
-
-        .security strong {
-          width: 27px;
-          height: 27px;
-          border-radius: 50%;
-          border: 1px solid #c79825;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #ddb13b;
-          font-size: 8px;
-        }
-
-        .security span {
-          color: #77736c;
-          font-size: 8px;
-        }
-
-        .mobile-navigation {
-          display: none;
-        }
-
-        /* ================= TABLET ================= */
-
-        @media (max-width: 1150px) {
-
-          .desktop-navigation {
-            gap: 0;
-          }
-
-          .nav-link {
-            min-width: 66px;
-          }
-
-          .hero-section {
-            grid-template-columns: 1fr 0.8fr;
-          }
-
-          .hero-visual {
-            display: none;
-          }
-
-          .hero-stat-grid {
-            padding: 35px 25px;
-          }
-
-          .features-grid {
-            grid-template-columns: repeat(3, 1fr);
-          }
-
-          .market-grid {
-            grid-template-columns: repeat(3, 1fr);
-          }
-
-          .market-card:nth-child(4),
-          .market-card:nth-child(5) {
-            display: none;
-          }
-
-        }
-
-        /* ================= MOBILE ================= */
-
-        @media (max-width: 760px) {
-
-          .dashboard-page {
-            padding-bottom: 80px;
-          }
-
-          .top-header {
-            position: relative;
-          }
-
-          .header-inner {
-            width: calc(100% - 24px);
-            min-height: 72px;
-          }
-
-          .brand {
-            min-width: 0;
-          }
-
-          .brand-logo {
-            width: 43px;
-            height: 43px;
-            font-size: 24px;
-          }
-
-          .brand-text strong {
-            font-size: 16px;
-          }
-
-          .brand-text small {
-            font-size: 6px;
-          }
-
-          .desktop-navigation {
-            display: none;
-          }
-
-          .notification-button {
-            display: none;
-          }
-
-          .profile-avatar {
-            width: 41px;
-            height: 41px;
-          }
-
-          .dashboard-container {
-            width: calc(100% - 20px);
-            margin-top: 14px;
-            margin-bottom: 30px;
-          }
-
-          .hero-section {
-            display: block;
-            min-height: auto;
-            border-radius: 17px;
-          }
-
-          .hero-content {
-            padding: 25px 20px 22px;
-          }
-
-          .hero-badge {
-            font-size: 9px;
-          }
-
-          .hero-content h1 {
-            font-size: 34px;
-            margin-top: 20px;
-          }
-
-          .hero-content p {
-            font-size: 11px;
-            line-height: 1.9;
-          }
-
-          .hero-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .gold-button,
-          .outline-button {
-            min-height: 44px;
-            font-size: 10px;
-            padding: 0 10px;
-          }
-
-          .hero-stat-grid {
-            padding: 0 15px 15px;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-          }
-
-          .hero-stat {
-            min-height: 87px;
-            padding: 12px;
-          }
-
-          .hero-stat span {
-            font-size: 8px;
-          }
-
-          .hero-stat strong {
-            font-size: 20px;
-          }
-
-          .hero-stat small {
-            font-size: 7px;
-          }
-
-          .section-heading {
-            margin-bottom: 10px;
-          }
-
-          .section-heading h2,
-          .panel-header h2 {
-            font-size: 15px;
-          }
-
-          .section-heading span,
-          .panel-header span {
-            font-size: 7px;
-          }
-
-          .market-section,
-          .features-section {
-            margin-top: 25px;
-          }
-
-          .market-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-          }
-
-          .market-card {
-            min-height: 78px;
-            padding: 10px;
-          }
-
-          .market-card:nth-child(4),
-          .market-card:nth-child(5) {
-            display: flex;
-          }
-
-          .market-card:nth-child(5) {
-            grid-column: span 2;
-          }
-
-          .market-icon {
-            width: 32px;
-            height: 32px;
-            font-size: 10px;
-          }
-
-          .market-info strong {
-            font-size: 8px;
-          }
-
-          .market-info span,
-          .market-price span {
-            font-size: 6px;
-          }
-
-          .market-price strong {
-            font-size: 10px;
-          }
-
-          .mini-chart {
-            display: none;
-          }
-
-          .main-grid {
-            display: flex;
-            flex-direction: column;
-            margin-top: 25px;
-            gap: 10px;
-          }
-
-          .panel-header {
-            min-height: 63px;
-            padding: 12px 14px;
-          }
-
-          .signals-table {
-            min-height: 275px;
-          }
-
-          .signal-head {
-            grid-template-columns: 1fr 1fr 1fr;
-            padding: 12px 13px;
-            font-size: 8px;
-          }
-
-          .signal-head span:nth-child(4),
-          .signal-head span:nth-child(5) {
-            display: none;
-          }
-
-          .empty-signals {
-            min-height: 210px;
-            padding: 20px;
-          }
-
-          .empty-icon {
-            width: 48px;
-            height: 48px;
-            font-size: 22px;
-          }
-
-          .empty-signals h3 {
-            font-size: 12px;
-          }
-
-          .empty-signals p {
-            font-size: 9px;
-            line-height: 1.8;
-          }
-
-          .performance-panel {
-            min-height: 350px;
-          }
-
-          .performance-chart {
-            height: 170px;
-          }
-
-          .performance-number strong {
-            font-size: 27px;
-          }
-
-          .features-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-          }
-
-          .feature-card {
-            min-height: 130px;
-            padding: 15px 8px;
-          }
-
-          .feature-icon {
-            width: 38px;
-            height: 38px;
-            font-size: 18px;
-            margin-bottom: 9px;
-          }
-
-          .feature-title {
-            font-size: 10px;
-          }
-
-          .feature-description {
-            font-size: 7px;
-          }
-
-          .bottom-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-          }
-
-          .bottom-panel {
-            min-height: 275px;
-          }
-
-          .donut-area {
-            min-height: 210px;
-            gap: 20px;
-          }
-
-          .donut {
-            width: 125px;
-            height: 125px;
-          }
-
-          .donut::after {
-            inset: 13px;
-          }
-
-          .donut-center strong {
-            font-size: 22px;
-          }
-
-          .account-section {
-            padding: 14px;
-            min-height: auto;
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .account-status {
-            justify-content: space-between;
-          }
-
-          .security {
-            padding: 7px 9px;
-          }
-
-          .mobile-navigation {
-            position: fixed;
-            display: flex;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 68px;
-            background: rgba(7,7,7,0.96);
-            backdrop-filter: blur(20px);
-            border-top: 1px solid rgba(211, 164, 42, 0.25);
-            z-index: 100;
-            justify-content: space-around;
-            padding-bottom: env(safe-area-inset-bottom);
-          }
-
-          .mobile-nav-item {
-            flex: 1;
-            text-decoration: none;
-            color: #77736c;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-          }
-
-          .mobile-nav-item span {
-            font-size: 18px;
-          }
-
-          .mobile-nav-item small {
-            font-size: 8px;
-          }
-
-          .mobile-nav-item.active {
-            color: #ddb039;
-          }
-
-          .mobile-nav-item.active span {
-            text-shadow: 0 0 12px rgba(220, 168, 42, 0.5);
-          }
-
-        }
-
-        @media (max-width: 390px) {
-
-          .hero-content h1 {
-            font-size: 29px;
-          }
-
-          .brand-text strong {
-            font-size: 14px;
-          }
-
-          .hero-actions {
-            grid-template-columns: 1fr;
-          }
-
-          .market-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .features-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .donut-area {
-            flex-direction: column;
-          }
-
-        }
-
-      `}</style>
+      <div className="mx-auto min-h-screen max-w-[1450px] px-3 py-3 sm:px-5 lg:px-8 lg:py-6">
+        {/* Main shell */}
+        <div className="overflow-hidden rounded-[24px] border border-[#3a2a0d] bg-[#070707]/95 shadow-[0_0_80px_rgba(0,0,0,0.55)]">
+
+          {/* Header */}
+          <header className="border-b border-[#241b0b] bg-[#080808]">
+            <div className="flex min-h-[82px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+
+              {/* Logo */}
+              <Link
+                href="/dashboard"
+                className="group flex min-w-0 items-center gap-3"
+              >
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#80601a] bg-gradient-to-br from-[#211707] via-[#0c0c0c] to-[#161006] shadow-[0_0_30px_rgba(210,155,35,0.12)]">
+                  <div className="absolute inset-[5px] rounded-xl border border-[#5f4715]" />
+                  <span className="relative text-xl text-[#e0ad38]">♛</span>
+                </div>
+
+                <div className="hidden sm:block">
+                  <div className="text-[17px] font-black tracking-[0.08em] text-[#e6b943]">
+                    TRADING AI
+                  </div>
+                  <div className="mt-1 text-[9px] tracking-[0.18em] text-[#777]">
+                    SMART TRADING PLATFORM
+                  </div>
+                </div>
+              </Link>
+
+              {/* Navigation */}
+              <nav className="hidden items-center gap-1 xl:flex">
+                {navigation.map((item) => {
+                  const active = item.href === "/dashboard";
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={[
+                        "group relative flex items-center gap-2 rounded-xl px-3 py-3 text-sm transition",
+                        active
+                          ? "bg-[#1a1306] text-[#e4b43f]"
+                          : "text-[#858585] hover:bg-[#111] hover:text-[#e4b43f]",
+                      ].join(" ")}
+                    >
+                      <span className="text-base">{item.icon}</span>
+                      <span>{item.title}</span>
+
+                      {active && (
+                        <span className="absolute bottom-0 left-1/2 h-[2px] w-8 -translate-x-1/2 rounded-full bg-[#d7a52e] shadow-[0_0_12px_rgba(215,165,46,0.8)]" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              {/* Right side */}
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/notifications"
+                  className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[#28200f] bg-[#0c0c0c] text-[#a7894b] transition hover:border-[#725619] hover:text-[#e5b83f] sm:flex"
+                  aria-label="اعلان‌ها"
+                >
+                  ♧
+                </Link>
+
+                <Link
+                  href="/settings"
+                  className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[#28200f] bg-[#0c0c0c] text-[#a7894b] transition hover:border-[#725619] hover:text-[#e5b83f] sm:flex"
+                  aria-label="تنظیمات"
+                >
+                  ⚙
+                </Link>
+
+                <div className="flex h-11 min-w-11 items-center justify-center rounded-full border border-[#765818] bg-[#0d0d0d] px-3 text-sm font-bold text-[#d9ab38]">
+                  {initial}
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile nav */}
+            <div className="border-t border-[#19140b] px-3 py-3 xl:hidden">
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {navigation.map((item) => {
+                  const active = item.href === "/dashboard";
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={[
+                        "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-xs transition",
+                        active
+                          ? "border-[#745617] bg-[#211805] text-[#e5b83f]"
+                          : "border-[#211a0d] bg-[#0b0b0b] text-[#898989]",
+                      ].join(" ")}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.title}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </header>
+
+          {/* Content */}
+          <section className="px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8">
+
+            {/* Hero */}
+            <div className="relative overflow-hidden rounded-[22px] border border-[#4a3712] bg-gradient-to-br from-[#171106] via-[#090909] to-[#050505] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:p-7 lg:p-9">
+
+              <div className="pointer-events-none absolute right-[-100px] top-[-130px] h-[350px] w-[350px] rounded-full bg-[#c08b22]/[0.08] blur-[80px]" />
+
+              <div className="pointer-events-none absolute bottom-[-180px] left-[20%] h-[350px] w-[500px] rounded-full bg-[#9d7219]/[0.05] blur-[100px]" />
+
+              <div className="relative grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+
+                {/* Hero text */}
+                <div>
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#4b3814] bg-[#120e07] px-3 py-1.5 text-xs text-[#b99751]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#36b86b] shadow-[0_0_8px_#36b86b]" />
+                    سیستم آنلاین و متصل
+                  </div>
+
+                  <h1 className="max-w-2xl text-3xl font-black leading-[1.35] text-white sm:text-4xl lg:text-5xl">
+                    هوش مصنوعی
+                    <br />
+                    <span className="bg-gradient-to-l from-[#f3c954] via-[#c99727] to-[#806018] bg-clip-text text-transparent">
+                      تحلیل بازار
+                    </span>
+                  </h1>
+
+                  <p className="mt-4 max-w-xl text-sm leading-7 text-[#858585] sm:text-base">
+                    {userName} عزیز، به پنل هوشمند Trading AI خوش آمدید.
+                    وضعیت ربات‌ها، سیگنال‌ها و فعالیت معاملاتی خود را از اینجا مدیریت کنید.
+                  </p>
+
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <Link
+                      href="/ai-analysis"
+                      className="inline-flex h-12 items-center justify-center rounded-xl bg-gradient-to-r from-[#e4b53d] to-[#a87513] px-6 text-sm font-black text-[#080808] shadow-[0_8px_30px_rgba(200,145,30,0.18)] transition hover:-translate-y-0.5 hover:brightness-110"
+                    >
+                      ✦ شروع تحلیل هوشمند
+                    </Link>
+
+                    <Link
+                      href="/signals"
+                      className="inline-flex h-12 items-center justify-center rounded-xl border border-[#4a3815] bg-[#0b0b0b] px-6 text-sm font-bold text-[#c6a653] transition hover:border-[#8a671d] hover:bg-[#151108]"
+                    >
+                      مشاهده سیگنال‌ها
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Hero visual */}
+                <div className="relative mx-auto flex w-full max-w-[430px] items-center justify-center">
+                  <div className="relative h-[250px] w-full overflow-hidden rounded-2xl border border-[#3e2d10] bg-[#050505]">
+                    <div className="absolute inset-0 opacity-50">
+                      <div className="absolute inset-x-0 top-[25%] border-t border-[#493914]" />
+                      <div className="absolute inset-x-0 top-[50%] border-t border-[#493914]" />
+                      <div className="absolute inset-x-0 top-[75%] border-t border-[#493914]" />
+                      <div className="absolute left-[20%] inset-y-0 border-l border-[#493914]" />
+                      <div className="absolute left-[40%] inset-y-0 border-l border-[#493914]" />
+                      <div className="absolute left-[60%] inset-y-0 border-l border-[#493914]" />
+                      <div className="absolute left-[80%] inset-y-0 border-l border-[#493914]" />
+                    </div>
+
+                    <div className="absolute bottom-[34px] left-[8%] right-[8%] h-[2px] rotate-[-10deg] bg-gradient-to-r from-transparent via-[#e0ad36] to-transparent shadow-[0_0_15px_rgba(224,173,54,0.65)]" />
+
+                    <div className="absolute bottom-[55px] left-[13%] h-10 w-3 rounded-sm bg-[#9c7420]" />
+                    <div className="absolute bottom-[65px] left-[25%] h-16 w-3 rounded-sm bg-[#d7aa35]" />
+                    <div className="absolute bottom-[48px] left-[38%] h-9 w-3 rounded-sm bg-[#886419]" />
+                    <div className="absolute bottom-[76px] left-[51%] h-20 w-3 rounded-sm bg-[#e4b43d]" />
+                    <div className="absolute bottom-[94px] left-[64%] h-24 w-3 rounded-sm bg-[#c69327]" />
+                    <div className="absolute bottom-[108px] left-[77%] h-28 w-3 rounded-sm bg-[#efc34b]" />
+
+                    <div className="absolute bottom-4 right-4 rounded-lg border border-[#4d3a15] bg-[#0a0a0a]/90 px-3 py-2 text-right">
+                      <div className="text-[10px] text-[#777]">
+                        AI MARKET ENGINE
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-[#dcae35]">
+                        ACTIVE
+                      </div>
+                    </div>
+
+                    <div className="absolute left-4 top-4 rounded-lg border border-[#4d3a15] bg-[#0a0a0a]/90 px-3 py-2">
+                      <div className="text-[10px] text-[#777]">
+                        MARKET
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-[#e4b43d]">
+                        LIVE
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+
+              <StatCard
+                label="کل سیگنال‌ها"
+                value={formatNumber(signalsCount)}
+                icon="↗"
+                description="سیگنال ثبت‌شده در حساب"
+              />
+
+              <StatCard
+                label="ربات‌ها"
+                value={formatNumber(botsCount)}
+                icon="♙"
+                description={`${formatNumber(activeBotsCount)} ربات فعال`}
+              />
+
+              <StatCard
+                label="معاملات"
+                value={formatNumber(tradesCount)}
+                icon="◈"
+                description={`${formatNumber(openTradesCount)} معامله باز`}
+              />
+
+              <StatCard
+                label="پلن حساب"
+                value={String(user.plan || "FREE")}
+                icon="♛"
+                description="وضعیت اشتراک حساب"
+              />
+            </div>
+
+            {/* Market strip */}
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <MarketMini symbol="BTC/USDT" value="—" />
+              <MarketMini symbol="ETH/USDT" value="—" />
+              <MarketMini symbol="XAU/USD" value="—" />
+              <MarketMini symbol="EUR/USD" value="—" />
+              <MarketMini symbol="GBP/USD" value="—" />
+            </div>
+
+            <div className="mt-7 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
+
+              {/* Signals */}
+              <section className="overflow-hidden rounded-[20px] border border-[#30240f] bg-[#080808]">
+                <div className="flex items-center justify-between border-b border-[#211a0d] px-4 py-4 sm:px-5">
+                  <div>
+                    <h2 className="text-base font-black text-white sm:text-lg">
+                      سیگنال‌های معاملاتی
+                    </h2>
+                    <p className="mt-1 text-[11px] text-[#696969]">
+                      اطلاعات واقعی ذخیره‌شده در سیستم
+                    </p>
+                  </div>
+
+                  <Link
+                    href="/signals"
+                    className="rounded-lg border border-[#463612] bg-[#120f08] px-3 py-2 text-xs text-[#d2a93c] transition hover:border-[#76591c]"
+                  >
+                    مشاهده همه
+                  </Link>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <div className="min-w-[650px]">
+                    <div className="grid grid-cols-5 border-b border-[#17130c] px-5 py-3 text-[10px] text-[#666]">
+                      <div>وضعیت</div>
+                      <div>دارایی</div>
+                      <div>سیگنال</div>
+                      <div>وضعیت</div>
+                      <div>اطلاعات</div>
+                    </div>
+
+                    <div className="px-5">
+                      <EmptyRow
+                        title="هنوز سیگنالی ثبت نشده است"
+                        description="سیگنال‌های واقعی پس از ایجاد توسط موتور تحلیل یا ربات در این بخش نمایش داده می‌شوند."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* System performance */}
+              <section className="rounded-[20px] border border-[#30240f] bg-[#080808] p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-black text-white">
+                      وضعیت سیستم
+                    </h2>
+                    <p className="mt-1 text-[11px] text-[#696969]">
+                      وضعیت سرویس‌های اصلی
+                    </p>
+                  </div>
+
+                  <span className="flex items-center gap-2 rounded-full border border-[#173923] bg-[#09150e] px-3 py-1.5 text-[10px] text-[#4ed47f]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#35c970]" />
+                    آنلاین
+                  </span>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  <SystemRow title="Trading AI" status="فعال" />
+                  <SystemRow title="Database" status="متصل" />
+                  <SystemRow title="Signal Engine" status="آماده" />
+                  <SystemRow title="Trading Bots" status={`${activeBotsCount} فعال`} />
+                </div>
+
+                <Link
+                  href="/ai-analysis"
+                  className="mt-5 flex h-11 items-center justify-center rounded-xl border border-[#4c3913] bg-[#110d06] text-xs font-bold text-[#d9ae3d] transition hover:bg-[#181208]"
+                >
+                  اجرای تحلیل بازار
+                </Link>
+              </section>
+            </div>
+
+            {/* Quick services */}
+            <div className="mt-7">
+              <div className="mb-4 flex items-end justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-white">
+                    ابزارهای Trading AI
+                  </h2>
+                  <p className="mt-1 text-xs text-[#696969]">
+                    دسترسی سریع به امکانات پلتفرم
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {quickActions.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="group rounded-2xl border border-[#30240f] bg-[#080808] p-4 transition duration-200 hover:-translate-y-1 hover:border-[#755719] hover:bg-[#0d0c09]"
+                  >
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#4b3915] bg-[#120e07] text-lg text-[#d7aa37] transition group-hover:border-[#9a711e] group-hover:shadow-[0_0_20px_rgba(209,157,38,0.12)]">
+                      {item.icon}
+                    </div>
+
+                    <h3 className="mt-4 text-sm font-bold text-[#e1e1e1]">
+                      {item.title}
+                    </h3>
+
+                    <p className="mt-2 text-[10px] leading-5 text-[#696969]">
+                      {item.description}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Bottom panels */}
+            <div className="mt-7 grid gap-5 md:grid-cols-3">
+
+              <BottomPanel
+                title="تحلیل هوشمند"
+                icon="✦"
+                description="موتور تحلیل می‌تواند داده‌های بازار را برای تولید تحلیل بررسی کند."
+                href="/ai-analysis"
+                button="شروع تحلیل"
+              />
+
+              <BottomPanel
+                title="مدیریت ربات‌ها"
+                icon="♙"
+                description="ربات‌های معاملاتی حساب خود را مشاهده و تنظیم کنید."
+                href="/bots"
+                button="مدیریت ربات‌ها"
+              />
+
+              <BottomPanel
+                title="اتصال بروکر"
+                icon="▣"
+                description="برای اجرای معاملات واقعی، اتصال بروکر خود را مدیریت کنید."
+                href="/broker"
+                button="اتصال بروکر"
+              />
+            </div>
+
+            {/* Footer */}
+            <footer className="mt-8 border-t border-[#1d170b] pt-5">
+              <div className="flex flex-col gap-4 text-xs text-[#5e5e5e] sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  © {new Date().getFullYear()} Trading AI
+                  <span className="mx-2 text-[#30240f]">•</span>
+                  Smart Trading Platform
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <Link
+                    href="/support"
+                    className="transition hover:text-[#cba237]"
+                  >
+                    پشتیبانی
+                  </Link>
+
+                  <Link
+                    href="/terms"
+                    className="transition hover:text-[#cba237]"
+                  >
+                    قوانین
+                  </Link>
+
+                  <span className="flex items-center gap-2 text-[#5b9a70]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#3bc66d]" />
+                    سیستم فعال
+                  </span>
+                </div>
+              </div>
+            </footer>
+          </section>
+        </div>
+      </div>
     </main>
+  );
+}
+
+/* ----------------------------- */
+/* Components                     */
+/* ----------------------------- */
+
+function StatCard({
+  label,
+  value,
+  icon,
+  description,
+}: {
+  label: string;
+  value: string;
+  icon: string;
+  description: string;
+}) {
+  return (
+    <div className="group rounded-2xl border border-[#2c220e] bg-[#080808] p-4 transition hover:border-[#6d5218]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] text-[#696969]">{label}</p>
+
+          <div className="mt-3 text-2xl font-black text-white">
+            {value}
+          </div>
+
+          <p className="mt-1 text-[10px] text-[#5e5e5e]">
+            {description}
+          </p>
+        </div>
+
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#443411] bg-[#110d06] text-[#d6a936]">
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MarketMini({
+  symbol,
+  value,
+}: {
+  symbol: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-[#2c220f] bg-[#080808] px-3 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold text-[#bcbcbc]">
+          {symbol}
+        </span>
+
+        <span className="h-2 w-2 rounded-full bg-[#8d681d]" />
+      </div>
+
+      <div className="mt-2 text-xs text-[#777]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function EmptyRow({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex min-h-[190px] flex-col items-center justify-center py-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#4a3814] bg-[#110d06] text-xl text-[#c99d2d]">
+        ↗
+      </div>
+
+      <h3 className="mt-4 text-sm font-bold text-[#d7d7d7]">
+        {title}
+      </h3>
+
+      <p className="mt-2 max-w-md text-xs leading-6 text-[#666]">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function SystemRow({
+  title,
+  status,
+}: {
+  title: string;
+  status: string;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-[#211a0d] bg-[#0b0b0b] px-3 py-3">
+      <span className="text-xs text-[#999]">{title}</span>
+
+      <span className="flex items-center gap-2 text-[10px] text-[#5ec47e]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[#3bc66d]" />
+        {status}
+      </span>
+    </div>
+  );
+}
+
+function BottomPanel({
+  title,
+  icon,
+  description,
+  href,
+  button,
+}: {
+  title: string;
+  icon: string;
+  description: string;
+  href: string;
+  button: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#30240f] bg-[#080808] p-5">
+      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#493712] bg-[#110d06] text-[#d5a633]">
+        {icon}
+      </div>
+
+      <h3 className="mt-4 text-base font-black text-white">
+        {title}
+      </h3>
+
+      <p className="mt-2 min-h-[48px] text-xs leading-6 text-[#686868]">
+        {description}
+      </p>
+
+      <Link
+        href={href}
+        className="mt-4 flex h-10 items-center justify-center rounded-xl border border-[#4b3813] bg-[#110d06] text-xs font-bold text-[#d5aa39] transition hover:bg-[#181208]"
+      >
+        {button}
+      </Link>
+    </div>
   );
 }
