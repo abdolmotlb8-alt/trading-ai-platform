@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/* =========================================================
+   TYPES
+========================================================= */
 
 type Candle = {
   datetime: string;
@@ -25,6 +31,7 @@ type Instrument = {
 
 type Signal = {
   id: string;
+
   symbol: string;
   name: string;
   market: MarketType;
@@ -49,6 +56,7 @@ type Signal = {
   trend: "BULLISH" | "BEARISH" | "NEUTRAL";
 
   rsi: number;
+
   ema20: number;
   ema50: number;
 
@@ -60,14 +68,36 @@ type Signal = {
 
   support1: number;
   support2: number;
+
   resistance1: number;
   resistance2: number;
 
   candleTime: string;
   generatedAt: string;
 
+  expiresAt: string;
+
   reasons: string[];
+
+  persisted: boolean;
+  telegramSent: boolean;
+  telegramMessageId: string | null;
 };
+
+type AnalysisResult = {
+  signal: Signal;
+  candlesAnalyzed: number;
+};
+
+type TelegramResult = {
+  sent: boolean;
+  messageId: string | null;
+  error: string | null;
+};
+
+/* =========================================================
+   INSTRUMENTS
+========================================================= */
 
 const INSTRUMENTS: Instrument[] = [
   {
@@ -110,12 +140,14 @@ const ALLOWED_INTERVALS = new Set([
   "4h",
 ]);
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function toNumber(value: unknown): number {
   const parsed = Number(value);
 
-  return Number.isFinite(parsed)
-    ? parsed
-    : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function round(
@@ -126,10 +158,7 @@ function round(
     return 0;
   }
 
-  const multiplier = Math.pow(
-    10,
-    decimals
-  );
+  const multiplier = Math.pow(10, decimals);
 
   return (
     Math.round(value * multiplier) /
@@ -157,6 +186,56 @@ function decimalsForSymbol(
 
   return 5;
 }
+
+function intervalToMinutes(
+  interval: string
+): number {
+  switch (interval) {
+    case "5min":
+      return 5;
+
+    case "15min":
+      return 15;
+
+    case "30min":
+      return 30;
+
+    case "1h":
+      return 60;
+
+    case "4h":
+      return 240;
+
+    default:
+      return 15;
+  }
+}
+
+function signalExpiryMinutes(
+  interval: string
+): number {
+  const minutes =
+    intervalToMinutes(interval);
+
+  return Math.max(
+    minutes * 8,
+    60
+  );
+}
+
+function addMinutes(
+  date: Date,
+  minutes: number
+): Date {
+  return new Date(
+    date.getTime() +
+      minutes * 60 * 1000
+  );
+}
+
+/* =========================================================
+   EMA
+========================================================= */
 
 function calculateEMA(
   values: number[],
@@ -188,6 +267,10 @@ function calculateEMA(
 
   return result;
 }
+
+/* =========================================================
+   RSI
+========================================================= */
 
 function calculateRSI(
   values: number[],
@@ -287,6 +370,10 @@ function calculateRSI(
   return result;
 }
 
+/* =========================================================
+   ATR
+========================================================= */
+
 function calculateATR(
   candles: Candle[],
   period = 14
@@ -366,7 +453,8 @@ function calculateATR(
 
   for (
     let i = 0;
-    i < Math.min(
+    i <
+    Math.min(
       period,
       candles.length
     );
@@ -389,6 +477,10 @@ function calculateATR(
 
   return result;
 }
+
+/* =========================================================
+   MACD
+========================================================= */
 
 function calculateMACD(
   values: number[]
@@ -432,6 +524,10 @@ function calculateMACD(
   };
 }
 
+/* =========================================================
+   MARKET DATA
+========================================================= */
+
 async function fetchMarketCandles(
   symbol: string,
   interval: string
@@ -442,7 +538,7 @@ async function fetchMarketCandles(
 
   if (!apiKey) {
     throw new Error(
-      "TWELVE_DATA_API_KEY is missing"
+      "TWELVE_DATA_API_KEY در Environment Variables وجود ندارد."
     );
   }
 
@@ -472,6 +568,11 @@ async function fetchMarketCandles(
   );
 
   url.searchParams.set(
+    "order",
+    "asc"
+  );
+
+  url.searchParams.set(
     "apikey",
     apiKey
   );
@@ -498,14 +599,14 @@ async function fetchMarketCandles(
     data = JSON.parse(text);
   } catch {
     throw new Error(
-      `Market API returned invalid JSON. HTTP ${response.status}`
+      `پاسخ Twelve Data معتبر نیست. HTTP ${response.status}`
     );
   }
 
   if (!response.ok) {
     throw new Error(
       data?.message ||
-        `Market API HTTP ${response.status}`
+        `Twelve Data HTTP ${response.status}`
     );
   }
 
@@ -515,7 +616,7 @@ async function fetchMarketCandles(
   ) {
     throw new Error(
       data?.message ||
-        "Market provider error"
+        "خطای سرویس Twelve Data"
     );
   }
 
@@ -525,7 +626,7 @@ async function fetchMarketCandles(
     )
   ) {
     throw new Error(
-      `No candle data received for ${symbol}`
+      `برای ${symbol} داده کندل دریافت نشد.`
     );
   }
 
@@ -573,19 +674,22 @@ async function fetchMarketCandles(
           item.high > 0 &&
           item.low > 0 &&
           item.close > 0
-      )
-      .reverse();
+      );
 
   if (
-    candles.length < 60
+    candles.length < 80
   ) {
     throw new Error(
-      `Not enough market candles for ${symbol}`
+      `داده کافی برای تحلیل ${symbol} وجود ندارد. تعداد کندل: ${candles.length}`
     );
   }
 
   return candles;
 }
+
+/* =========================================================
+   SUPPORT / RESISTANCE
+========================================================= */
 
 function calculateLevels(
   candles: Candle[],
@@ -660,11 +764,15 @@ function calculateLevels(
   };
 }
 
+/* =========================================================
+   ANALYSIS
+========================================================= */
+
 function analyze(
   instrument: Instrument,
   candles: Candle[],
   interval: string
-): Signal {
+): AnalysisResult {
   const decimals =
     decimalsForSymbol(
       instrument.symbol
@@ -713,6 +821,9 @@ function analyze(
   const current =
     candles[lastIndex];
 
+  const previous =
+    candles[previousIndex];
+
   const price =
     current.close;
 
@@ -721,6 +832,9 @@ function analyze(
 
   const currentEMA50 =
     ema50[lastIndex];
+
+  const previousEMA20 =
+    ema20[previousIndex];
 
   const currentRSI =
     rsi[lastIndex];
@@ -762,21 +876,26 @@ function analyze(
   const sellReasons: string[] =
     [];
 
-  /*
-   * TREND
-   */
+  /* =====================================================
+     TREND
+  ===================================================== */
 
   if (
     price >
     currentEMA20
   ) {
-    buyScore += 15;
+    buyScore += 12;
 
     buyReasons.push(
       "قیمت بالای EMA20 قرار دارد."
     );
-  } else {
-    sellScore += 15;
+  }
+
+  if (
+    price <
+    currentEMA20
+  ) {
+    sellScore += 12;
 
     sellReasons.push(
       "قیمت زیر EMA20 قرار دارد."
@@ -787,7 +906,7 @@ function analyze(
     currentEMA20 >
     currentEMA50
   ) {
-    buyScore += 20;
+    buyScore += 18;
 
     buyReasons.push(
       "EMA20 بالاتر از EMA50 است."
@@ -798,42 +917,74 @@ function analyze(
     currentEMA20 <
     currentEMA50
   ) {
-    sellScore += 20;
+    sellScore += 18;
 
     sellReasons.push(
       "EMA20 پایین‌تر از EMA50 است."
     );
   }
 
-  /*
-   * RSI
-   */
+  /* =====================================================
+     EMA MOMENTUM
+  ===================================================== */
+
+  if (
+    currentEMA20 >
+      previousEMA20
+  ) {
+    buyScore += 7;
+
+    buyReasons.push(
+      "شیب EMA20 صعودی است."
+    );
+  }
+
+  if (
+    currentEMA20 <
+      previousEMA20
+  ) {
+    sellScore += 7;
+
+    sellReasons.push(
+      "شیب EMA20 نزولی است."
+    );
+  }
+
+  /* =====================================================
+     RSI
+  ===================================================== */
 
   if (
     currentRSI >= 52 &&
-    currentRSI <= 68
+    currentRSI <= 70
   ) {
     buyScore += 15;
 
     buyReasons.push(
-      "RSI مومنتوم صعودی را تأیید می‌کند."
+      `RSI روی ${round(
+        currentRSI,
+        2
+      )} است و مومنتوم صعودی را تأیید می‌کند.`
     );
   }
 
   if (
     currentRSI <= 48 &&
-    currentRSI >= 32
+    currentRSI >= 30
   ) {
     sellScore += 15;
 
     sellReasons.push(
-      "RSI مومنتوم نزولی را تأیید می‌کند."
+      `RSI روی ${round(
+        currentRSI,
+        2
+      )} است و مومنتوم نزولی را تأیید می‌کند.`
     );
   }
 
-  /*
-   * MACD
-   */
+  /* =====================================================
+     MACD
+  ===================================================== */
 
   if (
     currentMACD >
@@ -870,34 +1021,34 @@ function analyze(
       previousSignal;
 
   if (bullishCross) {
-    buyScore += 10;
+    buyScore += 8;
 
     buyReasons.push(
-      "کراس صعودی MACD در آخرین کندل ثبت شده است."
+      "کراس صعودی MACD تأیید شده است."
     );
   }
 
   if (bearishCross) {
-    sellScore += 10;
+    sellScore += 8;
 
     sellReasons.push(
-      "کراس نزولی MACD در آخرین کندل ثبت شده است."
+      "کراس نزولی MACD تأیید شده است."
     );
   }
 
-  /*
-   * MOMENTUM
-   */
+  /* =====================================================
+     MACD HISTOGRAM
+  ===================================================== */
 
   if (
     histogram > 0 &&
     currentMACD >
       previousMACD
   ) {
-    buyScore += 10;
+    buyScore += 8;
 
     buyReasons.push(
-      "مومنتوم MACD در حال تقویت است."
+      "هیستوگرام MACD مومنتوم صعودی را تأیید می‌کند."
     );
   }
 
@@ -906,16 +1057,62 @@ function analyze(
     currentMACD <
       previousMACD
   ) {
-    sellScore += 10;
+    sellScore += 8;
 
     sellReasons.push(
-      "مومنتوم نزولی MACD در حال تقویت است."
+      "هیستوگرام MACD مومنتوم نزولی را تأیید می‌کند."
     );
   }
 
-  /*
-   * MARKET STRUCTURE
-   */
+  /* =====================================================
+     CANDLE MOMENTUM
+  ===================================================== */
+
+  const candleRange =
+    current.high -
+    current.low;
+
+  const candleBody =
+    Math.abs(
+      current.close -
+        current.open
+    );
+
+  if (
+    candleRange > 0
+  ) {
+    const bodyRatio =
+      candleBody /
+      candleRange;
+
+    if (
+      current.close >
+        current.open &&
+      bodyRatio >= 0.45
+    ) {
+      buyScore += 7;
+
+      buyReasons.push(
+        "آخرین کندل مومنتوم صعودی مناسبی دارد."
+      );
+    }
+
+    if (
+      current.close <
+        current.open &&
+      bodyRatio >= 0.45
+    ) {
+      sellScore += 7;
+
+      sellReasons.push(
+        "آخرین کندل مومنتوم نزولی مناسبی دارد."
+      );
+    }
+  }
+
+  /* =====================================================
+     MARKET STRUCTURE
+  ===================================================== */
 
   const structure =
     candles.slice(-20);
@@ -934,43 +1131,43 @@ function analyze(
       )
     );
 
-  const bullishStructure =
-    price >
-    recentLow +
-      (recentHigh -
-        recentLow) *
-        0.65;
+  const range =
+    recentHigh -
+    recentLow;
 
-  const bearishStructure =
-    price <
-    recentLow +
-      (recentHigh -
-        recentLow) *
-        0.35;
+  if (range > 0) {
+    const position =
+      (price -
+        recentLow) /
+      range;
 
-  if (
-    bullishStructure
-  ) {
-    buyScore += 10;
+    if (
+      position >= 0.65
+    ) {
+      buyScore += 10;
 
-    buyReasons.push(
-      "ساختار کوتاه‌مدت بازار متمایل به صعود است."
-    );
+      buyReasons.push(
+        "قیمت در بخش بالایی ساختار کوتاه‌مدت قرار دارد."
+      );
+    }
+
+    if (
+      position <= 0.35
+    ) {
+      sellScore += 10;
+
+      sellReasons.push(
+        "قیمت در بخش پایینی ساختار کوتاه‌مدت قرار دارد."
+      );
+    }
   }
 
-  if (
-    bearishStructure
-  ) {
-    sellScore += 10;
+  /* =====================================================
+     FINAL DECISION
 
-    sellReasons.push(
-      "ساختار کوتاه‌مدت بازار متمایل به نزول است."
-    );
-  }
-
-  /*
-   * FINAL DECISION
-   */
+     حداقل 65 امتیاز + اختلاف حداقل 8
+     تا BUY/SELL صادر شود.
+  ===================================================== */
 
   let side: SignalSide =
     "WAIT";
@@ -998,21 +1195,20 @@ function analyze(
       )
     );
 
-  let confidence = Math.min(
-    95,
-    strength
-  );
+  const confidence =
+    side === "WAIT"
+      ? Math.min(
+          68,
+          strength
+        )
+      : Math.min(
+          95,
+          strength
+        );
 
-  if (side === "WAIT") {
-    confidence = Math.min(
-      68,
-      strength
-    );
-  }
-
-  /*
-   * ATR RISK MANAGEMENT
-   */
+  /* =====================================================
+     RISK / TARGETS
+  ===================================================== */
 
   let entry = price;
 
@@ -1037,7 +1233,7 @@ function analyze(
     | null = null;
 
   if (
-    side === "BUY" &&
+    side !== "WAIT" &&
     currentATR > 0
   ) {
     const risk =
@@ -1045,50 +1241,52 @@ function analyze(
 
     entry = price;
 
-    stopLoss =
-      entry - risk;
+    if (side === "BUY") {
+      stopLoss =
+        entry - risk;
 
-    takeProfit1 =
-      entry + risk;
+      takeProfit1 =
+        entry + risk;
 
-    takeProfit2 =
-      entry + risk * 2;
+      takeProfit2 =
+        entry + risk * 2;
 
-    takeProfit3 =
-      entry + risk * 3;
+      takeProfit3 =
+        entry + risk * 3;
 
-    riskReward = 3;
+      riskReward = 3;
+    }
+
+    if (side === "SELL") {
+      stopLoss =
+        entry + risk;
+
+      takeProfit1 =
+        entry - risk;
+
+      takeProfit2 =
+        entry - risk * 2;
+
+      takeProfit3 =
+        entry - risk * 3;
+
+      riskReward = 3;
+    }
   }
 
-  if (
-    side === "SELL" &&
-    currentATR > 0
-  ) {
-    const risk =
-      currentATR * 1.5;
-
-    entry = price;
-
-    stopLoss =
-      entry + risk;
-
-    takeProfit1 =
-      entry - risk;
-
-    takeProfit2 =
-      entry - risk * 2;
-
-    takeProfit3 =
-      entry - risk * 3;
-
-    riskReward = 3;
-  }
+  /* =====================================================
+     SUPPORT / RESISTANCE
+  ===================================================== */
 
   const levels =
     calculateLevels(
       candles,
       price
     );
+
+  /* =====================================================
+     TREND
+  ===================================================== */
 
   const trend =
     currentEMA20 >
@@ -1099,6 +1297,10 @@ function analyze(
       ? "BEARISH"
       : "NEUTRAL";
 
+  /* =====================================================
+     REASONS
+  ===================================================== */
+
   const reasons =
     side === "BUY"
       ? buyReasons
@@ -1107,10 +1309,25 @@ function analyze(
       : [
           "شرایط ورود معتبر هنوز کامل نشده است.",
           "سیستم منتظر تأیید بیشتر روند و مومنتوم است.",
+          `امتیاز BUY: ${buyScore}`,
+          `امتیاز SELL: ${sellScore}`,
         ];
 
-  return {
-    id: `${instrument.symbol}-${interval}-${Date.now()}`,
+  const generatedAt =
+    new Date();
+
+  const expiresAt =
+    addMinutes(
+      generatedAt,
+      signalExpiryMinutes(
+        interval
+      )
+    );
+
+  const signal: Signal = {
+    id: `${instrument.symbol}-${interval}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
 
     symbol:
       instrument.symbol,
@@ -1215,35 +1432,687 @@ function analyze(
       decimals
     ),
 
-    support1: round(
-      levels.support1,
-      decimals
-    ),
+    support1:
+      round(
+        levels.support1,
+        decimals
+      ),
 
-    support2: round(
-      levels.support2,
-      decimals
-    ),
+    support2:
+      round(
+        levels.support2,
+        decimals
+      ),
 
-    resistance1: round(
-      levels.resistance1,
-      decimals
-    ),
+    resistance1:
+      round(
+        levels.resistance1,
+        decimals
+      ),
 
-    resistance2: round(
-      levels.resistance2,
-      decimals
-    ),
+    resistance2:
+      round(
+        levels.resistance2,
+        decimals
+      ),
 
     candleTime:
       current.datetime,
 
     generatedAt:
-      new Date().toISOString(),
+      generatedAt.toISOString(),
+
+    expiresAt:
+      expiresAt.toISOString(),
 
     reasons,
+
+    persisted: false,
+
+    telegramSent: false,
+
+    telegramMessageId:
+      null,
+  };
+
+  return {
+    signal,
+    candlesAnalyzed:
+      candles.length,
   };
 }
+
+/* =========================================================
+   TELEGRAM
+========================================================= */
+
+async function sendTelegramSignal(
+  signal: Signal
+): Promise<TelegramResult> {
+  if (
+    signal.side ===
+    "WAIT"
+  ) {
+    return {
+      sent: false,
+      messageId: null,
+      error: null,
+    };
+  }
+
+  const botToken =
+    process.env
+      .TELEGRAM_BOT_TOKEN;
+
+  const chatId =
+    process.env
+      .TELEGRAM_SIGNAL_CHAT_ID ||
+    process.env
+      .TELEGRAM_CHAT_ID;
+
+  if (!botToken) {
+    return {
+      sent: false,
+      messageId: null,
+      error:
+        "TELEGRAM_BOT_TOKEN تنظیم نشده است.",
+    };
+  }
+
+  if (!chatId) {
+    return {
+      sent: false,
+      messageId: null,
+      error:
+        "TELEGRAM_SIGNAL_CHAT_ID یا TELEGRAM_CHAT_ID تنظیم نشده است.",
+    };
+  }
+
+  const direction =
+    signal.side ===
+    "BUY"
+      ? "🟢 BUY"
+      : "🔴 SELL";
+
+  const trend =
+    signal.trend ===
+    "BULLISH"
+      ? "صعودی"
+      : signal.trend ===
+        "BEARISH"
+      ? "نزولی"
+      : "خنثی";
+
+  const message = [
+    "━━━━━━━━━━━━━━━━━━",
+    "🤖 TRADING AI",
+    "📡 REAL MARKET SIGNAL",
+    "━━━━━━━━━━━━━━━━━━",
+    "",
+    `${direction}  |  ${signal.symbol}`,
+    `📊 تایم‌فریم: ${signal.interval}`,
+    `📈 روند: ${trend}`,
+    `💪 قدرت: ${signal.strength}%`,
+    `🎯 اطمینان: ${signal.confidence}%`,
+    "",
+    `💠 ENTRY: ${signal.entry}`,
+    `🛑 STOP LOSS: ${signal.stopLoss ?? "—"}`,
+    "",
+    `🎯 TP1: ${signal.takeProfit1 ?? "—"}`,
+    `🎯 TP2: ${signal.takeProfit2 ?? "—"}`,
+    `🎯 TP3: ${signal.takeProfit3 ?? "—"}`,
+    "",
+    `⚖️ R:R = ${
+      signal.riskReward
+        ? `1:${signal.riskReward}`
+        : "—"
+    }`,
+    "",
+    `💰 قیمت فعلی: ${signal.price}`,
+    "",
+    "📌 دلایل:",
+    ...signal.reasons
+      .slice(0, 5)
+      .map(
+        (reason) =>
+          `• ${reason}`
+      ),
+    "",
+    `⏱ اعتبار سیگنال تا: ${new Date(
+      signal.expiresAt
+    ).toLocaleString(
+      "fa-IR"
+    )}`,
+    "",
+    "⚠️ این پیام سیگنال الگوریتمی بر اساس داده بازار است و تضمین سود نیست.",
+    "━━━━━━━━━━━━━━━━━━",
+  ].join("\n");
+
+  try {
+    const url =
+      `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+    const response =
+      await fetch(
+        url,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: message,
+          }),
+
+          cache: "no-store",
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data?.ok
+    ) {
+      return {
+        sent: false,
+        messageId: null,
+        error:
+          data?.description ||
+          `Telegram HTTP ${response.status}`,
+      };
+    }
+
+    return {
+      sent: true,
+
+      messageId:
+        data?.result?.message_id
+          ? String(
+              data.result
+                .message_id
+            )
+          : null,
+
+      error: null,
+    };
+  } catch (error) {
+    return {
+      sent: false,
+      messageId: null,
+
+      error:
+        error instanceof Error
+          ? error.message
+          : "خطای اتصال به Telegram",
+    };
+  }
+}
+
+/* =========================================================
+   DATABASE
+========================================================= */
+
+async function persistSignal(
+  signal: Signal
+): Promise<{
+  persisted: boolean;
+  telegramSent: boolean;
+  telegramMessageId: string | null;
+  telegramError: string | null;
+}> {
+  const session =
+    await getSession();
+
+  if (!session?.userId) {
+    return {
+      persisted: false,
+      telegramSent: false,
+      telegramMessageId: null,
+      telegramError:
+        "کاربر وارد نشده است؛ سیگنال فقط برای نمایش تولید شد.",
+    };
+  }
+
+  if (
+    signal.side ===
+    "WAIT"
+  ) {
+    return {
+      persisted: false,
+      telegramSent: false,
+      telegramMessageId: null,
+      telegramError: null,
+    };
+  }
+
+  /*
+   * پیدا کردن ربات فعال کاربر
+   * که با نماد و تایم‌فریم هماهنگ باشد.
+   */
+
+  const bot =
+    await prisma.tradingBot.findFirst(
+      {
+        where: {
+          userId:
+            session.userId,
+
+          isActive: true,
+
+          OR: [
+            {
+              symbol:
+                signal.symbol,
+            },
+
+            {
+              symbol: null,
+            },
+          ],
+
+          AND: [
+            {
+              OR: [
+                {
+                  timeframe:
+                    signal.interval,
+                },
+
+                {
+                  timeframe:
+                    null,
+                },
+              ],
+            },
+          ],
+        },
+
+        orderBy: {
+          updatedAt:
+            "desc",
+        },
+      }
+    );
+
+  if (!bot) {
+    /*
+     * بدون Bot نمی‌توان TradingSignal را
+     * با schema فعلی به دیتابیس متصل کرد.
+     */
+    return {
+      persisted: false,
+      telegramSent: false,
+      telegramMessageId: null,
+      telegramError:
+        "هیچ ربات فعال سازگار با این نماد پیدا نشد؛ ابتدا ربات تحلیل را فعال کنید.",
+    };
+  }
+
+  /*
+   * جلوگیری از ثبت چندباره سیگنال
+   * در فاصله کوتاه.
+   */
+
+  const duplicateSince =
+    new Date(
+      Date.now() -
+        10 * 60 * 1000
+    );
+
+  const duplicate =
+    await prisma.tradingSignal.findFirst(
+      {
+        where: {
+          userId:
+            session.userId,
+
+          botId: bot.id,
+
+          symbol:
+            signal.symbol,
+
+          timeframe:
+            signal.interval,
+
+          direction:
+            signal.side,
+
+          createdAt: {
+            gte:
+              duplicateSince,
+          },
+
+          status: {
+            in: [
+              "WAITING",
+              "ACTIVE",
+              "OPEN",
+            ],
+          },
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+      }
+    );
+
+  if (duplicate) {
+    const metadata =
+      duplicate.metadata &&
+      typeof duplicate.metadata ===
+        "object" &&
+      !Array.isArray(
+        duplicate.metadata
+      )
+        ? (duplicate.metadata as Record<
+            string,
+            unknown
+          >)
+        : {};
+
+    const existingTelegramId =
+      duplicate.telegramMessageId ||
+      null;
+
+    return {
+      persisted: true,
+      telegramSent:
+        duplicate.telegramSent,
+      telegramMessageId:
+        existingTelegramId,
+      telegramError:
+        typeof metadata[
+          "telegramError"
+        ] === "string"
+          ? String(
+              metadata[
+                "telegramError"
+              ]
+            )
+          : null,
+    };
+  }
+
+  /*
+   * Telegram
+   */
+
+  let telegramResult:
+    TelegramResult = {
+      sent: false,
+      messageId: null,
+      error: null,
+    };
+
+  /*
+   * فقط اگر تنظیم ربات اجازه دهد
+   * یا متغیر عمومی فعال باشد.
+   */
+
+  const telegramEnabled =
+    bot.telegramEnabled ||
+    process.env
+      .TELEGRAM_SIGNALS_ENABLED ===
+      "true";
+
+  if (
+    telegramEnabled
+  ) {
+    telegramResult =
+      await sendTelegramSignal(
+        signal
+      );
+  }
+
+  /*
+   * TP1 / TP2 / TP3 را فعلاً در metadata
+   * ذخیره می‌کنیم تا با schema فعلی سازگار باشد.
+   */
+
+  const metadata = {
+    engineVersion:
+      "TRADING_AI_SIGNAL_ENGINE_V2",
+
+    currentPrice:
+      signal.price,
+
+    entry:
+      signal.entry,
+
+    stopLoss:
+      signal.stopLoss,
+
+    takeProfit1:
+      signal.takeProfit1,
+
+    takeProfit2:
+      signal.takeProfit2,
+
+    takeProfit3:
+      signal.takeProfit3,
+
+    riskReward:
+      signal.riskReward,
+
+    strength:
+      signal.strength,
+
+    confidence:
+      signal.confidence,
+
+    trend:
+      signal.trend,
+
+    rsi:
+      signal.rsi,
+
+    ema20:
+      signal.ema20,
+
+    ema50:
+      signal.ema50,
+
+    macd:
+      signal.macd,
+
+    macdSignal:
+      signal.macdSignal,
+
+    macdHistogram:
+      signal.macdHistogram,
+
+    atr:
+      signal.atr,
+
+    support1:
+      signal.support1,
+
+    support2:
+      signal.support2,
+
+    resistance1:
+      signal.resistance1,
+
+    resistance2:
+      signal.resistance2,
+
+    candleTime:
+      signal.candleTime,
+
+    expiresAt:
+      signal.expiresAt,
+
+    reasons:
+      signal.reasons,
+
+    telegramError:
+      telegramResult.error,
+  };
+
+  const created =
+    await prisma.tradingSignal.create(
+      {
+        data: {
+          userId:
+            session.userId,
+
+          botId:
+            bot.id,
+
+          symbol:
+            signal.symbol,
+
+          timeframe:
+            signal.interval,
+
+          direction:
+            signal.side,
+
+          entry:
+            signal.entry,
+
+          /*
+           * takeProfit اصلی را TP3 قرار می‌دهیم
+           * و TP1/TP2/TP3 در metadata نیز هستند.
+           */
+          takeProfit:
+            signal.takeProfit3,
+
+          stopLoss:
+            signal.stopLoss,
+
+          riskReward:
+            signal.riskReward,
+
+          score:
+            signal.strength,
+
+          confidence:
+            signal.confidence,
+
+          status:
+            "ACTIVE",
+
+          source:
+            "REAL_MARKET_ANALYSIS",
+
+          marketStructure:
+            signal.trend,
+
+          supportResistance:
+            JSON.stringify({
+              support1:
+                signal.support1,
+              support2:
+                signal.support2,
+              resistance1:
+                signal.resistance1,
+              resistance2:
+                signal.resistance2,
+            }),
+
+          volatilityConfirmation:
+            `ATR=${signal.atr}`,
+
+          confirmations:
+            signal.reasons,
+
+          reasons:
+            signal.reasons,
+
+          metadata,
+
+          telegramSent:
+            telegramResult.sent,
+
+          telegramMessageId:
+            telegramResult.messageId,
+
+          telegramSentAt:
+            telegramResult.sent
+              ? new Date()
+              : null,
+
+          expiresAt:
+            new Date(
+              signal.expiresAt
+            ),
+        },
+      }
+    );
+
+  /*
+   * TelegramDelivery
+   */
+
+  if (
+    telegramEnabled
+  ) {
+    try {
+      await prisma.telegramDelivery.create(
+        {
+          data: {
+            signalId:
+              created.id,
+
+            channelId:
+              process.env
+                .TELEGRAM_SIGNAL_CHAT_ID ||
+              process.env
+                .TELEGRAM_CHAT_ID ||
+              "UNKNOWN",
+
+            messageId:
+              telegramResult.messageId,
+
+            status:
+              telegramResult.sent
+                ? "SENT"
+                : "FAILED",
+
+            errorMessage:
+              telegramResult.error,
+
+            sentAt:
+              telegramResult.sent
+                ? new Date()
+                : null,
+          },
+        }
+      );
+    } catch (deliveryError) {
+      console.error(
+        "TELEGRAM_DELIVERY_DB_ERROR:",
+        deliveryError
+      );
+    }
+  }
+
+  return {
+    persisted: true,
+
+    telegramSent:
+      telegramResult.sent,
+
+    telegramMessageId:
+      telegramResult.messageId,
+
+    telegramError:
+      telegramResult.error,
+  };
+}
+
+/* =========================================================
+   GET API
+========================================================= */
 
 export async function GET(
   request: NextRequest
@@ -1281,6 +2150,7 @@ export async function GET(
         return NextResponse.json(
           {
             success: false,
+
             error:
               "نماد مورد نظر پشتیبانی نمی‌شود.",
           },
@@ -1291,10 +2161,16 @@ export async function GET(
       }
     }
 
+    /*
+     * تحلیل موازی بازارها
+     */
+
     const results =
       await Promise.allSettled(
         instruments.map(
-          async (instrument) => {
+          async (
+            instrument
+          ) => {
             const candles =
               await fetchMarketCandles(
                 instrument.symbol,
@@ -1318,36 +2194,109 @@ export async function GET(
       error: string;
     }> = [];
 
-    results.forEach(
-      (result, index) => {
-        if (
-          result.status ===
-          "fulfilled"
-        ) {
-          signals.push(
-            result.value
+    /*
+     * ذخیره / Telegram را بعد از تحلیل انجام می‌دهیم.
+     */
+
+    for (
+      let index = 0;
+      index <
+      results.length;
+      index++
+    ) {
+      const result =
+        results[index];
+
+      const instrument =
+        instruments[index];
+
+      if (
+        result.status ===
+        "fulfilled"
+      ) {
+        const signal =
+          result.value
+            .signal;
+
+        try {
+          const persisted =
+            await persistSignal(
+              signal
+            );
+
+          signal.persisted =
+            persisted.persisted;
+
+          signal.telegramSent =
+            persisted.telegramSent;
+
+          signal.telegramMessageId =
+            persisted.telegramMessageId;
+        } catch (persistError) {
+          console.error(
+            "SIGNAL_PERSIST_ERROR:",
+            persistError
           );
-        } else {
+
           errors.push({
             symbol:
-              instruments[index]
-                .symbol,
+              instrument.symbol,
 
             error:
-              result.reason instanceof
+              persistError instanceof
               Error
-                ? result.reason.message
-                : "Unknown market data error",
+                ? persistError.message
+                : "خطا در ثبت سیگنال",
           });
         }
+
+        signals.push(
+          signal
+        );
+      } else {
+        errors.push({
+          symbol:
+            instrument.symbol,
+
+          error:
+            result.reason instanceof
+            Error
+              ? result.reason.message
+              : "خطای ناشناخته در دریافت بازار",
+        });
       }
-    );
+    }
+
+    /*
+     * قوی‌ترین سیگنال‌ها ابتدا
+     */
 
     signals.sort(
       (a, b) =>
         b.strength -
         a.strength
     );
+
+    const buy =
+      signals.filter(
+        (item) =>
+          item.side ===
+          "BUY"
+      );
+
+    const sell =
+      signals.filter(
+        (item) =>
+          item.side ===
+          "SELL"
+      );
+
+    const wait =
+      signals.filter(
+        (item) =>
+          item.side ===
+          "WAIT"
+      );
 
     return NextResponse.json(
       {
@@ -1370,25 +2319,13 @@ export async function GET(
             signals.length,
 
           buy:
-            signals.filter(
-              (item) =>
-                item.side ===
-                "BUY"
-            ).length,
+            buy.length,
 
           sell:
-            signals.filter(
-              (item) =>
-                item.side ===
-                "SELL"
-            ).length,
+            sell.length,
 
           wait:
-            signals.filter(
-              (item) =>
-                item.side ===
-                "WAIT"
-            ).length,
+            wait.length,
         },
       },
       {
@@ -1396,8 +2333,13 @@ export async function GET(
 
         headers: {
           "Cache-Control":
-            "no-store, no-cache, must-revalidate",
-          Pragma: "no-cache",
+            "no-store, no-cache, must-revalidate, proxy-revalidate",
+
+          Pragma:
+            "no-cache",
+
+          Expires:
+            "0",
         },
       }
     );
