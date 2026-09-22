@@ -12,8 +12,28 @@ model User {
   name     String
   email    String @unique
   password String
-  role     String @default("USER")
-  plan     String @default("FREE")
+
+  role String @default("USER")
+  plan String @default("FREE")
+
+  // =========================
+  // Profile
+  // =========================
+
+  avatarUrl   String?
+  avatarEmoji String?
+  bio         String?
+
+  // =========================
+  // Subscription
+  // =========================
+
+  subscriptionStartedAt DateTime?
+  subscriptionExpiresAt DateTime?
+
+  // =========================
+  // Relations
+  // =========================
 
   sessions          Session[]
   supportTickets    SupportTicket[]
@@ -22,11 +42,18 @@ model User {
   trades            Trade[]
   brokerConnections BrokerConnection[]
 
+  passwordResetTokens PasswordResetToken[]
+
   newsSetting NewsSetting?
   newsAlerts  NewsAlert[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([plan])
+  @@index([subscriptionExpiresAt])
+  @@index([createdAt])
 }
 
 model Session {
@@ -37,6 +64,28 @@ model Session {
   expiresAt DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id String @id @default(cuid())
+
+  userId String
+
+  tokenHash String @unique
+
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 model BrokerConnection {
