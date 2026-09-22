@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+type SubscriptionInfo = {
+  plan?: string | null;
+  status?: string | null;
+  startedAt?: string | null;
+  expiresAt?: string | null;
+  remainingDays?: number | null;
+};
+
 type ProfileUser = {
   id: string;
   name: string;
@@ -18,20 +26,14 @@ type ProfileResponse = {
   success?: boolean;
   message?: string;
   user?: ProfileUser;
-  subscription?: {
-    plan?: string | null;
-    status?: string | null;
-    startedAt?: string | null;
-    expiresAt?: string | null;
-    remainingDays?: number | null;
-  };
+  subscription?: SubscriptionInfo | null;
 };
 
 function UserIcon() {
   return (
     <svg
-      width="24"
-      height="24"
+      width="22"
+      height="22"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -154,7 +156,7 @@ function DiamondIcon() {
   );
 }
 
-function formatDate(value?: string | null) {
+function formatDate(value: string | null | undefined) {
   if (!value) {
     return "—";
   }
@@ -172,7 +174,7 @@ function formatDate(value?: string | null) {
   }).format(date);
 }
 
-function getPlanName(plan?: string | null) {
+function getPlanName(plan: string | null | undefined) {
   const value = String(plan || "FREE").toUpperCase();
 
   if (value === "PRO") {
@@ -190,21 +192,71 @@ function getPlanName(plan?: string | null) {
   return "رایگان";
 }
 
+function getSubscriptionStatus(
+  subscription: SubscriptionInfo | null
+) {
+  if (!subscription) {
+    return "رایگان";
+  }
+
+  const status = String(
+    subscription.status || ""
+  ).toUpperCase();
+
+  if (
+    status === "ACTIVE" ||
+    status === "ACTIVATED"
+  ) {
+    return "فعال";
+  }
+
+  if (
+    status === "EXPIRED" ||
+    status === "EXPIRE"
+  ) {
+    return "منقضی شده";
+  }
+
+  if (subscription.expiresAt) {
+    const expires = new Date(
+      subscription.expiresAt
+    ).getTime();
+
+    if (!Number.isNaN(expires)) {
+      if (expires > Date.now()) {
+        return "فعال";
+      }
+
+      return "منقضی شده";
+    }
+  }
+
+  return "فعال";
+}
+
 export default function ProfilePage() {
-  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [user, setUser] =
+    useState<ProfileUser | null>(null);
+
   const [subscription, setSubscription] =
-    useState<ProfileResponse["subscription"]>(null);
+    useState<SubscriptionInfo | null>(null);
 
   const [name, setName] = useState("");
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] =
+    useState<boolean>(true);
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [saving, setSaving] =
+    useState<boolean>(false);
+
+  const [error, setError] =
+    useState<string>("");
+
+  const [success, setSuccess] =
+    useState<string>("");
 
   useEffect(() => {
-    loadProfile();
+    void loadProfile();
   }, []);
 
   async function loadProfile() {
@@ -212,14 +264,19 @@ export default function ProfilePage() {
       setLoading(true);
       setError("");
 
-      const response = await fetch("/api/profile", {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      });
+      const response = await fetch(
+        "/api/profile",
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
 
       const data: ProfileResponse =
-        await response.json().catch(() => ({}));
+        await response.json().catch(
+          () => ({})
+        );
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -240,12 +297,20 @@ export default function ProfilePage() {
       }
 
       setUser(data.user);
-      setName(data.user.name || "");
-      setSubscription(data.subscription || null);
-    } catch (error) {
+
+      setName(
+        typeof data.user.name === "string"
+          ? data.user.name
+          : ""
+      );
+
+      setSubscription(
+        data.subscription ?? null
+      );
+    } catch (err) {
       setError(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "خطایی در دریافت پروفایل رخ داد."
       );
     } finally {
@@ -260,7 +325,9 @@ export default function ProfilePage() {
     const cleanName = name.trim();
 
     if (!cleanName) {
-      setError("نام کاربری نمی‌تواند خالی باشد.");
+      setError(
+        "نام کاربری نمی‌تواند خالی باشد."
+      );
       return;
     }
 
@@ -281,19 +348,24 @@ export default function ProfilePage() {
     try {
       setSaving(true);
 
-      const response = await fetch("/api/profile", {
-        method: "PUT",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: cleanName,
-        }),
-      });
+      const response = await fetch(
+        "/api/profile",
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: cleanName,
+          }),
+        }
+      );
 
       const data: ProfileResponse =
-        await response.json().catch(() => ({}));
+        await response.json().catch(
+          () => ({})
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -304,20 +376,25 @@ export default function ProfilePage() {
 
       if (data.user) {
         setUser(data.user);
-        setName(data.user.name);
+
+        setName(
+          typeof data.user.name === "string"
+            ? data.user.name
+            : cleanName
+        );
       }
 
-      if (data.subscription) {
-        setSubscription(data.subscription);
-      }
+      setSubscription(
+        data.subscription ?? null
+      );
 
       setSuccess(
-        "اطلاعات پروفایل با موفقیت ذخیره شد."
+        "تغییرات با موفقیت ذخیره شد."
       );
-    } catch (error) {
+    } catch (err) {
       setError(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "ذخیره اطلاعات انجام نشد."
       );
     } finally {
@@ -326,7 +403,8 @@ export default function ProfilePage() {
   }
 
   function goDashboard() {
-    window.location.href = "/dashboard";
+    window.location.href =
+      "/dashboard";
   }
 
   if (loading) {
@@ -353,40 +431,50 @@ export default function ProfilePage() {
 
           .profile-loading {
             min-height: 100vh;
+            direction: rtl;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
             background:
               radial-gradient(
-                circle at 80% 10%,
-                rgba(124, 58, 237, 0.16),
+                circle at 85% 5%,
+                rgba(124, 58, 237, 0.18),
                 transparent 30%
               ),
               radial-gradient(
                 circle at 10% 80%,
-                rgba(14, 165, 233, 0.1),
+                rgba(37, 99, 235, 0.1),
                 transparent 30%
               ),
               #030712;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            direction: rtl;
           }
 
           .loading-box {
-            width: min(380px, calc(100% - 32px));
-            padding: 32px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(10, 18, 32, 0.8);
-            border-radius: 28px;
+            width: min(360px, 100%);
+            padding: 30px;
+            border-radius: 25px;
+            border: 1px solid rgba(
+              255,
+              255,
+              255,
+              0.08
+            );
+            background: rgba(
+              8,
+              17,
+              31,
+              0.85
+            );
             text-align: center;
-            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+            color: white;
           }
 
           .loading-logo {
-            width: 58px;
-            height: 58px;
-            margin: 0 auto 20px;
-            border-radius: 18px;
+            width: 55px;
+            height: 55px;
+            margin: 0 auto 18px;
+            border-radius: 17px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -395,21 +483,24 @@ export default function ProfilePage() {
               #7c3aed,
               #2563eb
             );
-            font-size: 18px;
+            font-size: 14px;
             font-weight: 900;
           }
 
           .loading-text {
             color: #94a3b8;
-            font-size: 13px;
+            font-size: 12px;
           }
         `}</style>
 
         <main className="profile-loading">
           <div className="loading-box">
-            <div className="loading-logo">AI</div>
+            <div className="loading-logo">
+              AI
+            </div>
+
             <div className="loading-text">
-              در حال دریافت پروفایل...
+              در حال دریافت اطلاعات پروفایل...
             </div>
           </div>
         </main>
@@ -445,18 +536,28 @@ export default function ProfilePage() {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 24px;
+            padding: 20px;
             background: #030712;
-            color: white;
           }
 
           .error-card {
-            width: min(460px, 100%);
+            width: min(430px, 100%);
             padding: 30px;
-            border-radius: 26px;
-            border: 1px solid rgba(239, 68, 68, 0.18);
-            background: rgba(10, 18, 32, 0.9);
+            border-radius: 25px;
+            border: 1px solid rgba(
+              239,
+              68,
+              68,
+              0.2
+            );
+            background: rgba(
+              8,
+              17,
+              31,
+              0.9
+            );
             text-align: center;
+            color: white;
           }
 
           .error-card h1 {
@@ -466,34 +567,43 @@ export default function ProfilePage() {
 
           .error-card p {
             color: #94a3b8;
-            font-size: 13px;
+            font-size: 12px;
             line-height: 2;
           }
 
           .error-card button {
             border: 0;
             border-radius: 12px;
-            padding: 12px 20px;
+            padding: 12px 22px;
             background: linear-gradient(
               135deg,
               #7c3aed,
               #2563eb
             );
             color: white;
-            font-weight: 700;
+            font-weight: 800;
             cursor: pointer;
           }
         `}</style>
 
         <main className="error-page">
           <div className="error-card">
-            <h1>پروفایل پیدا نشد</h1>
+            <h1>
+              پروفایل در دسترس نیست
+            </h1>
+
             <p>
-              نشست کاربری شما معتبر نیست یا اطلاعات حساب
-              قابل دریافت نیست.
+              نشست حساب کاربری شما معتبر نیست
+              یا اطلاعات پروفایل دریافت نشد.
             </p>
 
-            <button onClick={() => (window.location.href = "/login")}>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href =
+                  "/login";
+              }}
+            >
               ورود به حساب
             </button>
           </div>
@@ -502,16 +612,16 @@ export default function ProfilePage() {
     );
   }
 
-  const planName = getPlanName(
-    subscription?.plan || user.plan
+  const currentPlan = getPlanName(
+    subscription?.plan ?? user.plan
   );
 
-  const isFree =
-    String(user.plan || "FREE").toUpperCase() ===
-    "FREE";
+  const subscriptionStatus =
+    getSubscriptionStatus(subscription);
 
   const remainingDays =
-    typeof subscription?.remainingDays === "number"
+    typeof subscription?.remainingDays ===
+    "number"
       ? subscription.remainingDays
       : null;
 
@@ -550,46 +660,54 @@ export default function ProfilePage() {
         .profile-page {
           min-height: 100vh;
           direction: rtl;
+          padding: 18px;
           background:
             radial-gradient(
               circle at 85% 0%,
               rgba(124, 58, 237, 0.15),
-              transparent 27%
+              transparent 28%
             ),
             radial-gradient(
-              circle at 5% 55%,
+              circle at 0% 65%,
               rgba(14, 165, 233, 0.08),
               transparent 25%
             ),
             #030712;
-          padding: 18px;
         }
 
         .profile-container {
-          width: min(980px, 100%);
+          width: min(940px, 100%);
           margin: 0 auto;
         }
 
         .topbar {
-          height: 64px;
-          border: 1px solid rgba(255, 255, 255, 0.07);
-          background: rgba(7, 16, 30, 0.76);
-          backdrop-filter: blur(22px);
-          -webkit-backdrop-filter: blur(22px);
-          border-radius: 20px;
+          height: 62px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 18px;
-          margin-bottom: 28px;
+          padding: 0 16px;
+          margin-bottom: 26px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.07
+          );
+          border-radius: 19px;
+          background: rgba(
+            7,
+            16,
+            30,
+            0.78
+          );
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
         }
 
         .brand {
           display: flex;
           align-items: center;
-          gap: 11px;
-          color: white;
-          text-decoration: none;
+          gap: 10px;
         }
 
         .brand-logo {
@@ -604,121 +722,206 @@ export default function ProfilePage() {
             #7c3aed,
             #2563eb
           );
-          box-shadow:
-            0 10px 30px rgba(124, 58, 237, 0.2);
+          color: white;
           font-size: 12px;
           font-weight: 900;
+          box-shadow:
+            0 10px 30px rgba(
+              124,
+              58,
+              237,
+              0.2
+            );
         }
 
         .brand-name {
-          font-size: 13px;
+          color: #f8fafc;
+          font-size: 12px;
           font-weight: 900;
-          letter-spacing: 0.8px;
+          letter-spacing: 1px;
+          direction: ltr;
         }
 
         .brand-sub {
-          margin-top: 2px;
-          color: #64748b;
-          font-size: 8px;
-          letter-spacing: 1.8px;
+          margin-top: 3px;
+          color: #475569;
+          font-size: 7px;
+          letter-spacing: 1.7px;
           direction: ltr;
         }
 
         .back-button {
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.035);
-          color: #cbd5e1;
-          height: 40px;
-          padding: 0 13px;
-          border-radius: 11px;
-          cursor: pointer;
+          height: 38px;
           display: flex;
           align-items: center;
-          gap: 8px;
-          font-size: 11px;
+          gap: 7px;
+          padding: 0 12px;
+          border-radius: 11px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.08
+          );
+          background: rgba(
+            255,
+            255,
+            255,
+            0.025
+          );
+          color: #94a3b8;
+          font-size: 10px;
+          cursor: pointer;
           transition: 0.2s ease;
         }
 
         .back-button:hover {
-          background: rgba(124, 58, 237, 0.1);
-          border-color: rgba(124, 58, 237, 0.25);
           color: white;
+          border-color: rgba(
+            139,
+            92,
+            246,
+            0.3
+          );
+          background: rgba(
+            139,
+            92,
+            246,
+            0.07
+          );
         }
 
         .page-heading {
-          margin-bottom: 18px;
+          margin-bottom: 17px;
         }
 
         .page-heading h1 {
           margin: 0;
-          font-size: clamp(27px, 5vw, 38px);
+          color: white;
+          font-size: clamp(
+            28px,
+            5vw,
+            38px
+          );
           font-weight: 900;
-          letter-spacing: -0.8px;
+          letter-spacing: -1px;
         }
 
         .page-heading p {
-          margin: 9px 0 0;
+          margin: 8px 0 0;
           color: #64748b;
-          font-size: 12px;
+          font-size: 11px;
         }
 
         .notice {
-          border-radius: 14px;
-          padding: 12px 15px;
-          margin-bottom: 16px;
-          font-size: 12px;
+          margin-bottom: 14px;
+          padding: 12px 14px;
+          border-radius: 13px;
+          font-size: 11px;
         }
 
         .notice.success {
-          background: rgba(16, 185, 129, 0.08);
-          border: 1px solid rgba(16, 185, 129, 0.18);
           color: #6ee7b7;
+          background: rgba(
+            16,
+            185,
+            129,
+            0.07
+          );
+          border: 1px solid rgba(
+            16,
+            185,
+            129,
+            0.17
+          );
         }
 
         .notice.error {
-          background: rgba(239, 68, 68, 0.08);
-          border: 1px solid rgba(239, 68, 68, 0.18);
           color: #fca5a5;
+          background: rgba(
+            239,
+            68,
+            68,
+            0.07
+          );
+          border: 1px solid rgba(
+            239,
+            68,
+            68,
+            0.17
+          );
         }
 
         .profile-card {
-          border: 1px solid rgba(255, 255, 255, 0.075);
-          background: rgba(7, 16, 30, 0.78);
-          backdrop-filter: blur(22px);
-          -webkit-backdrop-filter: blur(22px);
-          border-radius: 28px;
           overflow: hidden;
+          border-radius: 26px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.075
+          );
+          background: rgba(
+            7,
+            16,
+            30,
+            0.8
+          );
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
           box-shadow:
-            0 25px 70px rgba(0, 0, 0, 0.25);
+            0 25px 70px rgba(
+              0,
+              0,
+              0,
+              0.25
+            );
         }
 
         .profile-head {
-          padding: 26px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
           display: flex;
           align-items: center;
-          gap: 20px;
+          gap: 18px;
+          padding: 24px;
+          border-bottom: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.06
+          );
         }
 
         .avatar {
-          width: 88px;
-          height: 88px;
-          min-width: 88px;
-          border-radius: 25px;
-          border: 1px solid rgba(139, 92, 246, 0.3);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(124, 58, 237, 0.18),
-              rgba(37, 99, 235, 0.13)
-            );
+          width: 82px;
+          height: 82px;
+          min-width: 82px;
+          overflow: hidden;
           display: flex;
           align-items: center;
           justify-content: center;
-          overflow: hidden;
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.06),
-            0 15px 35px rgba(0, 0, 0, 0.2);
+          border-radius: 24px;
+          border: 1px solid rgba(
+            139,
+            92,
+            246,
+            0.3
+          );
+          background:
+            linear-gradient(
+              145deg,
+              rgba(
+                124,
+                58,
+                237,
+                0.18
+              ),
+              rgba(
+                37,
+                99,
+                235,
+                0.13
+              )
+            );
         }
 
         .avatar img {
@@ -728,7 +931,7 @@ export default function ProfilePage() {
         }
 
         .avatar-emoji {
-          font-size: 42px;
+          font-size: 39px;
           line-height: 1;
         }
 
@@ -739,7 +942,7 @@ export default function ProfilePage() {
         .identity-name {
           margin: 0;
           color: white;
-          font-size: 23px;
+          font-size: 22px;
           font-weight: 900;
           overflow-wrap: anywhere;
         }
@@ -747,64 +950,85 @@ export default function ProfilePage() {
         .identity-email {
           margin-top: 7px;
           color: #64748b;
-          font-size: 12px;
+          font-size: 11px;
           direction: ltr;
           text-align: right;
           overflow-wrap: anywhere;
         }
 
         .identity-badges {
-          margin-top: 12px;
           display: flex;
           flex-wrap: wrap;
-          gap: 7px;
+          gap: 6px;
+          margin-top: 11px;
         }
 
         .badge {
-          border-radius: 999px;
           padding: 5px 9px;
-          font-size: 9px;
-          font-weight: 800;
+          border-radius: 999px;
+          font-size: 8px;
+          font-weight: 900;
         }
 
         .badge-role {
-          background: rgba(59, 130, 246, 0.09);
-          border: 1px solid rgba(59, 130, 246, 0.17);
           color: #93c5fd;
+          background: rgba(
+            59,
+            130,
+            246,
+            0.08
+          );
+          border: 1px solid rgba(
+            59,
+            130,
+            246,
+            0.16
+          );
         }
 
         .badge-plan {
-          background: rgba(139, 92, 246, 0.1);
-          border: 1px solid rgba(139, 92, 246, 0.2);
           color: #c4b5fd;
+          background: rgba(
+            139,
+            92,
+            246,
+            0.09
+          );
+          border: 1px solid rgba(
+            139,
+            92,
+            246,
+            0.17
+          );
         }
 
         .profile-body {
-          padding: 26px;
+          padding: 24px;
         }
 
         .section-title {
           margin: 0 0 5px;
-          font-size: 15px;
+          color: white;
+          font-size: 14px;
           font-weight: 900;
         }
 
         .section-description {
-          margin: 0 0 22px;
+          margin: 0 0 21px;
           color: #64748b;
-          font-size: 11px;
+          font-size: 10px;
           line-height: 1.9;
         }
 
         .field {
-          margin-bottom: 18px;
+          margin-bottom: 17px;
         }
 
         .field-label {
           display: block;
           margin-bottom: 8px;
           color: #cbd5e1;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 800;
         }
 
@@ -814,8 +1038,8 @@ export default function ProfilePage() {
 
         .input-icon {
           position: absolute;
-          right: 14px;
           top: 50%;
+          right: 14px;
           transform: translateY(-50%);
           color: #64748b;
           display: flex;
@@ -823,57 +1047,86 @@ export default function ProfilePage() {
 
         .profile-input {
           width: 100%;
-          height: 50px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          height: 49px;
+          padding: 0 44px 0 13px;
+          border-radius: 13px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.08
+          );
           outline: none;
-          background: rgba(2, 8, 23, 0.72);
+          background: rgba(
+            2,
+            8,
+            23,
+            0.72
+          );
           color: white;
-          padding: 0 45px 0 14px;
-          font-size: 12px;
+          font-size: 11px;
           transition: 0.2s ease;
         }
 
         .profile-input:focus {
-          border-color: rgba(139, 92, 246, 0.55);
+          border-color: rgba(
+            139,
+            92,
+            246,
+            0.55
+          );
           box-shadow:
-            0 0 0 4px rgba(139, 92, 246, 0.07);
+            0 0 0 4px rgba(
+              139,
+              92,
+              246,
+              0.06
+            );
         }
 
         .profile-input.readonly {
           color: #64748b;
           cursor: not-allowed;
-          background: rgba(255, 255, 255, 0.025);
+          background: rgba(
+            255,
+            255,
+            255,
+            0.02
+          );
         }
 
         .email-note {
-          margin-top: 7px;
+          margin-top: 6px;
           color: #475569;
-          font-size: 9px;
+          font-size: 8px;
         }
 
         .save-button {
           width: 100%;
-          height: 50px;
-          border: 0;
-          border-radius: 14px;
-          background:
-            linear-gradient(
-              135deg,
-              #7c3aed,
-              #4f46e5 55%,
-              #2563eb
-            );
-          color: white;
-          font-size: 12px;
-          font-weight: 900;
-          cursor: pointer;
+          height: 49px;
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 9px;
+          gap: 8px;
+          border: 0;
+          border-radius: 13px;
+          background: linear-gradient(
+            135deg,
+            #7c3aed,
+            #4f46e5 55%,
+            #2563eb
+          );
+          color: white;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
           box-shadow:
-            0 15px 35px rgba(79, 70, 229, 0.18);
+            0 15px 35px rgba(
+              79,
+              70,
+              229,
+              0.17
+            );
           transition: 0.2s ease;
         }
 
@@ -889,66 +1142,91 @@ export default function ProfilePage() {
         }
 
         .bottom-grid {
-          margin-top: 16px;
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
+          gap: 14px;
+          margin-top: 14px;
         }
 
         .mini-card {
-          border: 1px solid rgba(255, 255, 255, 0.07);
-          background: rgba(7, 16, 30, 0.7);
-          border-radius: 22px;
-          padding: 20px;
+          padding: 19px;
+          border-radius: 21px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.07
+          );
+          background: rgba(
+            7,
+            16,
+            30,
+            0.72
+          );
         }
 
         .mini-card-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 17px;
+          margin-bottom: 15px;
         }
 
         .mini-title {
-          font-size: 12px;
+          color: white;
+          font-size: 11px;
           font-weight: 900;
         }
 
         .mini-icon {
-          width: 35px;
-          height: 35px;
-          border-radius: 11px;
+          width: 34px;
+          height: 34px;
           display: flex;
           align-items: center;
           justify-content: center;
+          border-radius: 10px;
           color: #a78bfa;
-          background: rgba(139, 92, 246, 0.08);
-          border: 1px solid rgba(139, 92, 246, 0.12);
+          background: rgba(
+            139,
+            92,
+            246,
+            0.08
+          );
+          border: 1px solid rgba(
+            139,
+            92,
+            246,
+            0.12
+          );
         }
 
         .data-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 15px;
-          padding: 11px 0;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+          gap: 12px;
+          padding: 10px 0;
+          border-bottom: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.045
+          );
         }
 
         .data-row:last-child {
-          border-bottom: 0;
           padding-bottom: 0;
+          border-bottom: 0;
         }
 
         .data-label {
           color: #64748b;
-          font-size: 10px;
+          font-size: 9px;
         }
 
         .data-value {
           color: #e2e8f0;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 800;
           text-align: left;
         }
@@ -962,33 +1240,55 @@ export default function ProfilePage() {
         }
 
         .dashboard-link {
-          margin-top: 16px;
           width: 100%;
-          height: 48px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 255, 255, 0.07);
-          background: rgba(255, 255, 255, 0.025);
-          color: #cbd5e1;
-          text-decoration: none;
+          height: 47px;
+          margin-top: 14px;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 8px;
-          font-size: 11px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.07
+          );
+          border-radius: 13px;
+          background: rgba(
+            255,
+            255,
+            255,
+            0.025
+          );
+          color: #94a3b8;
+          font-size: 10px;
+          cursor: pointer;
           transition: 0.2s ease;
         }
 
         .dashboard-link:hover {
-          background: rgba(124, 58, 237, 0.08);
-          border-color: rgba(124, 58, 237, 0.2);
           color: white;
+          border-color: rgba(
+            139,
+            92,
+            246,
+            0.22
+          );
+          background: rgba(
+            139,
+            92,
+            246,
+            0.06
+          );
         }
 
         .footer {
+          padding: 20px 0 7px;
           text-align: center;
-          padding: 22px 0 8px;
           color: #334155;
-          font-size: 9px;
+          font-size: 8px;
+          direction: ltr;
+          letter-spacing: 0.8px;
         }
 
         @media (max-width: 650px) {
@@ -997,23 +1297,28 @@ export default function ProfilePage() {
           }
 
           .topbar {
-            margin-bottom: 20px;
-            height: 58px;
+            height: 57px;
+            padding: 0 11px;
+            margin-bottom: 19px;
             border-radius: 17px;
-            padding: 0 12px;
+          }
+
+          .brand-logo {
+            width: 35px;
+            height: 35px;
+            border-radius: 11px;
+          }
+
+          .brand-name {
+            font-size: 10px;
           }
 
           .brand-sub {
             display: none;
           }
 
-          .brand-name {
-            font-size: 11px;
-          }
-
-          .brand-logo {
-            width: 36px;
-            height: 36px;
+          .back-button {
+            padding: 0 10px;
           }
 
           .back-button span {
@@ -1021,7 +1326,7 @@ export default function ProfilePage() {
           }
 
           .page-heading {
-            padding: 0 4px;
+            padding: 0 3px;
           }
 
           .page-heading h1 {
@@ -1029,19 +1334,19 @@ export default function ProfilePage() {
           }
 
           .profile-head {
-            padding: 20px;
-            gap: 14px;
+            padding: 19px;
+            gap: 13px;
           }
 
           .avatar {
-            width: 70px;
-            height: 70px;
-            min-width: 70px;
-            border-radius: 21px;
+            width: 68px;
+            height: 68px;
+            min-width: 68px;
+            border-radius: 20px;
           }
 
           .avatar-emoji {
-            font-size: 33px;
+            font-size: 32px;
           }
 
           .identity-name {
@@ -1049,11 +1354,11 @@ export default function ProfilePage() {
           }
 
           .identity-email {
-            font-size: 10px;
+            font-size: 9px;
           }
 
           .profile-body {
-            padding: 20px;
+            padding: 19px;
           }
 
           .bottom-grid {
@@ -1071,7 +1376,9 @@ export default function ProfilePage() {
               onClick={goDashboard}
             >
               <ArrowIcon />
-              <span>بازگشت به داشبورد</span>
+              <span>
+                بازگشت به داشبورد
+              </span>
             </button>
 
             <div className="brand">
@@ -1095,21 +1402,22 @@ export default function ProfilePage() {
             <h1>پروفایل</h1>
 
             <p>
-              اطلاعات حساب خود را مشاهده و مدیریت کنید.
+              اطلاعات حساب خود را مشاهده و
+              مدیریت کنید.
             </p>
           </section>
 
-          {success && (
+          {success ? (
             <div className="notice success">
               {success}
             </div>
-          )}
+          ) : null}
 
-          {error && (
+          {error ? (
             <div className="notice error">
               {error}
             </div>
-          )}
+          ) : null}
 
           <section className="profile-card">
             <div className="profile-head">
@@ -1143,7 +1451,7 @@ export default function ProfilePage() {
                   </span>
 
                   <span className="badge badge-plan">
-                    {planName}
+                    {currentPlan}
                   </span>
                 </div>
               </div>
@@ -1155,9 +1463,8 @@ export default function ProfilePage() {
               </h3>
 
               <p className="section-description">
-                فقط اطلاعاتی که در حال حاضر به‌صورت واقعی
-                توسط سیستم پشتیبانی می‌شوند در این صفحه
-                قرار گرفته‌اند.
+                اطلاعات حساب فعلی شما از سیستم
+                دریافت شده است.
               </p>
 
               <div className="field">
@@ -1176,12 +1483,18 @@ export default function ProfilePage() {
                   <input
                     id="profile-name"
                     className="profile-input"
+                    type="text"
                     value={name}
-                    onChange={(event) =>
-                      setName(event.target.value)
-                    }
                     maxLength={80}
-                    placeholder="نام کاربری"
+                    autoComplete="name"
+                    onChange={(event) => {
+                      setName(
+                        event.target.value
+                      );
+                      setSuccess("");
+                      setError("");
+                    }}
+                    placeholder="نام خود را وارد کنید"
                   />
                 </div>
               </div>
@@ -1191,7 +1504,7 @@ export default function ProfilePage() {
                   className="field-label"
                   htmlFor="profile-email"
                 >
-                  ایمیل حساب
+                  ایمیل
                 </label>
 
                 <div className="input-wrap">
@@ -1202,20 +1515,24 @@ export default function ProfilePage() {
                   <input
                     id="profile-email"
                     className="profile-input readonly"
+                    type="email"
                     value={user.email}
                     readOnly
                   />
                 </div>
 
                 <div className="email-note">
-                  ایمیل از این بخش قابل تغییر نیست.
+                  ایمیل حساب در این بخش قابل
+                  تغییر نیست.
                 </div>
               </div>
 
               <button
                 type="button"
                 className="save-button"
-                onClick={saveProfile}
+                onClick={() => {
+                  void saveProfile();
+                }}
                 disabled={saving}
               >
                 <SaveIcon />
@@ -1245,7 +1562,7 @@ export default function ProfilePage() {
                 </span>
 
                 <span className="data-value plan-value">
-                  {planName}
+                  {currentPlan}
                 </span>
               </div>
 
@@ -1254,10 +1571,15 @@ export default function ProfilePage() {
                   وضعیت
                 </span>
 
-                <span className="data-value active-value">
-                  {isFree
-                    ? "رایگان"
-                    : "فعال"}
+                <span
+                  className={`data-value ${
+                    subscriptionStatus ===
+                    "فعال"
+                      ? "active-value"
+                      : ""
+                  }`}
+                >
+                  {subscriptionStatus}
                 </span>
               </div>
 
@@ -1272,6 +1594,20 @@ export default function ProfilePage() {
                     : `${remainingDays} روز`}
                 </span>
               </div>
+
+              {subscription?.expiresAt ? (
+                <div className="data-row">
+                  <span className="data-label">
+                    پایان اشتراک
+                  </span>
+
+                  <span className="data-value">
+                    {formatDate(
+                      subscription.expiresAt
+                    )}
+                  </span>
+                </div>
+              ) : null}
             </section>
 
             <section className="mini-card">
@@ -1287,11 +1623,16 @@ export default function ProfilePage() {
 
               <div className="data-row">
                 <span className="data-label">
-                  شناسه کاربر
+                  شناسه
                 </span>
 
                 <span className="data-value">
-                  {user.id.slice(0, 10)}...
+                  {user.id.length > 12
+                    ? `${user.id.slice(
+                        0,
+                        12
+                      )}...`
+                    : user.id}
                 </span>
               </div>
 
@@ -1309,11 +1650,13 @@ export default function ProfilePage() {
 
               <div className="data-row">
                 <span className="data-label">
-                  عضویت از
+                  تاریخ عضویت
                 </span>
 
                 <span className="data-value">
-                  {formatDate(user.createdAt)}
+                  {formatDate(
+                    user.createdAt
+                  )}
                 </span>
               </div>
             </section>
@@ -1328,9 +1671,9 @@ export default function ProfilePage() {
             <ArrowIcon />
           </button>
 
-          <footer className="footer">
+          <div className="footer">
             TRADING AI • SMART TRADING PLATFORM
-          </footer>
+          </div>
         </div>
       </main>
     </>
