@@ -25,11 +25,28 @@ model User {
   bio         String?
 
   // =========================
-  // Subscription
+  // Account Control
+  // =========================
+
+  isBlocked     Boolean   @default(false)
+  blockedAt     DateTime?
+  blockedReason String?
+
+  // =========================
+  // Subscription Summary
   // =========================
 
   subscriptionStartedAt DateTime?
   subscriptionExpiresAt DateTime?
+
+  // =========================
+  // One-Time Guest Access
+  // =========================
+
+  guestUsed     Boolean   @default(false)
+  guestStartedAt DateTime?
+  guestExpiresAt DateTime?
+  guestEndedAt   DateTime?
 
   // =========================
   // Relations
@@ -45,14 +62,19 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   newsSetting NewsSetting?
-  newsAlerts  NewsAlert[]
+  newsAlerts  NewsAlert?
+
+  subscriptions UserSubscription[]
+  notifications UserNotification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([role])
   @@index([plan])
+  @@index([isBlocked])
   @@index([subscriptionExpiresAt])
+  @@index([guestExpiresAt])
   @@index([createdAt])
 }
 
@@ -168,7 +190,7 @@ model TradingBot {
 
   lotMode     String @default("FIXED")
   lotSize     Float  @default(0.01)
-  riskPercent Float  @default(1)
+  riskPercent Float @default(1)
 
   takeProfit Float?
   stopLoss   Float?
@@ -496,5 +518,57 @@ model NewsDelivery {
 
   @@index([alertId])
   @@index([channel])
+}
+
+model UserSubscription {
+  id String @id @default(cuid())
+
+  userId String
+
+  plan String
+  status String @default("ACTIVE")
+
+  startsAt  DateTime
+  expiresAt DateTime
+
+  price    Float?
+  currency String?
+
+  autoRenew Boolean @default(false)
+
+  cancelledAt DateTime?
+  note        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([status])
+  @@index([startsAt])
+  @@index([expiresAt])
+  @@index([plan])
+}
+
+model UserNotification {
+  id String @id @default(cuid())
+
+  userId String
+
+  type    String
+  title   String
+  message String
+
+  read Boolean @default(false)
+
+  dedupeKey String @unique
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, read])
+  @@index([createdAt])
 }
