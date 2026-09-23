@@ -1,91 +1,107 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { randomUUID } from "crypto";
-
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-/* =========================================================
-   TYPES / LABELS
-========================================================= */
-
-const PLAN_LABELS: Record<string, string> = {
-  FREE: "رایگان",
-  BASIC: "پایه",
-  PRO: "حرفه‌ای",
-  PREMIUM: "Premium",
-  VIP: "VIP",
+type SearchParams = {
+  q?: string;
+  plan?: string;
+  status?: string;
+  user?: string;
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: "فعال",
-  OPEN: "باز",
-  PENDING: "در انتظار",
-  CLOSED: "بسته",
-  CANCELLED: "لغو شده",
-  EXPIRED: "منقضی",
+type PageProps = {
+  searchParams?: Promise<SearchParams>;
 };
 
-function planLabel(plan: string) {
-  return PLAN_LABELS[plan] ?? plan;
+const plans = ["FREE", "VIP", "PREMIUM", "PRO"];
+
+function text(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function statusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
+function money(value: number | null | undefined, currency?: string | null) {
+  if (value === null || value === undefined) return "—";
+
+  return `${new Intl.NumberFormat("fa-IR").format(value)} ${
+    currency || "تومان"
+  }`;
 }
 
-function dateText(date: Date | null | undefined) {
-  if (!date) return "—";
+function dateFa(value: Date | null | undefined) {
+  if (!value) return "—";
 
   return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
 }
 
-function dateOnly(date: Date | null | undefined) {
-  if (!date) return "—";
+function shortDate(value: Date | null | undefined) {
+  if (!value) return "—";
 
   return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "medium",
-  }).format(date);
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
 }
 
-function initials(name: string) {
-  const value = name
-    .trim()
-    .split(/\s+/)
-    .map((part) => part.charAt(0))
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  return value || "U";
+function planLabel(plan: string | null | undefined) {
+  switch (plan) {
+    case "VIP":
+      return "VIP";
+    case "PREMIUM":
+      return "Premium";
+    case "PRO":
+      return "Pro";
+    default:
+      return "Free";
+  }
 }
 
-function daysRemaining(date: Date | null | undefined) {
-  if (!date) return null;
-
-  const diff = date.getTime() - Date.now();
-  return Math.ceil(diff / 86400000);
+function ticketLabel(status: string) {
+  switch (status) {
+    case "OPEN":
+      return "باز";
+    case "IN_PROGRESS":
+      return "در حال بررسی";
+    case "ANSWERED":
+      return "پاسخ داده شده";
+    case "CLOSED":
+      return "بسته";
+    default:
+      return status;
+  }
 }
 
-/* =========================================================
-   ADMIN AUTH
-========================================================= */
+function ticketClass(status: string) {
+  switch (status) {
+    case "OPEN":
+      return "status-open";
+    case "IN_PROGRESS":
+      return "status-progress";
+    case "ANSWERED":
+      return "status-answered";
+    case "CLOSED":
+      return "status-closed";
+    default:
+      return "status-default";
+  }
+}
 
 async function requireAdmin() {
   const session = await getSession();
 
-  if (!session?.userId) {
+  if (!session) {
     redirect("/login");
   }
 
-  const admin = await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: {
       id: session.userId,
     },
@@ -97,402 +113,350 @@ async function requireAdmin() {
     },
   });
 
-  if (!admin || admin.role !== "ADMIN") {
+  if (!user || user.role !== "ADMIN") {
     redirect("/");
   }
 
-  return admin;
+  return user;
 }
 
-/* =========================================================
-   BLOCK / UNBLOCK USER
-========================================================= */
-
-async function toggleUserBlock(formData: FormData) {
+async function blockUser(formData: FormData) {
   "use server";
 
   const admin = await requireAdmin();
 
-  const userId = String(formData.get("userId") ?? "").trim();
-  const mode = String(formData.get("mode") ?? "").trim();
-  const reason = String(formData.get("reason") ?? "").trim();
+  const userId = text(formData.get("userId"));
+  const reason = text(formData.get("reason")) || "مسدود شده توسط مدیر";
 
-  if (!userId) return;
-
-  /* مدیر نمی‌تواند خودش را مسدود کند */
+  if (!userId) {
+    redirect("/admin/users");
+  }
 
   if (userId === admin.id) {
-    return;
+    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
   }
 
-  const user = await prisma.user.findUnique({
+  await prisma.user.update({
     where: {
       id: userId,
     },
-    select: {
-      id: true,
-      name: true,
-      email: true,
+    data: {
       isBlocked: true,
+      blockedAt: new Date(),
+      blockedReason: reason,
     },
   });
 
-  if (!user) return;
+  await prisma.session.deleteMany({
+    where: {
+      userId,
+    },
+  });
 
-  const shouldBlock = mode === "BLOCK";
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: shouldBlock
-        ? {
-            isBlocked: true,
-            blockedAt: new Date(),
-            blockedReason:
-              reason ||
-              "حساب توسط مدیریت Trading AI مسدود شد.",
-          }
-        : {
-            isBlocked: false,
-            blockedAt: null,
-            blockedReason: null,
-          },
-    }),
-
-    prisma.userNotification.create({
-      data: {
-        userId,
-        type: shouldBlock ? "ACCOUNT_BLOCKED" : "ACCOUNT_UNBLOCKED",
-        title: shouldBlock
-          ? "حساب شما مسدود شد"
-          : "حساب شما فعال شد",
-        message: shouldBlock
-          ? "دسترسی حساب شما توسط مدیریت محدود شده است."
-          : "محدودیت حساب شما توسط مدیریت برداشته شد.",
-        dedupeKey: `account-status-${userId}-${shouldBlock ? "blocked" : "unblocked"}-${randomUUID()}`,
-      },
-    }),
-  ]);
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: "ACCOUNT_BLOCKED",
+      title: "حساب شما مسدود شد",
+      message: reason,
+      dedupeKey: `account-blocked-${userId}-${Date.now()}`,
+    },
+  });
 
   revalidatePath("/admin/users");
-  revalidatePath("/admin");
+
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
 }
 
-/* =========================================================
-   CHANGE PLAN
-========================================================= */
-
-async function changeUserPlan(formData: FormData) {
+async function unblockUser(formData: FormData) {
   "use server";
 
   await requireAdmin();
 
-  const userId = String(formData.get("userId") ?? "").trim();
-  const plan = String(formData.get("plan") ?? "").trim();
+  const userId = text(formData.get("userId"));
 
-  const allowedPlans = [
-    "FREE",
-    "BASIC",
-    "PRO",
-    "PREMIUM",
-    "VIP",
-  ];
-
-  if (!userId || !allowedPlans.includes(plan)) {
-    return;
+  if (!userId) {
+    redirect("/admin/users");
   }
 
-  const user = await prisma.user.findUnique({
+  await prisma.user.update({
     where: {
       id: userId,
     },
-    select: {
-      id: true,
+    data: {
+      isBlocked: false,
+      blockedAt: null,
+      blockedReason: null,
     },
   });
 
-  if (!user) return;
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        plan,
-      },
-    }),
-
-    prisma.userNotification.create({
-      data: {
-        userId,
-        type: "PLAN_CHANGED",
-        title: "پلن حساب تغییر کرد",
-        message: `پلن حساب شما به ${planLabel(plan)} تغییر کرد.`,
-        dedupeKey: `plan-change-${userId}-${randomUUID()}`,
-      },
-    }),
-  ]);
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: "ACCOUNT_UNBLOCKED",
+      title: "حساب شما فعال شد",
+      message: "حساب کاربری شما توسط مدیریت فعال شد.",
+      dedupeKey: `account-unblocked-${userId}-${Date.now()}`,
+    },
+  });
 
   revalidatePath("/admin/users");
-  revalidatePath("/payments");
-  revalidatePath("/dashboard");
+
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
 }
 
-/* =========================================================
-   CREATE / EXTEND SUBSCRIPTION
-========================================================= */
-
-async function saveSubscription(formData: FormData) {
+async function changePlan(formData: FormData) {
   "use server";
 
   await requireAdmin();
 
-  const userId = String(formData.get("userId") ?? "").trim();
-  const plan = String(formData.get("plan") ?? "").trim();
-  const daysRaw = String(formData.get("days") ?? "").trim();
-  const priceRaw = String(formData.get("price") ?? "").trim();
-  const currency = String(formData.get("currency") ?? "IRR").trim();
-  const note = String(formData.get("note") ?? "").trim();
+  const userId = text(formData.get("userId"));
+  const plan = text(formData.get("plan"));
 
-  const days = Number(daysRaw);
+  if (!userId || !plans.includes(plan)) {
+    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+  }
+
+  await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      plan,
+    },
+  });
+
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: "PLAN_CHANGED",
+      title: "پلن حساب شما تغییر کرد",
+      message: `پلن حساب شما به ${planLabel(plan)} تغییر کرد.`,
+      dedupeKey: `plan-changed-${userId}-${Date.now()}`,
+    },
+  });
+
+  revalidatePath("/admin/users");
+
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+}
+
+async function createSubscription(formData: FormData) {
+  "use server";
+
+  await requireAdmin();
+
+  const userId = text(formData.get("userId"));
+  const plan = text(formData.get("plan"));
+  const daysRaw = text(formData.get("days"));
+  const priceRaw = text(formData.get("price"));
+  const currency = text(formData.get("currency")) || "تومان";
+  const note = text(formData.get("note"));
+
+  if (!userId || !plans.includes(plan)) {
+    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+  }
+
+  const days = Math.max(1, Number(daysRaw || 30));
+  const parsedPrice = priceRaw ? Number(priceRaw) : null;
+
   const price =
-    priceRaw.length > 0 ? Number(priceRaw) : null;
-
-  const allowedPlans = [
-    "BASIC",
-    "PRO",
-    "PREMIUM",
-    "VIP",
-  ];
-
-  if (
-    !userId ||
-    !allowedPlans.includes(plan) ||
-    !Number.isFinite(days) ||
-    days <= 0 ||
-    days > 3650
-  ) {
-    return;
-  }
-
-  if (
-    price !== null &&
-    (!Number.isFinite(price) || price < 0)
-  ) {
-    return;
-  }
-
-  const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
-    select: {
-      id: true,
-      subscriptionExpiresAt: true,
-    },
-  });
-
-  if (!user) return;
+    parsedPrice !== null && Number.isFinite(parsedPrice)
+      ? parsedPrice
+      : null;
 
   const now = new Date();
 
-  /*
-    اگر اشتراک قبلی هنوز فعال باشد،
-    تمدید از تاریخ انقضای فعلی ادامه پیدا می‌کند.
-  */
-
-  const startsAt =
-    user.subscriptionExpiresAt &&
-    user.subscriptionExpiresAt > now
-      ? user.subscriptionExpiresAt
-      : now;
-
-  const expiresAt = new Date(startsAt);
-
-  expiresAt.setDate(expiresAt.getDate() + days);
-
-  await prisma.$transaction([
-    prisma.userSubscription.create({
-      data: {
-        userId,
-        plan,
-        status: "ACTIVE",
-        startsAt,
-        expiresAt,
-        price,
-        currency: currency || null,
-        autoRenew: false,
-        note: note || null,
+  const activeSubscription = await prisma.userSubscription.findFirst({
+    where: {
+      userId,
+      status: "ACTIVE",
+      expiresAt: {
+        gt: now,
       },
-    }),
+    },
+    orderBy: {
+      expiresAt: "desc",
+    },
+  });
 
-    prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        plan,
-        subscriptionStartedAt: now,
-        subscriptionExpiresAt: expiresAt,
-      },
-    }),
+  const startsAt = activeSubscription?.expiresAt || now;
 
-    prisma.userNotification.create({
-      data: {
-        userId,
-        type: "SUBSCRIPTION_UPDATED",
-        title: "اشتراک شما فعال شد",
-        message: `پلن ${planLabel(
-          plan,
-        )} برای شما فعال شد و تا ${dateOnly(
-          expiresAt,
-        )} اعتبار دارد.`,
-        dedupeKey: `subscription-${userId}-${randomUUID()}`,
-      },
-    }),
-  ]);
+  const expiresAt = new Date(
+    startsAt.getTime() + days * 24 * 60 * 60 * 1000
+  );
+
+  await prisma.userSubscription.create({
+    data: {
+      userId,
+      plan,
+      status: "ACTIVE",
+      startsAt,
+      expiresAt,
+      price,
+      currency,
+      autoRenew: false,
+      note: note || null,
+    },
+  });
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+    select: {
+      subscriptionStartedAt: true,
+    },
+  });
+
+  await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      plan,
+      subscriptionStartedAt:
+        user?.subscriptionStartedAt &&
+        user.subscriptionStartedAt <= startsAt
+          ? user.subscriptionStartedAt
+          : startsAt,
+      subscriptionExpiresAt: expiresAt,
+    },
+  });
+
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: "SUBSCRIPTION_CREATED",
+      title: "اشتراک شما فعال شد",
+      message: `اشتراک ${planLabel(
+        plan
+      )} برای شما فعال شد و تا ${dateFa(expiresAt)} اعتبار دارد.`,
+      dedupeKey: `subscription-created-${userId}-${Date.now()}`,
+    },
+  });
 
   revalidatePath("/admin/users");
-  revalidatePath("/admin");
-  revalidatePath("/payments");
-  revalidatePath("/dashboard");
-}
 
-/* =========================================================
-   CANCEL SUBSCRIPTION
-========================================================= */
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+}
 
 async function cancelSubscription(formData: FormData) {
   "use server";
 
   await requireAdmin();
 
-  const userId = String(formData.get("userId") ?? "").trim();
+  const subscriptionId = text(formData.get("subscriptionId"));
+  const userId = text(formData.get("userId"));
 
-  if (!userId) return;
-
-  const activeSubscription =
-    await prisma.userSubscription.findFirst({
-      where: {
-        userId,
-        status: "ACTIVE",
-      },
-      orderBy: {
-        expiresAt: "desc",
-      },
-    });
-
-  if (!activeSubscription) {
-    return;
+  if (!subscriptionId || !userId) {
+    redirect("/admin/users");
   }
 
-  await prisma.$transaction([
-    prisma.userSubscription.update({
-      where: {
-        id: activeSubscription.id,
-      },
-      data: {
-        status: "CANCELLED",
-        cancelledAt: new Date(),
-        autoRenew: false,
-      },
-    }),
+  await prisma.userSubscription.update({
+    where: {
+      id: subscriptionId,
+    },
+    data: {
+      status: "CANCELLED",
+      cancelledAt: new Date(),
+      autoRenew: false,
+    },
+  });
 
-    prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        plan: "FREE",
-        subscriptionExpiresAt: null,
-      },
-    }),
-
-    prisma.userNotification.create({
-      data: {
-        userId,
-        type: "SUBSCRIPTION_CANCELLED",
-        title: "اشتراک لغو شد",
-        message:
-          "اشتراک شما توسط مدیریت لغو شد.",
-        dedupeKey: `subscription-cancel-${userId}-${randomUUID()}`,
-      },
-    }),
-  ]);
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: "SUBSCRIPTION_CANCELLED",
+      title: "اشتراک لغو شد",
+      message:
+        "تمدید خودکار اشتراک شما توسط مدیریت لغو شد. در صورت داشتن زمان باقی‌مانده، دسترسی تا تاریخ انقضا ادامه دارد.",
+      dedupeKey: `subscription-cancelled-${subscriptionId}-${Date.now()}`,
+    },
+  });
 
   revalidatePath("/admin/users");
-  revalidatePath("/payments");
-  revalidatePath("/dashboard");
+
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
 }
 
-/* =========================================================
-   CLOSE SUPPORT TICKET
-========================================================= */
-
-async function closeTicket(formData: FormData) {
+async function sendUserMessage(formData: FormData) {
   "use server";
 
   await requireAdmin();
 
-  const ticketId = String(
-    formData.get("ticketId") ?? "",
-  ).trim();
+  const userId = text(formData.get("userId"));
+  const title = text(formData.get("title"));
+  const message = text(formData.get("message"));
 
-  const userId = String(
-    formData.get("userId") ?? "",
-  ).trim();
+  if (!userId || !title || !message) {
+    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+  }
 
-  if (!ticketId || !userId) return;
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: "ADMIN_MESSAGE",
+      title,
+      message,
+      dedupeKey: crypto.randomUUID(),
+    },
+  });
+
+  revalidatePath("/admin/users");
+
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+}
+
+async function changeTicketStatus(formData: FormData) {
+  "use server";
+
+  await requireAdmin();
+
+  const ticketId = text(formData.get("ticketId"));
+  const userId = text(formData.get("userId"));
+  const status = text(formData.get("status"));
+
+  if (!ticketId || !userId || !status) {
+    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+  }
 
   await prisma.supportTicket.update({
     where: {
       id: ticketId,
     },
     data: {
-      status: "CLOSED",
-      updatedAt: new Date(),
+      status,
     },
   });
 
   revalidatePath("/admin/users");
-  revalidatePath("/admin/support");
+
+  redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
 }
-
-/* =========================================================
-   PAGE
-========================================================= */
-
-type PageProps = {
-  searchParams?: {
-    q?: string;
-    plan?: string;
-    status?: string;
-    user?: string;
-  };
-};
 
 export default async function AdminUsersPage({
   searchParams,
 }: PageProps) {
   const admin = await requireAdmin();
 
-  const q = String(searchParams?.q ?? "").trim();
-  const planFilter = String(
-    searchParams?.plan ?? "",
-  ).trim();
+  const params = await searchParams;
 
-  const statusFilter = String(
-    searchParams?.status ?? "",
-  ).trim();
+  const q = params?.q?.trim() || "";
+  const planFilter = params?.plan || "";
+  const statusFilter = params?.status || "";
+  const requestedUserId = params?.user || "";
 
-  const requestedUserId = String(
-    searchParams?.user ?? "",
-  ).trim();
+  const now = new Date();
 
-  const where: any = {};
+  const where: {
+    OR?: Array<{
+      name?: { contains: string; mode: "insensitive" };
+      email?: { contains: string; mode: "insensitive" };
+    }>;
+    plan?: string;
+    isBlocked?: boolean;
+  } = {};
 
   if (q) {
     where.OR = [
@@ -542,7 +506,7 @@ export default async function AdminUsersPage({
       where: {
         status: "ACTIVE",
         expiresAt: {
-          gt: new Date(),
+          gt: now,
         },
       },
     }),
@@ -550,7 +514,7 @@ export default async function AdminUsersPage({
     prisma.supportTicket.count({
       where: {
         status: {
-          in: ["OPEN", "PENDING"],
+          not: "CLOSED",
         },
       },
     }),
@@ -567,106 +531,856 @@ export default async function AdminUsersPage({
         email: true,
         role: true,
         plan: true,
-
-        avatarUrl: true,
-        avatarEmoji: true,
-
         isBlocked: true,
         blockedAt: true,
         blockedReason: true,
-
         subscriptionStartedAt: true,
         subscriptionExpiresAt: true,
-
-        guestUsed: true,
-        guestStartedAt: true,
-        guestExpiresAt: true,
-        guestEndedAt: true,
-
         createdAt: true,
         updatedAt: true,
-
-        subscriptions: {
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 8,
-        },
-
-        supportTickets: {
-          orderBy: {
-            updatedAt: "desc",
-          },
-          take: 10,
-          include: {
-            messages: {
-              orderBy: {
-                createdAt: "asc",
-              },
-            },
+        _count: {
+          select: {
+            supportTickets: true,
+            tradingBots: true,
+            tradingSignals: true,
+            trades: true,
+            subscriptions: true,
           },
         },
       },
     }),
   ]);
 
-  const selected =
-    users.find(
-      (user) => user.id === requestedUserId,
-    ) ?? users[0] ?? null;
+  const selectedId =
+    requestedUserId && users.some((user) => user.id === requestedUserId)
+      ? requestedUserId
+      : users[0]?.id || "";
 
-  const selectedDays =
-    selected?.subscriptionExpiresAt
-      ? daysRemaining(
-          selected.subscriptionExpiresAt,
-        )
-      : null;
+  const selectedUser = selectedId
+    ? await prisma.user.findUnique({
+        where: {
+          id: selectedId,
+        },
+        include: {
+          subscriptions: {
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 10,
+          },
+          supportTickets: {
+            orderBy: {
+              updatedAt: "desc",
+            },
+            take: 10,
+            include: {
+              messages: {
+                orderBy: {
+                  createdAt: "desc",
+                },
+                take: 5,
+              },
+            },
+          },
+          _count: {
+            select: {
+              supportTickets: true,
+              tradingBots: true,
+              tradingSignals: true,
+              trades: true,
+              subscriptions: true,
+              notifications: true,
+            },
+          },
+        },
+      })
+    : null;
 
-  const selectedSubscriptionActive =
-    !!selected?.subscriptionExpiresAt &&
-    selected.subscriptionExpiresAt.getTime() >
-      Date.now() &&
-    selected.plan !== "FREE";
+  const currentSubscription = selectedUser?.subscriptions.find(
+    (subscription) =>
+      subscription.status === "ACTIVE" && subscription.expiresAt > now
+  );
 
-  const totalSupportTickets =
-    selected?.supportTickets.length ?? 0;
-
-  const selectedOpenTickets =
-    selected?.supportTickets.filter(
-      (ticket) =>
-        ticket.status === "OPEN" ||
-        ticket.status === "PENDING",
-    ).length ?? 0;
-
-  const selectedMessages =
-    selected?.supportTickets.reduce(
-      (total, ticket) =>
-        total + ticket.messages.length,
-      0,
-    ) ?? 0;
+  const subscriptionIsActive =
+    !!currentSubscription && currentSubscription.expiresAt > now;
 
   return (
-    <main dir="rtl" className="page">
+    <>
+      <div className="admin-page" dir="rtl">
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brand-logo">
+              <span>✦</span>
+            </div>
+
+            <div>
+              <strong>Trading AI</strong>
+              <small>ADMIN PANEL</small>
+            </div>
+          </div>
+
+          <nav className="nav">
+            <Link href="/admin" className="nav-item">
+              <span>⌂</span>
+              داشبورد
+            </Link>
+
+            <Link href="/admin/users" className="nav-item active">
+              <span>♙</span>
+              کاربران
+            </Link>
+
+            <Link href="/admin/support" className="nav-item">
+              <span>◉</span>
+              پشتیبانی
+            </Link>
+
+            <Link href="/admin/subscriptions" className="nav-item">
+              <span>◆</span>
+              اشتراک‌ها
+            </Link>
+
+            <Link href="/admin/signals" className="nav-item">
+              <span>↗</span>
+              کانال سیگنال VIP
+            </Link>
+
+            <Link href="/admin/settings" className="nav-item">
+              <span>⚙</span>
+              تنظیمات
+            </Link>
+
+            <Link href="/admin/reports" className="nav-item">
+              <span>▦</span>
+              گزارش‌ها
+            </Link>
+          </nav>
+
+          <div className="sidebar-bottom">
+            <div className="admin-mini">
+              <div className="admin-avatar">
+                {(admin.name || "A").slice(0, 1)}
+              </div>
+
+              <div>
+                <strong>{admin.name}</strong>
+                <small>مدیر سیستم</small>
+              </div>
+            </div>
+
+            <Link href="/logout" className="logout">
+              <span>⇥</span>
+              خروج
+            </Link>
+          </div>
+        </aside>
+
+        <main className="main">
+          <header className="topbar">
+            <div>
+              <div className="breadcrumb">
+                پنل مدیریت
+                <span>›</span>
+                کاربران
+              </div>
+
+              <h1>مدیریت کاربران</h1>
+
+              <p>
+                مدیریت حساب‌ها، اشتراک‌ها، پشتیبانی و وضعیت دسترسی کاربران
+              </p>
+            </div>
+
+            <div className="top-actions">
+              <button className="icon-button" type="button">
+                🔔
+              </button>
+
+              <div className="admin-pill">
+                <div className="avatar-small">
+                  {(admin.name || "A").slice(0, 1)}
+                </div>
+
+                <div>
+                  <strong>{admin.name}</strong>
+                  <span>Administrator</span>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-icon purple">♙</div>
+              <div>
+                <span>کاربران کل</span>
+                <strong>{totalUsers.toLocaleString("fa-IR")}</strong>
+              </div>
+              <small>ثبت‌نام شده</small>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon green">✓</div>
+              <div>
+                <span>اشتراک فعال</span>
+                <strong>
+                  {activeSubscriptions.toLocaleString("fa-IR")}
+                </strong>
+              </div>
+              <small>در حال استفاده</small>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon orange">◉</div>
+              <div>
+                <span>درخواست پشتیبانی</span>
+                <strong>{openTickets.toLocaleString("fa-IR")}</strong>
+              </div>
+              <small>باز و در حال بررسی</small>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon red">!</div>
+              <div>
+                <span>کاربران مسدود</span>
+                <strong>{blockedUsers.toLocaleString("fa-IR")}</strong>
+              </div>
+              <small>حساب‌های محدود شده</small>
+            </div>
+          </section>
+
+          <section className="filter-card">
+            <form method="get" className="filter-form">
+              {selectedId && (
+                <input type="hidden" name="user" value={selectedId} />
+              )}
+
+              <div className="search-box">
+                <span>⌕</span>
+
+                <input
+                  name="q"
+                  defaultValue={q}
+                  placeholder="جستجو با نام یا ایمیل کاربر..."
+                />
+              </div>
+
+              <select name="plan" defaultValue={planFilter}>
+                <option value="">همه پلن‌ها</option>
+                <option value="FREE">Free</option>
+                <option value="VIP">VIP</option>
+                <option value="PREMIUM">Premium</option>
+                <option value="PRO">Pro</option>
+              </select>
+
+              <select name="status" defaultValue={statusFilter}>
+                <option value="">همه وضعیت‌ها</option>
+                <option value="ACTIVE">فعال</option>
+                <option value="BLOCKED">مسدود</option>
+              </select>
+
+              <button className="gold-button" type="submit">
+                جستجو
+              </button>
+
+              <Link href="/admin/users" className="reset-button">
+                پاک کردن
+              </Link>
+            </form>
+          </section>
+
+          <div className="content-grid">
+            <section className="users-panel glass-card">
+              <div className="section-header">
+                <div>
+                  <h2>لیست کاربران</h2>
+                  <span>{users.length.toLocaleString("fa-IR")} نتیجه</span>
+                </div>
+              </div>
+
+              <div className="user-list">
+                {users.length === 0 ? (
+                  <div className="empty">
+                    <div>⌕</div>
+                    <strong>کاربری پیدا نشد</strong>
+                    <span>عبارت جستجو یا فیلتر را تغییر دهید.</span>
+                  </div>
+                ) : (
+                  users.map((user) => (
+                    <Link
+                      key={user.id}
+                      href={`/admin/users?user=${encodeURIComponent(
+                        user.id
+                      )}`}
+                      className={`user-row ${
+                        user.id === selectedId ? "selected" : ""
+                      }`}
+                    >
+                      <div className="user-avatar">
+                        {(user.name || "U").slice(0, 1)}
+                      </div>
+
+                      <div className="user-info">
+                        <strong>{user.name}</strong>
+                        <span>{user.email}</span>
+                      </div>
+
+                      <div className="user-plan">
+                        <span className={`plan plan-${user.plan}`}>
+                          {planLabel(user.plan)}
+                        </span>
+
+                        {user.isBlocked ? (
+                          <small className="blocked-text">مسدود</small>
+                        ) : (
+                          <small className="active-text">فعال</small>
+                        )}
+                      </div>
+
+                      <div className="user-arrow">‹</div>
+                    </Link>
+                  ))
+                )}
+              </div>
+            </section>
+
+            {selectedUser ? (
+              <section className="details-area">
+                <div className="profile-card glass-card">
+                  <div className="profile-top">
+                    <div className="profile-avatar">
+                      {(selectedUser.name || "U").slice(0, 1)}
+                    </div>
+
+                    <div className="profile-main">
+                      <div className="profile-name-line">
+                        <h2>{selectedUser.name}</h2>
+
+                        {selectedUser.isBlocked ? (
+                          <span className="danger-badge">مسدود</span>
+                        ) : (
+                          <span className="success-badge">فعال</span>
+                        )}
+                      </div>
+
+                      <p>{selectedUser.email}</p>
+
+                      <div className="profile-meta">
+                        <span>
+                          عضویت: {shortDate(selectedUser.createdAt)}
+                        </span>
+
+                        <span>
+                          آخرین بروزرسانی:{" "}
+                          {dateFa(selectedUser.updatedAt)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="profile-plan">
+                      <span>پلن فعلی</span>
+                      <strong>{planLabel(selectedUser.plan)}</strong>
+                    </div>
+                  </div>
+
+                  {selectedUser.isBlocked &&
+                    selectedUser.blockedReason && (
+                      <div className="blocked-notice">
+                        <strong>علت مسدودی:</strong>
+                        <span>{selectedUser.blockedReason}</span>
+                      </div>
+                    )}
+
+                  <div className="quick-stats">
+                    <div>
+                      <span>ربات‌ها</span>
+                      <strong>
+                        {selectedUser._count.tradingBots.toLocaleString(
+                          "fa-IR"
+                        )}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>سیگنال‌ها</span>
+                      <strong>
+                        {selectedUser._count.tradingSignals.toLocaleString(
+                          "fa-IR"
+                        )}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>معاملات</span>
+                      <strong>
+                        {selectedUser._count.trades.toLocaleString("fa-IR")}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>تیکت‌ها</span>
+                      <strong>
+                        {selectedUser._count.supportTickets.toLocaleString(
+                          "fa-IR"
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="action-grid">
+                    <a href="#message-user" className="action-button">
+                      <span>✉</span>
+                      پیام به کاربر
+                    </a>
+
+                    <a href="#subscription" className="action-button">
+                      <span>◆</span>
+                      مدیریت اشتراک
+                    </a>
+
+                    <a href="#change-plan" className="action-button">
+                      <span>✎</span>
+                      تغییر پلن
+                    </a>
+
+                    {selectedUser.isBlocked ? (
+                      <form action={unblockUser}>
+                        <input
+                          type="hidden"
+                          name="userId"
+                          value={selectedUser.id}
+                        />
+
+                        <button
+                          type="submit"
+                          className="action-button unblock"
+                        >
+                          <span>✓</span>
+                          فعال کردن حساب
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={blockUser}>
+                        <input
+                          type="hidden"
+                          name="userId"
+                          value={selectedUser.id}
+                        />
+
+                        <input
+                          type="hidden"
+                          name="reason"
+                          value="حساب توسط مدیریت مسدود شد."
+                        />
+
+                        <button
+                          type="submit"
+                          className="action-button danger"
+                        >
+                          <span>⊘</span>
+                          مسدود کردن حساب
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+
+                <div className="two-column">
+                  <section className="glass-card support-card">
+                    <div className="section-header">
+                      <div>
+                        <h2>درخواست‌های پشتیبانی</h2>
+                        <span>
+                          {selectedUser.supportTickets.length.toLocaleString(
+                            "fa-IR"
+                          )}{" "}
+                          درخواست
+                        </span>
+                      </div>
+
+                      <Link href="/admin/support" className="view-all">
+                        مشاهده همه
+                      </Link>
+                    </div>
+
+                    <div className="ticket-list">
+                      {selectedUser.supportTickets.length === 0 ? (
+                        <div className="empty compact">
+                          <div>✓</div>
+                          <strong>درخواستی ثبت نشده</strong>
+                          <span>این کاربر هنوز تیکتی ندارد.</span>
+                        </div>
+                      ) : (
+                        selectedUser.supportTickets.map((ticket) => {
+                          const lastMessage = ticket.messages[0];
+
+                          return (
+                            <div className="ticket" key={ticket.id}>
+                              <div className="ticket-icon">✉</div>
+
+                              <div className="ticket-body">
+                                <div className="ticket-title">
+                                  <strong>{ticket.subject}</strong>
+
+                                  <span
+                                    className={`ticket-status ${ticketClass(
+                                      ticket.status
+                                    )}`}
+                                  >
+                                    {ticketLabel(ticket.status)}
+                                  </span>
+                                </div>
+
+                                <p>
+                                  {lastMessage?.message ||
+                                    "هنوز پیامی ثبت نشده است."}
+                                </p>
+
+                                <div className="ticket-footer">
+                                  <span>
+                                    آخرین پیام:{" "}
+                                    {dateFa(
+                                      lastMessage?.createdAt ||
+                                        ticket.updatedAt
+                                    )}
+                                  </span>
+
+                                  <form action={changeTicketStatus}>
+                                    <input
+                                      type="hidden"
+                                      name="ticketId"
+                                      value={ticket.id}
+                                    />
+
+                                    <input
+                                      type="hidden"
+                                      name="userId"
+                                      value={selectedUser.id}
+                                    />
+
+                                    <select
+                                      name="status"
+                                      defaultValue={ticket.status}
+                                      onChange={(event) => {
+                                        event.currentTarget.form?.requestSubmit();
+                                      }}
+                                    >
+                                      <option value="OPEN">باز</option>
+                                      <option value="IN_PROGRESS">
+                                        در حال بررسی
+                                      </option>
+                                      <option value="ANSWERED">
+                                        پاسخ داده شده
+                                      </option>
+                                      <option value="CLOSED">بسته</option>
+                                    </select>
+                                  </form>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </section>
+
+                  <section
+                    className="glass-card subscription-card"
+                    id="subscription"
+                  >
+                    <div className="section-header">
+                      <div>
+                        <h2>اشتراک کاربر</h2>
+                        <span>اطلاعات واقعی از دیتابیس</span>
+                      </div>
+
+                      <span
+                        className={
+                          subscriptionIsActive
+                            ? "subscription-live"
+                            : "subscription-off"
+                        }
+                      >
+                        {subscriptionIsActive ? "فعال" : "غیرفعال"}
+                      </span>
+                    </div>
+
+                    {currentSubscription ? (
+                      <div className="current-subscription">
+                        <div className="subscription-header">
+                          <div className="crown">♛</div>
+
+                          <div>
+                            <strong>
+                              {planLabel(currentSubscription.plan)}
+                            </strong>
+                            <span>اشتراک فعلی</span>
+                          </div>
+                        </div>
+
+                        <div className="subscription-details">
+                          <div>
+                            <span>شروع</span>
+                            <strong>
+                              {shortDate(currentSubscription.startsAt)}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>انقضا</span>
+                            <strong>
+                              {shortDate(currentSubscription.expiresAt)}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>مبلغ</span>
+                            <strong>
+                              {money(
+                                currentSubscription.price,
+                                currentSubscription.currency
+                              )}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <form action={cancelSubscription}>
+                          <input
+                            type="hidden"
+                            name="subscriptionId"
+                            value={currentSubscription.id}
+                          />
+
+                          <input
+                            type="hidden"
+                            name="userId"
+                            value={selectedUser.id}
+                          />
+
+                          <button type="submit" className="cancel-button">
+                            لغو تمدید این اشتراک
+                          </button>
+                        </form>
+                      </div>
+                    ) : (
+                      <div className="no-subscription">
+                        <div>◆</div>
+                        <strong>اشتراک فعال ندارد</strong>
+                        <span>
+                          می‌توانید از فرم پایین یک اشتراک واقعی ثبت کنید.
+                        </span>
+                      </div>
+                    )}
+
+                    <form className="subscription-form" action={createSubscription}>
+                      <input
+                        type="hidden"
+                        name="userId"
+                        value={selectedUser.id}
+                      />
+
+                      <div className="form-title">ایجاد / تمدید اشتراک</div>
+
+                      <div className="form-row">
+                        <select name="plan" defaultValue={selectedUser.plan}>
+                          <option value="FREE">Free</option>
+                          <option value="VIP">VIP</option>
+                          <option value="PREMIUM">Premium</option>
+                          <option value="PRO">Pro</option>
+                        </select>
+
+                        <input
+                          name="days"
+                          type="number"
+                          min="1"
+                          defaultValue="30"
+                          placeholder="روز"
+                        />
+                      </div>
+
+                      <div className="form-row">
+                        <input
+                          name="price"
+                          type="number"
+                          min="0"
+                          placeholder="مبلغ"
+                        />
+
+                        <input
+                          name="currency"
+                          defaultValue="تومان"
+                          placeholder="واحد پول"
+                        />
+                      </div>
+
+                      <input
+                        name="note"
+                        placeholder="یادداشت اشتراک..."
+                      />
+
+                      <button className="gold-button full" type="submit">
+                        فعال‌سازی اشتراک
+                      </button>
+                    </form>
+                  </section>
+                </div>
+
+                <section
+                  className="glass-card message-card"
+                  id="message-user"
+                >
+                  <div className="section-header">
+                    <div>
+                      <h2>ارسال پیام به کاربر</h2>
+                      <span>
+                        پیام در جدول اعلان‌های واقعی کاربر ثبت می‌شود.
+                      </span>
+                    </div>
+                  </div>
+
+                  <form action={sendUserMessage} className="message-form">
+                    <input
+                      type="hidden"
+                      name="userId"
+                      value={selectedUser.id}
+                    />
+
+                    <input
+                      name="title"
+                      required
+                      placeholder="عنوان پیام"
+                    />
+
+                    <textarea
+                      name="message"
+                      required
+                      rows={5}
+                      placeholder="متن پیام را بنویسید..."
+                    />
+
+                    <button className="gold-button" type="submit">
+                      ارسال پیام
+                    </button>
+                  </form>
+                </section>
+
+                <section className="access-grid">
+                  <div className="access-card glass-card">
+                    <div className="access-icon">↗</div>
+
+                    <div>
+                      <strong>کانال سیگنال VIP</strong>
+                      <span>
+                        مدیریت ارسال سیگنال‌ها و اتصال Telegram
+                      </span>
+                    </div>
+
+                    <Link href="/admin/signals">
+                      مدیریت
+                      <b>‹</b>
+                    </Link>
+                  </div>
+
+                  <div className="access-card glass-card">
+                    <div className="access-icon">◈</div>
+
+                    <div>
+                      <strong>دسترسی VPN</strong>
+                      <span>
+                        بخش مدیریت دسترسی کاربران به سرویس‌ها
+                      </span>
+                    </div>
+
+                    <Link href="/admin/settings">
+                      تنظیمات
+                      <b>‹</b>
+                    </Link>
+                  </div>
+
+                  <div className="access-card glass-card">
+                    <div className="access-icon">▣</div>
+
+                    <div>
+                      <strong>گزارش فعالیت</strong>
+                      <span>
+                        {selectedUser._count.trades.toLocaleString(
+                          "fa-IR"
+                        )}{" "}
+                        معامله و{" "}
+                        {selectedUser._count.tradingSignals.toLocaleString(
+                          "fa-IR"
+                        )}{" "}
+                        سیگنال
+                      </span>
+                    </div>
+
+                    <Link href="/admin/reports">
+                      مشاهده
+                      <b>‹</b>
+                    </Link>
+                  </div>
+                </section>
+
+                <section
+                  className="glass-card plan-card"
+                  id="change-plan"
+                >
+                  <div>
+                    <h2>تغییر پلن کاربر</h2>
+                    <p>
+                      تغییر مستقیم پلن در حساب کاربر ثبت می‌شود.
+                    </p>
+                  </div>
+
+                  <form action={changePlan}>
+                    <input
+                      type="hidden"
+                      name="userId"
+                      value={selectedUser.id}
+                    />
+
+                    <select
+                      name="plan"
+                      defaultValue={selectedUser.plan}
+                    >
+                      <option value="FREE">Free</option>
+                      <option value="VIP">VIP</option>
+                      <option value="PREMIUM">Premium</option>
+                      <option value="PRO">Pro</option>
+                    </select>
+
+                    <button className="gold-button" type="submit">
+                      ذخیره پلن
+                    </button>
+                  </form>
+                </section>
+              </section>
+            ) : (
+              <section className="glass-card no-user">
+                <div>♙</div>
+                <h2>کاربری برای نمایش وجود ندارد</h2>
+                <p>ابتدا یک کاربر انتخاب کنید.</p>
+              </section>
+            )}
+          </div>
+        </main>
+      </div>
+
       <style>{`
         * {
           box-sizing: border-box;
         }
 
-        :root {
-          color-scheme: dark;
-        }
-
-        html,
         body {
           margin: 0;
-          padding: 0;
           background: #050608;
-          color: #f3f4f6;
-          font-family: Tahoma, Arial, sans-serif;
+          color: #f5f5f5;
+          font-family: Arial, Tahoma, sans-serif;
         }
 
-        body {
-          min-height: 100vh;
+        a {
+          color: inherit;
+          text-decoration: none;
         }
 
         button,
@@ -676,2292 +1390,1297 @@ export default async function AdminUsersPage({
           font: inherit;
         }
 
-        button {
-          cursor: pointer;
-        }
-
-        a {
-          color: inherit;
-          text-decoration: none;
-        }
-
-        .page {
+        .admin-page {
           min-height: 100vh;
-          padding: 18px;
+          display: flex;
           background:
-            radial-gradient(
-              circle at 90% 0%,
-              rgba(205, 161, 65, .13),
-              transparent 26%
-            ),
-            radial-gradient(
-              circle at 0% 70%,
-              rgba(20, 75, 90, .13),
-              transparent 30%
-            ),
-            linear-gradient(
-              135deg,
-              #07090d 0%,
-              #0a0d12 48%,
-              #050608 100%
-            );
-        }
-
-        .shell {
-          width: min(1450px, 100%);
-          margin: auto;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 235px;
-          gap: 18px;
-          align-items: start;
-        }
-
-        .main {
-          min-width: 0;
+            radial-gradient(circle at 80% 0%, rgba(214, 166, 72, .08), transparent 28%),
+            radial-gradient(circle at 10% 30%, rgba(35, 104, 255, .06), transparent 30%),
+            #050608;
         }
 
         .sidebar {
+          width: 255px;
+          min-height: 100vh;
           position: sticky;
-          top: 18px;
-          padding: 16px;
-          border-radius: 25px;
-          border: 1px solid rgba(255,255,255,.07);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(18,21,26,.93),
-              rgba(8,10,14,.91)
-            );
-          box-shadow:
-            0 25px 70px rgba(0,0,0,.35);
-          backdrop-filter: blur(22px);
+          top: 0;
+          height: 100vh;
+          padding: 28px 18px;
+          border-left: 1px solid rgba(255,255,255,.07);
+          background: rgba(8, 9, 12, .92);
+          backdrop-filter: blur(25px);
+          display: flex;
+          flex-direction: column;
+          z-index: 20;
         }
 
         .brand {
           display: flex;
           align-items: center;
-          gap: 11px;
-          padding: 6px 4px 19px;
-          border-bottom: 1px solid rgba(255,255,255,.06);
+          gap: 12px;
+          padding: 4px 8px 28px;
         }
 
         .brand-logo {
-          width: 46px;
-          height: 46px;
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
           display: grid;
           place-items: center;
-          border-radius: 15px;
-          border: 1px solid rgba(222,177,75,.25);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(224,180,76,.18),
-              rgba(224,180,76,.035)
-            );
-          color: #e4b953;
-          font-weight: 900;
-          letter-spacing: -1px;
+          background: linear-gradient(145deg, #e9c36a, #76551b);
+          color: #050608;
+          font-size: 23px;
+          box-shadow: 0 10px 35px rgba(218,170,70,.2);
         }
 
         .brand strong {
           display: block;
-          font-size: 14px;
+          font-size: 17px;
         }
 
         .brand small {
+          color: #8e8e95;
+          font-size: 9px;
+          letter-spacing: 1.5px;
+          margin-top: 4px;
           display: block;
-          margin-top: 5px;
-          color: #697586;
-          font-size: 8px;
-        }
-
-        .nav-title {
-          margin: 22px 7px 9px;
-          color: #606c7d;
-          font-size: 8px;
-          letter-spacing: 2px;
         }
 
         .nav {
-          display: grid;
-          gap: 5px;
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
         }
 
-        .nav a {
+        .nav-item {
+          min-height: 47px;
           display: flex;
           align-items: center;
-          gap: 10px;
-          min-height: 43px;
-          padding: 0 11px;
-          border-radius: 12px;
-          color: #8893a2;
-          font-size: 10px;
-          border: 1px solid transparent;
+          gap: 13px;
+          padding: 0 15px;
+          color: #92939a;
+          border-radius: 13px;
           transition: .2s;
-        }
-
-        .nav a:hover,
-        .nav a.active {
-          color: #e6bc59;
-          border-color: rgba(222,177,75,.15);
-          background: rgba(222,177,75,.07);
-        }
-
-        .nav-icon {
-          width: 26px;
-          text-align: center;
           font-size: 14px;
         }
 
-        .side-footer {
-          margin-top: 20px;
-          padding: 12px;
-          border-radius: 14px;
-          color: #697586;
-          font-size: 8px;
-          line-height: 1.9;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.05);
+        .nav-item span {
+          width: 22px;
+          text-align: center;
+          font-size: 17px;
         }
 
-        /* TOP */
-
-        .topbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          margin-bottom: 14px;
-          padding: 12px 15px;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 18px;
-          background: rgba(12,14,18,.75);
-          backdrop-filter: blur(20px);
+        .nav-item:hover,
+        .nav-item.active {
+          color: #fff;
+          background: linear-gradient(
+            90deg,
+            rgba(217,168,68,.17),
+            rgba(217,168,68,.05)
+          );
+          border: 1px solid rgba(218,174,77,.14);
         }
 
-        .top-title strong {
-          display: block;
-          font-size: 15px;
+        .nav-item.active {
+          box-shadow: inset -3px 0 0 #d8ae55;
         }
 
-        .top-title span {
-          display: block;
-          margin-top: 4px;
-          color: #657184;
-          font-size: 8px;
-        }
-
-        .top-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .search-mini {
-          width: 245px;
-          height: 37px;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 0 11px;
-          border-radius: 11px;
-          border: 1px solid rgba(255,255,255,.07);
-          background: #ffffff03;
-        }
-
-        .search-mini input {
-          width: 100%;
-          border: 0;
-          outline: 0;
-          color: #ddd;
-          background: transparent;
-          font-size: 9px;
+        .sidebar-bottom {
+          margin-top: auto;
         }
 
         .admin-mini {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
+          padding: 14px;
+          border-radius: 15px;
+          background: rgba(255,255,255,.035);
+          border: 1px solid rgba(255,255,255,.06);
+          margin-bottom: 10px;
         }
 
-        .admin-mini-avatar {
-          width: 36px;
-          height: 36px;
+        .admin-avatar,
+        .avatar-small {
           display: grid;
           place-items: center;
-          border-radius: 11px;
-          color: #e3b752;
-          background: rgba(223,178,74,.08);
-          border: 1px solid rgba(223,178,74,.18);
-          font-size: 10px;
-          font-weight: 900;
+          border-radius: 50%;
+          background: linear-gradient(145deg, #e7c267, #86611e);
+          color: #080808;
+          font-weight: 800;
         }
 
-        .admin-mini span {
+        .admin-avatar {
+          width: 38px;
+          height: 38px;
+        }
+
+        .admin-mini strong {
           display: block;
-          color: #e7ebf0;
-          font-size: 9px;
+          font-size: 12px;
         }
 
         .admin-mini small {
           display: block;
-          margin-top: 3px;
-          color: #647081;
-          font-size: 7px;
+          color: #85858b;
+          margin-top: 4px;
+          font-size: 10px;
         }
 
-        /* HEADER */
-
-        .heading {
-          margin: 20px 4px 13px;
+        .logout {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #8b8c91;
+          padding: 12px 15px;
+          font-size: 13px;
         }
 
-        .heading .eyebrow {
-          color: #d7ac4d;
-          font-size: 8px;
-          letter-spacing: 3px;
-          font-weight: 900;
+        .main {
+          flex: 1;
+          min-width: 0;
+          padding: 28px 30px 60px;
         }
 
-        .heading h1 {
-          margin: 7px 0 4px;
-          font-size: clamp(23px, 3vw, 32px);
+        .topbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 20px;
+          margin-bottom: 28px;
         }
 
-        .heading p {
+        .breadcrumb {
+          color: #777981;
+          font-size: 12px;
+          margin-bottom: 9px;
+        }
+
+        .breadcrumb span {
+          padding: 0 8px;
+          color: #c7a052;
+        }
+
+        h1 {
+          font-size: 28px;
+          margin: 0 0 8px;
+        }
+
+        .topbar p {
           margin: 0;
-          color: #6d7889;
-          font-size: 9px;
+          color: #777980;
+          font-size: 13px;
         }
 
-        /* STATS */
+        .top-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
 
-        .stats {
+        .icon-button {
+          width: 43px;
+          height: 43px;
+          border-radius: 13px;
+          background: rgba(255,255,255,.04);
+          border: 1px solid rgba(255,255,255,.07);
+          color: #ddd;
+          cursor: pointer;
+        }
+
+        .admin-pill {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 7px 11px;
+          border-radius: 14px;
+          background: rgba(255,255,255,.035);
+          border: 1px solid rgba(255,255,255,.07);
+        }
+
+        .avatar-small {
+          width: 33px;
+          height: 33px;
+          font-size: 13px;
+        }
+
+        .admin-pill strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .admin-pill span {
+          display: block;
+          color: #777980;
+          font-size: 9px;
+          margin-top: 3px;
+        }
+
+        .stats-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 10px;
+          gap: 14px;
+          margin-bottom: 18px;
         }
 
-        .stat {
-          min-height: 100px;
-          padding: 15px;
-          border-radius: 18px;
-          border: 1px solid rgba(255,255,255,.065);
+        .stat-card,
+        .glass-card,
+        .filter-card {
           background:
             linear-gradient(
               145deg,
-              rgba(22,25,30,.85),
-              rgba(10,12,16,.88)
+              rgba(255,255,255,.055),
+              rgba(255,255,255,.018)
             );
-          box-shadow: 0 15px 40px rgba(0,0,0,.18);
+          border: 1px solid rgba(255,255,255,.075);
+          box-shadow: 0 20px 50px rgba(0,0,0,.16);
+          backdrop-filter: blur(22px);
         }
 
-        .stat-top {
-          display: flex;
+        .stat-card {
+          min-height: 112px;
+          border-radius: 19px;
+          padding: 18px;
+          display: grid;
+          grid-template-columns: 46px 1fr;
+          gap: 11px;
           align-items: center;
-          justify-content: space-between;
-          color: #727d8d;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .stat-card > small {
+          position: absolute;
+          left: 18px;
+          bottom: 12px;
+          color: #66686e;
           font-size: 9px;
         }
 
         .stat-icon {
-          width: 31px;
-          height: 31px;
+          width: 44px;
+          height: 44px;
+          border-radius: 13px;
           display: grid;
           place-items: center;
-          border-radius: 10px;
-          background: rgba(255,255,255,.035);
-          border: 1px solid rgba(255,255,255,.05);
+          font-size: 19px;
         }
 
-        .stat-number {
-          margin-top: 13px;
-          font-size: 23px;
-          font-weight: 900;
-        }
-
-        .gold {
-          color: #e3b952;
+        .purple {
+          background: rgba(144,94,255,.13);
+          color: #b795ff;
         }
 
         .green {
-          color: #3fe09a;
+          background: rgba(62,205,135,.11);
+          color: #56d99a;
+        }
+
+        .orange {
+          background: rgba(235,164,62,.12);
+          color: #e9ae53;
         }
 
         .red {
-          color: #ff6c76;
+          background: rgba(235,77,77,.11);
+          color: #ef7373;
         }
 
-        /* FILTER */
+        .stat-card span {
+          display: block;
+          color: #85868d;
+          font-size: 11px;
+          margin-bottom: 5px;
+        }
 
-        .filter {
-          margin-top: 15px;
-          padding: 12px;
-          display: grid;
-          grid-template-columns: minmax(180px, 1fr) 150px 150px auto auto;
-          gap: 7px;
-          border: 1px solid rgba(255,255,255,.07);
+        .stat-card strong {
+          display: block;
+          font-size: 23px;
+        }
+
+        .filter-card {
           border-radius: 18px;
-          background: rgba(12,15,20,.7);
+          padding: 13px;
+          margin-bottom: 18px;
         }
 
-        .field {
-          min-width: 0;
-          height: 40px;
-          padding: 0 11px;
-          border-radius: 11px;
-          border: 1px solid rgba(255,255,255,.07);
-          outline: none;
-          color: #dce2e9;
-          background: #080b10;
-          font-size: 9px;
-        }
-
-        .field:focus {
-          border-color: rgba(224,180,76,.3);
-        }
-
-        .btn {
-          min-height: 40px;
-          padding: 0 14px;
-          display: inline-flex;
+        .filter-form {
+          display: flex;
+          gap: 9px;
           align-items: center;
-          justify-content: center;
+        }
+
+        .search-box {
+          flex: 1;
+          min-width: 180px;
+          height: 43px;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 0 13px;
           border-radius: 11px;
-          border: 1px solid rgba(255,255,255,.07);
-          color: #aab4c1;
-          background: rgba(255,255,255,.025);
-          font-size: 9px;
-          font-weight: 700;
-          cursor: pointer;
+          background: rgba(0,0,0,.22);
+          border: 1px solid rgba(255,255,255,.06);
         }
 
-        .btn:hover {
-          background: rgba(255,255,255,.055);
+        .search-box span {
+          color: #85868b;
+          font-size: 20px;
         }
 
-        .btn-gold {
-          color: #17130b;
-          border-color: transparent;
-          background:
-            linear-gradient(
-              135deg,
-              #efc967,
-              #b98225
-            );
-        }
-
-        .btn-danger {
-          color: #ff7c84;
-          border-color: rgba(255,91,104,.15);
-          background: rgba(255,70,83,.045);
-        }
-
-        .btn-green {
-          color: #4de09c;
-          border-color: rgba(67,223,152,.16);
-          background: rgba(67,223,152,.045);
-        }
-
-        .btn-blue {
-          color: #71b8ff;
-          border-color: rgba(80,150,255,.16);
-          background: rgba(80,150,255,.045);
-        }
-
-        /* MAIN GRID */
-
-        .grid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
-          gap: 14px;
-          margin-top: 14px;
-        }
-
-        .panel {
+        .search-box input {
+          flex: 1;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: white;
           min-width: 0;
-          overflow: hidden;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 21px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(15,18,23,.93),
-              rgba(7,9,13,.95)
-            );
-          box-shadow:
-            0 25px 65px rgba(0,0,0,.23);
-          backdrop-filter: blur(18px);
         }
 
-        .panel-head {
+        select,
+        input,
+        textarea {
+          background: #0d0f13;
+          border: 1px solid rgba(255,255,255,.08);
+          color: #eee;
+          border-radius: 11px;
+          outline: none;
+        }
+
+        select {
+          height: 43px;
+          padding: 0 12px;
+          min-width: 125px;
+        }
+
+        input {
+          height: 43px;
+          padding: 0 13px;
+        }
+
+        textarea {
+          padding: 13px;
+          resize: vertical;
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+          color: #666970;
+        }
+
+        .gold-button,
+        .reset-button {
+          min-height: 43px;
+          border-radius: 11px;
+          padding: 0 18px;
+          display: inline-flex;
+          justify-content: center;
+          align-items: center;
+          cursor: pointer;
+          border: 0;
+          white-space: nowrap;
+        }
+
+        .gold-button {
+          background: linear-gradient(135deg, #ebc66c, #a87527);
+          color: #0b0a08;
+          font-weight: 800;
+          box-shadow: 0 9px 25px rgba(209,161,61,.14);
+        }
+
+        .gold-button.full {
+          width: 100%;
+        }
+
+        .reset-button {
+          border: 1px solid rgba(255,255,255,.08);
+          color: #aaa;
+          background: rgba(255,255,255,.025);
+        }
+
+        .content-grid {
+          display: grid;
+          grid-template-columns: 350px minmax(0, 1fr);
+          gap: 18px;
+          align-items: start;
+        }
+
+        .glass-card {
+          border-radius: 19px;
+          overflow: hidden;
+        }
+
+        .users-panel {
+          position: sticky;
+          top: 20px;
+        }
+
+        .section-header {
+          padding: 18px 20px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 10px;
-          padding: 16px 18px;
-          border-bottom: 1px solid rgba(255,255,255,.055);
+          gap: 12px;
+          border-bottom: 1px solid rgba(255,255,255,.06);
         }
 
-        .panel-head h2 {
-          margin: 0;
-          font-size: 13px;
+        .section-header h2 {
+          margin: 0 0 5px;
+          font-size: 15px;
         }
 
-        .panel-head span {
-          color: #626e7f;
-          font-size: 8px;
+        .section-header span {
+          color: #707178;
+          font-size: 10px;
         }
 
-        /* USERS */
+        .view-all {
+          color: #d8af57;
+          font-size: 11px;
+        }
 
         .user-list {
-          max-height: 760px;
-          overflow: auto;
+          padding: 8px;
+          max-height: 720px;
+          overflow-y: auto;
         }
 
         .user-row {
           display: grid;
-          grid-template-columns: 45px minmax(0,1fr) auto;
-          gap: 11px;
+          grid-template-columns: 41px 1fr auto 15px;
+          gap: 9px;
           align-items: center;
-          padding: 14px;
-          border-bottom: 1px solid rgba(255,255,255,.045);
-          transition: .2s;
+          padding: 11px 10px;
+          border-radius: 14px;
+          border: 1px solid transparent;
+          margin-bottom: 5px;
         }
 
-        .user-row:hover {
-          background: rgba(255,255,255,.018);
+        .user-row:hover,
+        .user-row.selected {
+          background: rgba(218,174,82,.075);
+          border-color: rgba(218,174,82,.13);
         }
 
         .user-avatar {
-          width: 45px;
-          height: 45px;
+          width: 39px;
+          height: 39px;
+          border-radius: 12px;
           display: grid;
           place-items: center;
-          border-radius: 14px;
-          color: #e4b953;
+          background: linear-gradient(145deg,#30343b,#15171c);
+          border: 1px solid rgba(255,255,255,.08);
+          color: #d9b65f;
+          font-weight: 800;
+        }
+
+        .user-info {
+          min-width: 0;
+        }
+
+        .user-info strong {
+          display: block;
           font-size: 12px;
-          font-weight: 900;
-          border: 1px solid rgba(224,180,76,.18);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(224,180,76,.13),
-              rgba(255,255,255,.02)
-            );
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
         }
 
-        .user-name {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          flex-wrap: wrap;
-        }
-
-        .user-name strong {
-          font-size: 11px;
-        }
-
-        .role-badge {
-          padding: 3px 6px;
-          border-radius: 6px;
-          color: #e8c365;
-          background: rgba(226,180,74,.09);
-          border: 1px solid rgba(226,180,74,.13);
-          font-size: 7px;
-        }
-
-        .user-email {
-          margin-top: 5px;
-          color: #5f6b7c;
-          direction: ltr;
-          text-align: right;
-          font-size: 8px;
-        }
-
-        .user-date {
+        .user-info span {
+          display: block;
+          color: #6e7077;
+          font-size: 9px;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
           margin-top: 4px;
-          color: #4f5968;
-          font-size: 7px;
         }
 
-        .user-right {
+        .user-plan {
           text-align: left;
         }
 
         .plan {
-          display: inline-flex;
-          padding: 5px 8px;
-          border-radius: 7px;
-          color: #dcb456;
-          background: rgba(220,180,86,.08);
-          border: 1px solid rgba(220,180,86,.12);
+          padding: 4px 7px;
+          border-radius: 6px;
           font-size: 8px;
-          font-weight: 800;
+          border: 1px solid rgba(255,255,255,.07);
         }
 
-        .status {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          margin-top: 7px;
-          padding: 5px 8px;
-          border-radius: 7px;
-          font-size: 7px;
+        .plan-VIP {
+          color: #e7c46b;
+          background: rgba(221,174,69,.1);
         }
 
-        .status:before {
-          content: "";
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: currentColor;
+        .plan-PREMIUM {
+          color: #b998ff;
+          background: rgba(143,99,232,.1);
         }
 
-        .status-active {
-          color: #42dc96;
-          background: rgba(66,220,150,.07);
+        .plan-PRO {
+          color: #62c9ff;
+          background: rgba(74,164,220,.1);
         }
 
-        .status-blocked {
-          color: #ff6e77;
-          background: rgba(255,110,119,.07);
+        .plan-FREE {
+          color: #96979d;
+          background: rgba(255,255,255,.05);
         }
 
-        .view-btn {
-          margin-top: 7px;
-          display: inline-flex;
-          min-height: 30px;
-          align-items: center;
-          padding: 0 10px;
-          border-radius: 8px;
-          color: #d9b04e;
-          border: 1px solid rgba(218,174,73,.13);
-          background: rgba(218,174,73,.045);
+        .user-plan small {
+          display: block;
+          margin-top: 4px;
           font-size: 8px;
         }
 
-        /* SELECTED USER */
-
-        .profile {
-          padding: 18px;
+        .active-text {
+          color: #53d491;
         }
 
-        .profile-head {
+        .blocked-text {
+          color: #e86b6b;
+        }
+
+        .user-arrow {
+          color: #66676c;
+          font-size: 18px;
+        }
+
+        .details-area {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+
+        .profile-card {
+          padding: 22px;
+        }
+
+        .profile-top {
           display: flex;
           align-items: center;
-          gap: 13px;
-          padding-bottom: 16px;
-          border-bottom: 1px solid rgba(255,255,255,.055);
+          gap: 16px;
         }
 
         .profile-avatar {
-          width: 65px;
-          height: 65px;
+          width: 72px;
+          height: 72px;
+          flex: 0 0 72px;
+          border-radius: 20px;
           display: grid;
           place-items: center;
-          flex: 0 0 auto;
-          border-radius: 20px;
-          color: #e8bc58;
-          font-size: 18px;
+          background:
+            linear-gradient(145deg,#e6c066,#805c20);
+          color: #080706;
+          font-size: 28px;
           font-weight: 900;
-          border: 1px solid rgba(226,181,76,.28);
-          background:
-            radial-gradient(
-              circle at 30% 20%,
-              rgba(228,186,87,.2),
-              rgba(255,255,255,.02)
-            );
-          box-shadow:
-            0 15px 35px rgba(0,0,0,.22);
+          box-shadow: 0 15px 35px rgba(219,170,65,.15);
         }
 
-        .profile-head h2 {
-          margin: 0;
-          font-size: 16px;
+        .profile-main {
+          flex: 1;
+          min-width: 0;
         }
 
-        .profile-head p {
-          margin: 5px 0 0;
-          color: #606c7b;
-          direction: ltr;
-          text-align: right;
-          font-size: 8px;
-        }
-
-        .profile-badges {
-          display: flex;
-          gap: 6px;
-          flex-wrap: wrap;
-          margin-top: 9px;
-        }
-
-        .info-grid {
-          margin-top: 14px;
-          display: grid;
-          gap: 1px;
-          overflow: hidden;
-          border-radius: 14px;
-          border: 1px solid rgba(255,255,255,.05);
-          background: rgba(255,255,255,.04);
-        }
-
-        .info-row {
-          min-height: 38px;
-          display: grid;
-          grid-template-columns: 115px 1fr;
-          align-items: center;
-          gap: 8px;
-          padding: 0 11px;
-          background: #0b0e13;
-        }
-
-        .info-row span {
-          color: #687486;
-          font-size: 8px;
-        }
-
-        .info-row strong {
-          color: #d9dee5;
-          font-size: 9px;
-          text-align: left;
-        }
-
-        .section-title {
-          margin: 17px 0 9px;
-          color: #e4e7ec;
-          font-size: 10px;
-          font-weight: 800;
-        }
-
-        /* QUICK ACTIONS */
-
-        .actions-grid {
-          display: grid;
-          grid-template-columns: repeat(4,1fr);
-          gap: 7px;
-        }
-
-        .action-card {
-          min-height: 75px;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          gap: 6px;
-          border-radius: 13px;
-          border: 1px solid rgba(255,255,255,.055);
-          background: rgba(255,255,255,.022);
-          color: #a9b2be;
-          text-align: center;
-          font-size: 8px;
-        }
-
-        .action-card:hover {
-          border-color: rgba(222,177,75,.17);
-          color: #e4bb59;
-          background: rgba(222,177,75,.035);
-        }
-
-        .action-icon {
-          font-size: 17px;
-        }
-
-        /* SUBSCRIPTION */
-
-        .subscription {
-          padding: 16px;
-          border-radius: 16px;
-          border: 1px solid rgba(223,178,75,.15);
-          background:
-            linear-gradient(
-              135deg,
-              rgba(222,177,75,.08),
-              rgba(255,255,255,.018)
-            );
-        }
-
-        .subscription-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .subscription-plan {
+        .profile-name-line {
           display: flex;
           align-items: center;
           gap: 9px;
         }
 
-        .crown {
-          width: 43px;
-          height: 43px;
-          display: grid;
-          place-items: center;
-          border-radius: 13px;
-          color: #e6bb57;
-          border: 1px solid rgba(230,187,87,.17);
-          background: rgba(230,187,87,.06);
-          font-size: 19px;
+        .profile-main h2 {
+          margin: 0;
+          font-size: 21px;
         }
 
-        .subscription-plan strong {
+        .profile-main p {
+          color: #888990;
+          margin: 7px 0;
+          font-size: 12px;
+        }
+
+        .profile-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 15px;
+          color: #64666d;
+          font-size: 9px;
+        }
+
+        .success-badge,
+        .danger-badge {
+          padding: 4px 8px;
+          border-radius: 7px;
+          font-size: 9px;
+        }
+
+        .success-badge {
+          color: #55d493;
+          background: rgba(60,202,129,.1);
+        }
+
+        .danger-badge {
+          color: #f07777;
+          background: rgba(232,76,76,.1);
+        }
+
+        .profile-plan {
+          min-width: 125px;
+          text-align: center;
+          padding: 13px;
+          border-radius: 14px;
+          background: rgba(218,174,77,.06);
+          border: 1px solid rgba(218,174,77,.1);
+        }
+
+        .profile-plan span {
           display: block;
-          color: #e5bb56;
+          color: #76777e;
+          font-size: 9px;
+          margin-bottom: 7px;
+        }
+
+        .profile-plan strong {
+          color: #e2bd65;
+          font-size: 17px;
+        }
+
+        .blocked-notice {
+          display: flex;
+          gap: 8px;
+          margin-top: 16px;
+          padding: 11px 13px;
+          border-radius: 11px;
+          background: rgba(230,76,76,.07);
+          border: 1px solid rgba(230,76,76,.13);
+          color: #db8585;
+          font-size: 11px;
+        }
+
+        .quick-stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
+          margin-top: 18px;
+        }
+
+        .quick-stats > div {
+          padding: 12px;
+          border-radius: 12px;
+          background: rgba(255,255,255,.025);
+          border: 1px solid rgba(255,255,255,.05);
+        }
+
+        .quick-stats span {
+          display: block;
+          color: #707178;
+          font-size: 9px;
+          margin-bottom: 5px;
+        }
+
+        .quick-stats strong {
           font-size: 15px;
         }
 
-        .subscription-plan span {
-          display: block;
-          margin-top: 4px;
-          color: #48dc99;
-          font-size: 8px;
-        }
-
-        .remaining {
-          padding: 6px 8px;
-          border-radius: 8px;
-          color: #55dd9d;
-          background: rgba(85,221,157,.07);
-          font-size: 8px;
-        }
-
-        .sub-details {
-          margin-top: 13px;
+        .action-grid {
           display: grid;
-          gap: 7px;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
+          margin-top: 14px;
         }
 
-        .sub-detail {
+        .action-button {
+          min-height: 43px;
           display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          color: #697586;
-          font-size: 8px;
-        }
-
-        .sub-detail strong {
-          color: #cdd4dc;
-          font-size: 8px;
-          text-align: left;
-        }
-
-        /* FORMS */
-
-        .form-card {
-          margin-top: 10px;
-          padding: 12px;
-          border-radius: 15px;
-          border: 1px solid rgba(255,255,255,.055);
-          background: rgba(255,255,255,.018);
-        }
-
-        .form-title {
-          margin-bottom: 9px;
-          color: #8994a3;
-          font-size: 8px;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 7px;
-        }
-
-        .form-grid.full {
-          grid-template-columns: 1fr;
-        }
-
-        .form-card select,
-        .form-card input,
-        .form-card textarea {
-          width: 100%;
-          min-height: 38px;
-          padding: 0 9px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,.07);
-          outline: none;
-          color: #e1e5ea;
-          background: #07090d;
-          font-size: 8px;
-        }
-
-        .form-card textarea {
-          min-height: 70px;
-          padding-top: 9px;
-          resize: vertical;
-        }
-
-        .form-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          margin-top: 7px;
-        }
-
-        /* SUPPORT */
-
-        .support-list {
-          display: grid;
-          gap: 7px;
-        }
-
-        .support-item {
-          padding: 11px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,.05);
-          background: rgba(255,255,255,.018);
-        }
-
-        .support-head {
-          display: flex;
+          justify-content: center;
           align-items: center;
+          gap: 7px;
+          border: 1px solid rgba(255,255,255,.07);
+          border-radius: 11px;
+          background: rgba(255,255,255,.025);
+          color: #bdbec3;
+          cursor: pointer;
+          font-size: 10px;
+        }
+
+        .action-button:hover {
+          border-color: rgba(220,174,70,.25);
+          color: #e7c36b;
+        }
+
+        .action-button.danger {
+          color: #e77a7a;
+        }
+
+        .action-button.unblock {
+          color: #5bd493;
+        }
+
+        .two-column {
+          display: grid;
+          grid-template-columns: 1.1fr .9fr;
+          gap: 18px;
+        }
+
+        .ticket-list {
+          padding: 10px 14px 14px;
+        }
+
+        .ticket {
+          display: flex;
+          gap: 11px;
+          padding: 13px 6px;
+          border-bottom: 1px solid rgba(255,255,255,.05);
+        }
+
+        .ticket:last-child {
+          border-bottom: 0;
+        }
+
+        .ticket-icon {
+          width: 35px;
+          height: 35px;
+          flex: 0 0 35px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: rgba(218,174,75,.08);
+          color: #dcb45d;
+        }
+
+        .ticket-body {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .ticket-title {
+          display: flex;
           justify-content: space-between;
+          align-items: center;
           gap: 8px;
         }
 
-        .support-head strong {
-          font-size: 9px;
+        .ticket-title strong {
+          font-size: 11px;
         }
 
         .ticket-status {
           padding: 4px 7px;
-          border-radius: 7px;
-          font-size: 7px;
+          border-radius: 6px;
+          font-size: 8px;
+          white-space: nowrap;
         }
 
-        .ticket-open {
-          color: #42dc96;
-          background: rgba(66,220,150,.07);
+        .status-open {
+          color: #f0bb59;
+          background: rgba(240,187,89,.09);
         }
 
-        .ticket-pending {
-          color: #e4bb58;
-          background: rgba(228,187,88,.07);
+        .status-progress {
+          color: #61b8e8;
+          background: rgba(97,184,232,.09);
         }
 
-        .ticket-closed {
-          color: #788494;
-          background: rgba(255,255,255,.04);
+        .status-answered {
+          color: #59d694;
+          background: rgba(89,214,148,.09);
         }
 
-        .support-meta {
+        .status-closed {
+          color: #777980;
+          background: rgba(255,255,255,.05);
+        }
+
+        .status-default {
+          color: #aaa;
+          background: rgba(255,255,255,.05);
+        }
+
+        .ticket-body p {
+          color: #85868d;
+          font-size: 15px;
+          line-height: 2;
+          margin: 9px 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        .ticket-footer {
           display: flex;
           justify-content: space-between;
+          align-items: center;
           gap: 8px;
-          margin-top: 6px;
-          color: #596575;
-          font-size: 7px;
+          color: #62646a;
+          font-size: 8px;
         }
 
-        .support-last {
-          margin-top: 9px;
+        .ticket-footer select {
+          height: 30px;
+          min-width: 105px;
+          font-size: 9px;
+          padding: 0 7px;
+        }
+
+        .subscription-card {
+          padding-bottom: 16px;
+        }
+
+        .subscription-live,
+        .subscription-off {
+          padding: 5px 9px;
+          border-radius: 7px;
+          font-size: 9px;
+        }
+
+        .subscription-live {
+          color: #55d493;
+          background: rgba(85,212,147,.08);
+        }
+
+        .subscription-off {
+          color: #888a90;
+          background: rgba(255,255,255,.05);
+        }
+
+        .current-subscription {
+          margin: 14px;
+          padding: 15px;
+          border-radius: 14px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(217,174,72,.09),
+              rgba(255,255,255,.025)
+            );
+          border: 1px solid rgba(217,174,72,.12);
+        }
+
+        .subscription-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .crown {
+          width: 40px;
+          height: 40px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: rgba(218,174,72,.12);
+          color: #e4bd62;
+          font-size: 20px;
+        }
+
+        .subscription-header strong {
+          display: block;
+          color: #e3bd62;
+          font-size: 15px;
+        }
+
+        .subscription-header span {
+          display: block;
+          color: #707177;
+          font-size: 9px;
+          margin-top: 3px;
+        }
+
+        .subscription-details {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 7px;
+          margin-top: 14px;
+        }
+
+        .subscription-details div {
           padding: 9px;
           border-radius: 9px;
-          color: #9ba6b3;
-          background: rgba(0,0,0,.16);
-          line-height: 1.9;
-          font-size: 8px;
+          background: rgba(0,0,0,.15);
         }
 
-        /* SUB HISTORY */
-
-        .history {
-          display: grid;
-          gap: 7px;
-        }
-
-        .history-item {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 8px;
-          padding: 10px;
-          border-radius: 11px;
-          border: 1px solid rgba(255,255,255,.045);
-          background: rgba(255,255,255,.016);
-        }
-
-        .history-item strong {
+        .subscription-details span {
           display: block;
-          color: #d9dee5;
+          color: #65676d;
+          font-size: 8px;
+          margin-bottom: 4px;
+        }
+
+        .subscription-details strong {
+          font-size: 10px;
+        }
+
+        .cancel-button {
+          width: 100%;
+          margin-top: 11px;
+          height: 35px;
+          border-radius: 9px;
+          border: 1px solid rgba(231,105,105,.16);
+          color: #df8585;
+          background: rgba(231,105,105,.05);
+          cursor: pointer;
           font-size: 9px;
         }
 
-        .history-item span {
-          display: block;
-          margin-top: 5px;
-          color: #606c7b;
-          font-size: 7px;
-        }
-
-        .history-price {
-          text-align: left;
-          color: #dcb454;
-          font-size: 8px;
-        }
-
-        /* FOOTER */
-
-        .footer {
-          margin-top: 18px;
-          padding: 15px;
+        .subscription-form {
+          padding: 0 14px;
           display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          color: #535f6e;
-          font-size: 7px;
-          border-top: 1px solid rgba(255,255,255,.05);
+          flex-direction: column;
+          gap: 8px;
         }
 
-        .empty {
-          padding: 35px 15px;
+        .form-title {
+          color: #bbbcc1;
+          font-size: 10px;
+          margin: 4px 0;
+        }
+
+        .form-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+
+        .subscription-form input,
+        .subscription-form select {
+          width: 100%;
+        }
+
+        .no-subscription {
+          margin: 14px;
+          padding: 25px;
+          border: 1px dashed rgba(255,255,255,.09);
+          border-radius: 14px;
           text-align: center;
-          color: #5f6b7b;
+        }
+
+        .no-subscription div {
+          font-size: 23px;
+          color: #777;
+          margin-bottom: 8px;
+        }
+
+        .no-subscription strong {
+          display: block;
+          font-size: 12px;
+        }
+
+        .no-subscription span {
+          display: block;
+          color: #686a70;
           font-size: 9px;
-          line-height: 2;
+          margin-top: 6px;
         }
 
-        @media(max-width:1100px) {
-          .shell {
-            grid-template-columns: 1fr;
+        .message-card {
+          padding-bottom: 18px;
+        }
+
+        .message-form {
+          padding: 15px 18px 0;
+          display: grid;
+          grid-template-columns: 220px 1fr auto;
+          gap: 9px;
+          align-items: start;
+        }
+
+        .message-form textarea {
+          min-height: 86px;
+        }
+
+        .access-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+        }
+
+        .access-card {
+          padding: 16px;
+          display: grid;
+          grid-template-columns: 42px 1fr;
+          gap: 10px;
+          align-items: center;
+        }
+
+        .access-icon {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 12px;
+          background: rgba(216,174,79,.08);
+          color: #dcb65f;
+          font-size: 18px;
+        }
+
+        .access-card strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .access-card span {
+          display: block;
+          color: #6e7076;
+          font-size: 8px;
+          line-height: 1.7;
+          margin-top: 3px;
+        }
+
+        .access-card a {
+          grid-column: 1 / -1;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 9px;
+          border-radius: 8px;
+          color: #cda94f;
+          background: rgba(216,174,79,.055);
+          font-size: 9px;
+        }
+
+        .access-card b {
+          font-size: 16px;
+        }
+
+        .plan-card {
+          padding: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+        }
+
+        .plan-card h2 {
+          margin: 0 0 6px;
+          font-size: 14px;
+        }
+
+        .plan-card p {
+          margin: 0;
+          color: #6e7076;
+          font-size: 9px;
+        }
+
+        .plan-card form {
+          display: flex;
+          gap: 8px;
+        }
+
+        .plan-card select {
+          min-width: 150px;
+        }
+
+        .empty,
+        .no-user {
+          text-align: center;
+          padding: 45px 20px;
+          color: #777980;
+        }
+
+        .empty div,
+        .no-user > div {
+          font-size: 28px;
+          margin-bottom: 10px;
+          color: #b18a39;
+        }
+
+        .empty strong,
+        .no-user h2 {
+          display: block;
+          color: #bbbcc1;
+          font-size: 13px;
+        }
+
+        .empty span,
+        .no-user p {
+          display: block;
+          color: #62646a;
+          font-size: 9px;
+          margin-top: 6px;
+        }
+
+        .empty.compact {
+          padding: 25px 10px;
+        }
+
+        @media (max-width: 1250px) {
+          .content-grid {
+            grid-template-columns: 310px minmax(0, 1fr);
           }
 
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .action-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .message-form {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .message-form textarea {
+            grid-column: 1 / -1;
+          }
+        }
+
+        @media (max-width: 1000px) {
           .sidebar {
-            position: static;
-            display: none;
+            width: 75px;
+            padding: 18px 10px;
           }
 
-          .grid {
+          .brand {
+            justify-content: center;
+          }
+
+          .brand > div:last-child,
+          .nav-item {
+            font-size: 0;
+          }
+
+          .nav-item {
+            justify-content: center;
+            padding: 0;
+          }
+
+          .nav-item span {
+            font-size: 18px;
+          }
+
+          .admin-mini > div:last-child,
+          .logout {
+            justify-content: center;
+            font-size: 0;
+          }
+
+          .admin-mini {
+            justify-content: center;
+            padding: 8px;
+          }
+
+          .content-grid {
             grid-template-columns: 1fr;
+          }
+
+          .users-panel {
+            position: static;
+          }
+
+          .user-list {
+            max-height: 320px;
           }
         }
 
-        @media(max-width:800px) {
-          .page {
-            padding: 9px;
+        @media (max-width: 760px) {
+          .main {
+            padding: 18px 12px 40px;
           }
 
           .topbar {
-            padding: 10px;
+            flex-direction: column;
           }
 
-          .search-mini {
-            display: none;
-          }
-
-          .stats {
-            grid-template-columns: repeat(2,1fr);
-          }
-
-          .filter {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .filter .field:first-child {
-            grid-column: 1 / -1;
-          }
-
-          .filter .btn {
+          .top-actions {
             width: 100%;
           }
 
-          .user-row {
-            grid-template-columns: 42px minmax(0,1fr);
+          .admin-pill {
+            margin-right: auto;
           }
 
-          .user-right {
-            grid-column: 2;
-            text-align: right;
-          }
-
-          .actions-grid {
-            grid-template-columns: repeat(2,1fr);
-          }
-        }
-
-        @media(max-width:520px) {
-          .stats {
-            gap: 7px;
-          }
-
-          .stat {
-            min-height: 88px;
-            padding: 12px;
-          }
-
-          .stat-number {
-            font-size: 20px;
-          }
-
-          .heading {
-            margin-top: 14px;
-          }
-
-          .filter {
-            grid-template-columns: 1fr;
-          }
-
-          .filter .field:first-child {
-            grid-column: auto;
-          }
-
-          .profile {
-            padding: 13px;
-          }
-
-          .info-row {
-            grid-template-columns: 100px 1fr;
-          }
-
-          .actions-grid {
+          .stats-grid {
             grid-template-columns: 1fr 1fr;
           }
 
-          .form-grid {
+          .filter-form {
+            flex-wrap: wrap;
+          }
+
+          .search-box {
+            flex-basis: 100%;
+          }
+
+          .two-column,
+          .access-grid {
             grid-template-columns: 1fr;
           }
 
-          .footer {
+          .profile-top {
+            align-items: flex-start;
+            flex-wrap: wrap;
+          }
+
+          .profile-plan {
+            width: 100%;
+          }
+
+          .quick-stats {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .message-form {
+            grid-template-columns: 1fr;
+          }
+
+          .message-form textarea {
+            grid-column: auto;
+          }
+
+          .plan-card {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .plan-card form {
+            flex-direction: column;
+          }
+        }
+
+        @media (max-width: 500px) {
+          .sidebar {
+            display: none;
+          }
+
+          h1 {
+            font-size: 23px;
+          }
+
+          .stats-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .profile-avatar {
+            width: 60px;
+            height: 60px;
+            flex-basis: 60px;
+          }
+
+          .profile-main h2 {
+            font-size: 17px;
+          }
+
+          .subscription-details {
+            grid-template-columns: 1fr;
+          }
+
+          .action-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .ticket-title {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .ticket-footer {
+            align-items: flex-start;
             flex-direction: column;
           }
         }
       `}</style>
-
-      <div className="shell">
-
-        {/* =================================================
-            MAIN
-        ================================================= */}
-
-        <section className="main">
-
-          {/* TOPBAR */}
-
-          <header className="topbar">
-
-            <div className="top-title">
-              <strong>
-                مدیریت کاربران
-              </strong>
-
-              <span>
-                کنترل حساب‌ها، اشتراک‌ها، پشتیبانی و دسترسی‌ها
-              </span>
-            </div>
-
-            <div className="top-actions">
-
-              <form
-                action="/admin/users"
-                className="search-mini"
-              >
-                <span>⌕</span>
-
-                <input
-                  name="q"
-                  defaultValue={q}
-                  placeholder="جستجوی کاربر..."
-                />
-              </form>
-
-              <div className="admin-mini">
-
-                <div className="admin-mini-avatar">
-                  {initials(admin.name)}
-                </div>
-
-                <div>
-                  <span>{admin.name}</span>
-                  <small>مدیر سیستم</small>
-                </div>
-
-              </div>
-
-            </div>
-
-          </header>
-
-          {/* TITLE */}
-
-          <div className="heading">
-
-            <div className="eyebrow">
-              USER DIRECTORY
-            </div>
-
-            <h1>
-              مدیریت کاربران
-            </h1>
-
-            <p>
-              حساب کاربران، پلن‌ها، اشتراک‌ها و درخواست‌های پشتیبانی را از
-              یک مرکز کنترل کنید.
-            </p>
-
-          </div>
-
-          {/* STATS */}
-
-          <section className="stats">
-
-            <div className="stat">
-
-              <div className="stat-top">
-                <span>کل کاربران</span>
-                <div className="stat-icon">♙</div>
-              </div>
-
-              <div className="stat-number">
-                {totalUsers}
-              </div>
-
-            </div>
-
-            <div className="stat">
-
-              <div className="stat-top">
-                <span>اشتراک فعال</span>
-                <div className="stat-icon">♛</div>
-              </div>
-
-              <div className="stat-number gold">
-                {activeSubscriptions}
-              </div>
-
-            </div>
-
-            <div className="stat">
-
-              <div className="stat-top">
-                <span>درخواست پشتیبانی</span>
-                <div className="stat-icon">●</div>
-              </div>
-
-              <div className="stat-number">
-                {openTickets}
-              </div>
-
-            </div>
-
-            <div className="stat">
-
-              <div className="stat-top">
-                <span>حساب مسدود</span>
-                <div className="stat-icon">!</div>
-              </div>
-
-              <div className="stat-number red">
-                {blockedUsers}
-              </div>
-
-            </div>
-
-          </section>
-
-          {/* FILTER */}
-
-          <form
-            action="/admin/users"
-            className="filter"
-          >
-
-            <input
-              className="field"
-              name="q"
-              defaultValue={q}
-              placeholder="نام یا ایمیل کاربر..."
-            />
-
-            <select
-              className="field"
-              name="plan"
-              defaultValue={planFilter}
-            >
-              <option value="">
-                همه پلن‌ها
-              </option>
-
-              <option value="FREE">
-                رایگان
-              </option>
-
-              <option value="BASIC">
-                پایه
-              </option>
-
-              <option value="PRO">
-                حرفه‌ای
-              </option>
-
-              <option value="PREMIUM">
-                Premium
-              </option>
-
-              <option value="VIP">
-                VIP
-              </option>
-            </select>
-
-            <select
-              className="field"
-              name="status"
-              defaultValue={statusFilter}
-            >
-              <option value="">
-                همه وضعیت‌ها
-              </option>
-
-              <option value="ACTIVE">
-                فعال
-              </option>
-
-              <option value="BLOCKED">
-                مسدود
-              </option>
-            </select>
-
-            <button
-              type="submit"
-              className="btn btn-gold"
-            >
-              جستجو
-            </button>
-
-            <Link
-              href="/admin/users"
-              className="btn"
-            >
-              پاک کردن
-            </Link>
-
-          </form>
-
-          {/* MAIN GRID */}
-
-          <section className="grid">
-
-            {/* USER DIRECTORY */}
-
-            <section className="panel">
-
-              <div className="panel-head">
-
-                <div>
-                  <h2>
-                    لیست کاربران
-                  </h2>
-
-                  <span>
-                    {users.length} نتیجه
-                  </span>
-                </div>
-
-              </div>
-
-              <div className="user-list">
-
-                {users.length === 0 ? (
-                  <div className="empty">
-                    کاربری با این مشخصات پیدا نشد.
-                  </div>
-                ) : (
-                  users.map((user) => (
-
-                    <article
-                      key={user.id}
-                      className="user-row"
-                    >
-
-                      <div className="user-avatar">
-                        {user.avatarEmoji ||
-                          initials(user.name)}
-                      </div>
-
-                      <div>
-
-                        <div className="user-name">
-
-                          <strong>
-                            {user.name}
-                          </strong>
-
-                          {user.role === "ADMIN" && (
-                            <span className="role-badge">
-                              ADMIN
-                            </span>
-                          )}
-
-                        </div>
-
-                        <div className="user-email">
-                          {user.email}
-                        </div>
-
-                        <div className="user-date">
-                          عضویت: {dateOnly(user.createdAt)}
-                        </div>
-
-                      </div>
-
-                      <div className="user-right">
-
-                        <div className="plan">
-                          {planLabel(user.plan)}
-                        </div>
-
-                        <div
-                          className={
-                            user.isBlocked
-                              ? "status status-blocked"
-                              : "status status-active"
-                          }
-                        >
-                          {user.isBlocked
-                            ? "مسدود"
-                            : "فعال"}
-                        </div>
-
-                        <Link
-                          href={`/admin/users?user=${encodeURIComponent(
-                            user.id,
-                          )}`}
-                          className="view-btn"
-                        >
-                          مدیریت ←
-                        </Link>
-
-                      </div>
-
-                    </article>
-
-                  ))
-                )}
-
-              </div>
-
-            </section>
-
-            {/* USER DETAIL */}
-
-            <section className="panel">
-
-              {!selected ? (
-                <div className="empty">
-                  هنوز کاربری برای نمایش وجود ندارد.
-                </div>
-              ) : (
-
-                <>
-
-                  {/* PROFILE */}
-
-                  <div className="profile">
-
-                    <div className="profile-head">
-
-                      <div className="profile-avatar">
-                        {selected.avatarEmoji ||
-                          initials(selected.name)}
-                      </div>
-
-                      <div>
-
-                        <h2>
-                          {selected.name}
-                        </h2>
-
-                        <p>
-                          {selected.email}
-                        </p>
-
-                        <div className="profile-badges">
-
-                          <span
-                            className={
-                              selected.isBlocked
-                                ? "status status-blocked"
-                                : "status status-active"
-                            }
-                          >
-                            {selected.isBlocked
-                              ? "حساب مسدود"
-                              : "حساب فعال"}
-                          </span>
-
-                          <span className="plan">
-                            {planLabel(
-                              selected.plan,
-                            )}
-                          </span>
-
-                        </div>
-
-                      </div>
-
-                    </div>
-
-                    {/* INFO */}
-
-                    <div className="section-title">
-                      اطلاعات حساب
-                    </div>
-
-                    <div className="info-grid">
-
-                      <div className="info-row">
-                        <span>
-                          نام کامل
-                        </span>
-
-                        <strong>
-                          {selected.name}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          ایمیل
-                        </span>
-
-                        <strong>
-                          {selected.email}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          تاریخ ثبت‌نام
-                        </span>
-
-                        <strong>
-                          {dateText(
-                            selected.createdAt,
-                          )}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          آخرین بروزرسانی
-                        </span>
-
-                        <strong>
-                          {dateText(
-                            selected.updatedAt,
-                          )}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          نقش
-                        </span>
-
-                        <strong>
-                          {selected.role === "ADMIN"
-                            ? "مدیر سیستم"
-                            : "کاربر"}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          وضعیت حساب
-                        </span>
-
-                        <strong>
-                          {selected.isBlocked
-                            ? "مسدود"
-                            : "فعال"}
-                        </strong>
-                      </div>
-
-                    </div>
-
-                    {/* QUICK ACTIONS */}
-
-                    <div className="section-title">
-                      عملیات سریع
-                    </div>
-
-                    <div className="actions-grid">
-
-                      <Link
-                        href={`/admin/support?user=${encodeURIComponent(
-                          selected.id,
-                        )}`}
-                        className="action-card"
-                      >
-                        <span className="action-icon">
-                          ●
-                        </span>
-
-                        <span>
-                          پیام به کاربر
-                        </span>
-                      </Link>
-
-                      <a
-                        href="#subscription"
-                        className="action-card"
-                      >
-                        <span className="action-icon">
-                          ♛
-                        </span>
-
-                        <span>
-                          مدیریت اشتراک
-                        </span>
-                      </a>
-
-                      <a
-                        href="#support"
-                        className="action-card"
-                      >
-                        <span className="action-icon">
-                          ◈
-                        </span>
-
-                        <span>
-                          درخواست‌ها
-                        </span>
-                      </a>
-
-                      <Link
-                        href="/telegram"
-                        className="action-card"
-                      >
-                        <span className="action-icon">
-                          ✦
-                        </span>
-
-                        <span>
-                          کانال سیگنال
-                        </span>
-                      </Link>
-
-                    </div>
-
-                    {/* BLOCK CONTROL */}
-
-                    {selected.role !== "ADMIN" && (
-                      <div className="form-card">
-
-                        <div className="form-title">
-                          کنترل دسترسی حساب
-                        </div>
-
-                        <form action={toggleUserBlock}>
-
-                          <input
-                            type="hidden"
-                            name="userId"
-                            value={selected.id}
-                          />
-
-                          <input
-                            type="hidden"
-                            name="mode"
-                            value={
-                              selected.isBlocked
-                                ? "UNBLOCK"
-                                : "BLOCK"
-                            }
-                          />
-
-                          {!selected.isBlocked && (
-                            <textarea
-                              name="reason"
-                              placeholder="دلیل مسدودسازی حساب..."
-                              maxLength={500}
-                            />
-                          )}
-
-                          <div className="form-actions">
-
-                            <button
-                              type="submit"
-                              className={
-                                selected.isBlocked
-                                  ? "btn btn-green"
-                                  : "btn btn-danger"
-                              }
-                            >
-                              {selected.isBlocked
-                                ? "رفع مسدودی حساب"
-                                : "مسدود کردن حساب"}
-                            </button>
-
-                          </div>
-
-                        </form>
-
-                      </div>
-                    )}
-
-                    {/* PLAN */}
-
-                    <div
-                      id="subscription"
-                      className="section-title"
-                    >
-                      اشتراک و پلن فعلی
-                    </div>
-
-                    <div className="subscription">
-
-                      <div className="subscription-top">
-
-                        <div className="subscription-plan">
-
-                          <div className="crown">
-                            ♛
-                          </div>
-
-                          <div>
-
-                            <strong>
-                              {planLabel(
-                                selected.plan,
-                              )}
-                            </strong>
-
-                            <span>
-                              {selectedSubscriptionActive
-                                ? "اشتراک فعال"
-                                : selected.plan ===
-                                    "FREE"
-                                  ? "حساب رایگان"
-                                  : "اشتراک منقضی یا بدون تاریخ"}
-                            </span>
-
-                          </div>
-
-                        </div>
-
-                        {selectedSubscriptionActive &&
-                          selectedDays !== null && (
-                            <div className="remaining">
-                              {selectedDays > 0
-                                ? `${selectedDays} روز باقی‌مانده`
-                                : "منقضی"}
-                            </div>
-                          )}
-
-                      </div>
-
-                      <div className="sub-details">
-
-                        <div className="sub-detail">
-                          <span>
-                            تاریخ شروع
-                          </span>
-
-                          <strong>
-                            {dateOnly(
-                              selected.subscriptionStartedAt,
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="sub-detail">
-                          <span>
-                            تاریخ انقضا
-                          </span>
-
-                          <strong>
-                            {dateOnly(
-                              selected.subscriptionExpiresAt,
-                            )}
-                          </strong>
-                        </div>
-
-                      </div>
-
-                    </div>
-
-                    {/* PLAN FORM */}
-
-                    <div className="form-card">
-
-                      <div className="form-title">
-                        تغییر پلن کاربر
-                      </div>
-
-                      <form action={changeUserPlan}>
-
-                        <input
-                          type="hidden"
-                          name="userId"
-                          value={selected.id}
-                        />
-
-                        <div className="form-grid">
-
-                          <select
-                            name="plan"
-                            defaultValue={
-                              selected.plan
-                            }
-                          >
-                            <option value="FREE">
-                              رایگان
-                            </option>
-
-                            <option value="BASIC">
-                              پایه
-                            </option>
-
-                            <option value="PRO">
-                              حرفه‌ای
-                            </option>
-
-                            <option value="PREMIUM">
-                              Premium
-                            </option>
-
-                            <option value="VIP">
-                              VIP
-                            </option>
-                          </select>
-
-                          <button
-                            type="submit"
-                            className="btn btn-gold"
-                          >
-                            ذخیره پلن
-                          </button>
-
-                        </div>
-
-                      </form>
-
-                    </div>
-
-                    {/* SUBSCRIPTION FORM */}
-
-                    <div className="form-card">
-
-                      <div className="form-title">
-                        فعال‌سازی یا تمدید واقعی اشتراک
-                      </div>
-
-                      <form action={saveSubscription}>
-
-                        <input
-                          type="hidden"
-                          name="userId"
-                          value={selected.id}
-                        />
-
-                        <div className="form-grid">
-
-                          <select
-                            name="plan"
-                            defaultValue={
-                              selected.plan ===
-                              "FREE"
-                                ? "VIP"
-                                : selected.plan
-                            }
-                          >
-                            <option value="BASIC">
-                              پایه
-                            </option>
-
-                            <option value="PRO">
-                              حرفه‌ای
-                            </option>
-
-                            <option value="PREMIUM">
-                              Premium
-                            </option>
-
-                            <option value="VIP">
-                              VIP
-                            </option>
-                          </select>
-
-                          <input
-                            name="days"
-                            type="number"
-                            min="1"
-                            max="3650"
-                            defaultValue="30"
-                            placeholder="تعداد روز"
-                            required
-                          />
-
-                          <input
-                            name="price"
-                            type="number"
-                            min="0"
-                            step="1"
-                            placeholder="مبلغ"
-                          />
-
-                          <select
-                            name="currency"
-                            defaultValue="IRR"
-                          >
-                            <option value="IRR">
-                              تومان / IRR
-                            </option>
-
-                            <option value="USD">
-                              دلار / USD
-                            </option>
-
-                            <option value="EUR">
-                              یورو / EUR
-                            </option>
-                          </select>
-
-                        </div>
-
-                        <div
-                          className="form-grid full"
-                          style={{
-                            marginTop: 7,
-                          }}
-                        >
-
-                          <textarea
-                            name="note"
-                            placeholder="یادداشت مدیر درباره این اشتراک..."
-                            maxLength={1000}
-                          />
-
-                        </div>
-
-                        <div className="form-actions">
-
-                          <button
-                            type="submit"
-                            className="btn btn-gold"
-                          >
-                            فعال‌سازی / تمدید اشتراک
-                          </button>
-
-                        </div>
-
-                      </form>
-
-                    </div>
-
-                    {/* CANCEL */}
-
-                    {selectedSubscriptionActive && (
-                      <div className="form-card">
-
-                        <form action={cancelSubscription}>
-
-                          <input
-                            type="hidden"
-                            name="userId"
-                            value={selected.id}
-                          />
-
-                          <button
-                            type="submit"
-                            className="btn btn-danger"
-                          >
-                            لغو اشتراک فعال
-                          </button>
-
-                        </form>
-
-                      </div>
-                    )}
-
-                    {/* SUPPORT */}
-
-                    <div
-                      id="support"
-                      className="section-title"
-                    >
-                      درخواست‌های پشتیبانی کاربر
-                    </div>
-
-                    <div className="support-list">
-
-                      {selected.supportTickets.length ===
-                      0 ? (
-                        <div className="empty">
-                          این کاربر هنوز درخواست پشتیبانی
-                          ثبت نکرده است.
-                        </div>
-                      ) : (
-                        selected.supportTickets.map(
-                          (ticket) => {
-
-                            const lastMessage =
-                              ticket.messages[
-                                ticket.messages.length -
-                                  1
-                              ];
-
-                            const ticketStatusClass =
-                              ticket.status === "OPEN"
-                                ? "ticket-status ticket-open"
-                                : ticket.status ===
-                                    "PENDING"
-                                  ? "ticket-status ticket-pending"
-                                  : "ticket-status ticket-closed";
-
-                            return (
-                              <div
-                                key={ticket.id}
-                                className="support-item"
-                              >
-
-                                <div className="support-head">
-
-                                  <strong>
-                                    {ticket.subject}
-                                  </strong>
-
-                                  <span
-                                    className={
-                                      ticketStatusClass
-                                    }
-                                  >
-                                    {statusLabel(
-                                      ticket.status,
-                                    )}
-                                  </span>
-
-                                </div>
-
-                                <div className="support-meta">
-
-                                  <span>
-                                    {dateText(
-                                      ticket.createdAt,
-                                    )}
-                                  </span>
-
-                                  <span>
-                                    {
-                                      ticket.messages
-                                        .length
-                                    }{" "}
-                                    پیام
-                                  </span>
-
-                                </div>
-
-                                {lastMessage && (
-                                  <div className="support-last">
-                                    {lastMessage.message}
-                                  </div>
-                                )}
-
-                                <div
-                                  className="form-actions"
-                                  style={{
-                                    marginTop: 8,
-                                  }}
-                                >
-
-                                  <Link
-                                    href={`/admin/support?user=${encodeURIComponent(
-                                      selected.id,
-                                    )}`}
-                                    className="btn btn-blue"
-                                  >
-                                    مشاهده و پاسخ
-                                  </Link>
-
-                                  {ticket.status !==
-                                    "CLOSED" && (
-                                    <form
-                                      action={
-                                        closeTicket
-                                      }
-                                    >
-
-                                      <input
-                                        type="hidden"
-                                        name="ticketId"
-                                        value={
-                                          ticket.id
-                                        }
-                                      />
-
-                                      <input
-                                        type="hidden"
-                                        name="userId"
-                                        value={
-                                          selected.id
-                                        }
-                                      />
-
-                                      <button
-                                        type="submit"
-                                        className="btn btn-danger"
-                                      >
-                                        بستن
-                                      </button>
-
-                                    </form>
-                                  )}
-
-                                </div>
-
-                              </div>
-                            );
-                          },
-                        )
-                      )}
-
-                    </div>
-
-                    {/* SUBSCRIPTION HISTORY */}
-
-                    <div className="section-title">
-                      سابقه اشتراک‌ها
-                    </div>
-
-                    <div className="history">
-
-                      {selected.subscriptions.length ===
-                      0 ? (
-                        <div className="empty">
-                          سابقه اشتراکی برای این کاربر
-                          ثبت نشده است.
-                        </div>
-                      ) : (
-                        selected.subscriptions.map(
-                          (subscription) => (
-                            <div
-                              key={subscription.id}
-                              className="history-item"
-                            >
-
-                              <div>
-
-                                <strong>
-                                  {planLabel(
-                                    subscription.plan,
-                                  )}{" "}
-                                  ·{" "}
-                                  {statusLabel(
-                                    subscription.status,
-                                  )}
-                                </strong>
-
-                                <span>
-                                  {dateOnly(
-                                    subscription.startsAt,
-                                  )}{" "}
-                                  تا{" "}
-                                  {dateOnly(
-                                    subscription.expiresAt,
-                                  )}
-                                </span>
-
-                              </div>
-
-                              <div className="history-price">
-                                {subscription.price == null
-                                  ? "—"
-                                  : subscription.price.toLocaleString(
-                                      "fa-IR",
-                                    )}
-                                {subscription.currency
-                                  ? ` ${subscription.currency}`
-                                  : ""}
-                              </div>
-
-                            </div>
-                          ),
-                        )
-                      )}
-
-                    </div>
-
-                    {/* REAL DATA SUMMARY */}
-
-                    <div className="section-title">
-                      خلاصه فعالیت پشتیبانی
-                    </div>
-
-                    <div className="info-grid">
-
-                      <div className="info-row">
-                        <span>
-                          کل درخواست‌ها
-                        </span>
-
-                        <strong>
-                          {totalSupportTickets}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          درخواست‌های باز
-                        </span>
-
-                        <strong>
-                          {selectedOpenTickets}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          تعداد پیام‌ها
-                        </span>
-
-                        <strong>
-                          {selectedMessages}
-                        </strong>
-                      </div>
-
-                      <div className="info-row">
-                        <span>
-                          وضعیت مهمان
-                        </span>
-
-                        <strong>
-                          {selected.guestUsed
-                            ? selected.guestExpiresAt &&
-                              selected.guestExpiresAt >
-                                new Date()
-                              ? `فعال تا ${dateOnly(
-                                  selected.guestExpiresAt,
-                                )}`
-                              : "استفاده شده"
-                            : "استفاده نشده"}
-                        </strong>
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                </>
-
-              )}
-
-            </section>
-
-          </section>
-
-          {/* FOOTER */}
-
-          <footer className="footer">
-
-            <span>
-              Trading AI Admin Panel · 1.0.0
-            </span>
-
-            <span>
-              تمام اطلاعات این صفحه از دیتابیس سیستم خوانده می‌شود.
-            </span>
-
-          </footer>
-
-        </section>
-
-        {/* =================================================
-            SIDEBAR
-        ================================================= */}
-
-        <aside className="sidebar">
-
-          <Link
-            href="/admin"
-            className="brand"
-          >
-
-            <div className="brand-logo">
-              AI
-            </div>
-
-            <div>
-              <strong>
-                Trading AI
-              </strong>
-
-              <small>
-                پنل مدیریت
-              </small>
-            </div>
-
-          </Link>
-
-          <div className="nav-title">
-            CONTROL CENTER
-          </div>
-
-          <nav className="nav">
-
-            <Link href="/admin">
-              <span className="nav-icon">
-                ⌂
-              </span>
-              داشبورد
-            </Link>
-
-            <Link
-              href="/admin/users"
-              className="active"
-            >
-              <span className="nav-icon">
-                ♙
-              </span>
-              کاربران
-            </Link>
-
-            <Link href="/admin/support">
-              <span className="nav-icon">
-                ●
-              </span>
-              پشتیبانی
-            </Link>
-
-            <Link href="/payments">
-              <span className="nav-icon">
-                ▣
-              </span>
-              اشتراک‌ها
-            </Link>
-
-            <Link href="/telegram">
-              <span className="nav-icon">
-                ♛
-              </span>
-              کانال سیگنال
-            </Link>
-
-            <Link href="/admin">
-              <span className="nav-icon">
-                ⚙
-              </span>
-              تنظیمات
-            </Link>
-
-            <Link href="/admin">
-              <span className="nav-icon">
-                ▥
-              </span>
-              گزارش‌ها
-            </Link>
-
-          </nav>
-
-          <div className="side-footer">
-            مدیر سیستم فقط از این بخش می‌تواند حساب کاربران، اشتراک‌ها و
-            درخواست‌های پشتیبانی را مدیریت کند.
-          </div>
-
-        </aside>
-
-      </div>
-    </main>
+    </>
   );
 }
