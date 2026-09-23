@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
 import { getSession } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -21,12 +21,14 @@ const DEFAULT_CURRENCIES = [
 
 const DEFAULT_ALERT_MINUTES = [120];
 
-type SettingsPayload = {
+type SettingsBody = {
   highImpact?: unknown;
   mediumImpact?: unknown;
   lowImpact?: unknown;
+
   currencies?: unknown;
   alertMinutes?: unknown;
+
   telegramEnabled?: unknown;
   newsFilterEnabled?: unknown;
   marketRiskEnabled?: unknown;
@@ -38,23 +40,13 @@ function toBoolean(value: unknown, fallback: boolean): boolean {
   }
 
   if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
+    const v = value.trim().toLowerCase();
 
-    if (
-      normalized === "true" ||
-      normalized === "1" ||
-      normalized === "yes" ||
-      normalized === "on"
-    ) {
+    if (v === "true" || v === "1" || v === "yes" || v === "on") {
       return true;
     }
 
-    if (
-      normalized === "false" ||
-      normalized === "0" ||
-      normalized === "no" ||
-      normalized === "off"
-    ) {
+    if (v === "false" || v === "0" || v === "no" || v === "off") {
       return false;
     }
   }
@@ -79,10 +71,6 @@ function normalizeCurrencies(value: unknown): string[] {
     }
 
     const currency = item.trim().toUpperCase();
-
-    if (!currency) {
-      continue;
-    }
 
     if (!/^[A-Z]{3}$/.test(currency)) {
       continue;
@@ -116,14 +104,14 @@ function normalizeAlertMinutes(value: unknown): number[] {
       continue;
     }
 
-    const rounded = Math.round(minutes);
+    const normalized = Math.round(minutes);
 
-    if (rounded < 1 || rounded > 10080) {
+    if (normalized < 1 || normalized > 10080) {
       continue;
     }
 
-    if (!result.includes(rounded)) {
-      result.push(rounded);
+    if (!result.includes(normalized)) {
+      result.push(normalized);
     }
   }
 
@@ -132,8 +120,48 @@ function normalizeAlertMinutes(value: unknown): number[] {
   return result.length > 0 ? result : DEFAULT_ALERT_MINUTES;
 }
 
-function jsonValue(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+function parseJsonArray(value: unknown, fallback: string[]): string[] {
+  if (Array.isArray(value)) {
+    return normalizeCurrencies(value);
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return normalizeCurrencies(parsed);
+      }
+    } catch {
+      return normalizeCurrencies(value);
+    }
+  }
+
+  return fallback;
+}
+
+function parseJsonNumbers(value: unknown, fallback: number[]): number[] {
+  if (Array.isArray(value)) {
+    return normalizeAlertMinutes(value);
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return normalizeAlertMinutes(parsed);
+      }
+    } catch {
+      return normalizeAlertMinutes(value);
+    }
+  }
+
+  if (typeof value === "number") {
+    return normalizeAlertMinutes(value);
+  }
+
+  return fallback;
 }
 
 function serializeSettings(settings: {
@@ -142,8 +170,8 @@ function serializeSettings(settings: {
   highImpact: boolean;
   mediumImpact: boolean;
   lowImpact: boolean;
-  currencies: Prisma.JsonValue | null;
-  alertMinutes: Prisma.JsonValue | null;
+  currencies: unknown;
+  alertMinutes: unknown;
   telegramEnabled: boolean;
   newsFilterEnabled: boolean;
   marketRiskEnabled: boolean;
@@ -158,15 +186,15 @@ function serializeSettings(settings: {
     mediumImpact: settings.mediumImpact,
     lowImpact: settings.lowImpact,
 
-    currencies:
-      settings.currencies !== null
-        ? normalizeCurrencies(settings.currencies)
-        : DEFAULT_CURRENCIES,
+    currencies: parseJsonArray(
+      settings.currencies,
+      DEFAULT_CURRENCIES
+    ),
 
-    alertMinutes:
-      settings.alertMinutes !== null
-        ? normalizeAlertMinutes(settings.alertMinutes)
-        : DEFAULT_ALERT_MINUTES,
+    alertMinutes: parseJsonNumbers(
+      settings.alertMinutes,
+      DEFAULT_ALERT_MINUTES
+    ),
 
     telegramEnabled: settings.telegramEnabled,
     newsFilterEnabled: settings.newsFilterEnabled,
@@ -187,7 +215,9 @@ export async function GET() {
           ok: false,
           error: "احراز هویت لازم است.",
         },
-        { status: 401 }
+        {
+          status: 401,
+        }
       );
     }
 
@@ -206,8 +236,8 @@ export async function GET() {
           mediumImpact: true,
           lowImpact: false,
 
-          currencies: jsonValue(DEFAULT_CURRENCIES),
-          alertMinutes: jsonValue(DEFAULT_ALERT_MINUTES),
+          currencies: DEFAULT_CURRENCIES,
+          alertMinutes: DEFAULT_ALERT_MINUTES,
 
           telegramEnabled: true,
           newsFilterEnabled: true,
@@ -239,7 +269,9 @@ export async function GET() {
             ? error.message
             : "خطا در دریافت تنظیمات اخبار.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
@@ -254,11 +286,13 @@ export async function PATCH(request: Request) {
           ok: false,
           error: "احراز هویت لازم است.",
         },
-        { status: 401 }
+        {
+          status: 401,
+        }
       );
     }
 
-    let body: SettingsPayload = {};
+    let body: SettingsBody = {};
 
     try {
       const parsed: unknown = await request.json();
@@ -268,15 +302,17 @@ export async function PATCH(request: Request) {
         typeof parsed === "object" &&
         !Array.isArray(parsed)
       ) {
-        body = parsed as SettingsPayload;
+        body = parsed as SettingsBody;
       }
     } catch {
       return NextResponse.json(
         {
           ok: false,
-          error: "داده ارسالی معتبر نیست.",
+          error: "داده ارسالی JSON معتبر نیست.",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
@@ -286,33 +322,51 @@ export async function PATCH(request: Request) {
       },
     });
 
-    const currentCurrencies = current?.currencies
-      ? normalizeCurrencies(current.currencies)
+    const currentCurrencies = current
+      ? parseJsonArray(
+          current.currencies,
+          DEFAULT_CURRENCIES
+        )
       : DEFAULT_CURRENCIES;
 
-    const currentAlertMinutes = current?.alertMinutes
-      ? normalizeAlertMinutes(current.alertMinutes)
+    const currentAlertMinutes = current
+      ? parseJsonNumbers(
+          current.alertMinutes,
+          DEFAULT_ALERT_MINUTES
+        )
       : DEFAULT_ALERT_MINUTES;
 
     const highImpact =
       body.highImpact === undefined
         ? current?.highImpact ?? true
-        : toBoolean(body.highImpact, current?.highImpact ?? true);
+        : toBoolean(
+            body.highImpact,
+            current?.highImpact ?? true
+          );
 
     const mediumImpact =
       body.mediumImpact === undefined
         ? current?.mediumImpact ?? true
-        : toBoolean(body.mediumImpact, current?.mediumImpact ?? true);
+        : toBoolean(
+            body.mediumImpact,
+            current?.mediumImpact ?? true
+          );
 
     const lowImpact =
       body.lowImpact === undefined
         ? current?.lowImpact ?? false
-        : toBoolean(body.lowImpact, current?.lowImpact ?? false);
+        : toBoolean(
+            body.lowImpact,
+            current?.lowImpact ?? false
+          );
 
     const telegramEnabled =
       body.telegramEnabled === undefined
         ? current?.telegramEnabled ?? true
-        : toBoolean(body.telegramEnabled, current?.telegramEnabled ?? true);
+        : toBoolean(
+            body.telegramEnabled,
+            current?.telegramEnabled ?? true
+          );
 
     const newsFilterEnabled =
       body.newsFilterEnabled === undefined
@@ -352,8 +406,8 @@ export async function PATCH(request: Request) {
         mediumImpact,
         lowImpact,
 
-        currencies: jsonValue(currencies),
-        alertMinutes: jsonValue(alertMinutes),
+        currencies,
+        alertMinutes,
 
         telegramEnabled,
         newsFilterEnabled,
@@ -365,8 +419,8 @@ export async function PATCH(request: Request) {
         mediumImpact,
         lowImpact,
 
-        currencies: jsonValue(currencies),
-        alertMinutes: jsonValue(alertMinutes),
+        currencies,
+        alertMinutes,
 
         telegramEnabled,
         newsFilterEnabled,
@@ -398,7 +452,9 @@ export async function PATCH(request: Request) {
             ? error.message
             : "ذخیره تنظیمات اخبار انجام نشد.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
