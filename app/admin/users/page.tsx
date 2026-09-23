@@ -13,6 +13,12 @@ type SearchParams = {
   status?: string;
 };
 
+const PLANS = ["FREE", "VIP", "PREMIUM", "PRO"] as const;
+
+function text(value: unknown) {
+  return String(value ?? "").trim();
+}
+
 function formatDate(date: Date | null | undefined) {
   if (!date) return "—";
 
@@ -22,76 +28,40 @@ function formatDate(date: Date | null | undefined) {
   }).format(date);
 }
 
-function normalize(value: unknown) {
-  return String(value ?? "").trim();
+function daysLeft(date: Date | null | undefined) {
+  if (!date) return null;
+
+  const diff = date.getTime() - Date.now();
+
+  if (diff <= 0) return 0;
+
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
-function planLabel(plan: string) {
+function planName(plan: string) {
   switch (plan.toUpperCase()) {
     case "VIP":
       return "VIP";
     case "PREMIUM":
-      return "Premium";
+      return "PREMIUM";
     case "PRO":
-      return "Pro";
+      return "PRO";
     default:
-      return "Free";
+      return "FREE";
   }
 }
 
 function planClass(plan: string) {
   switch (plan.toUpperCase()) {
     case "VIP":
-      return "gold";
+      return "vip";
     case "PREMIUM":
-      return "purple";
+      return "premium";
     case "PRO":
-      return "blue";
+      return "pro";
     default:
-      return "gray";
+      return "free";
   }
-}
-
-function subscriptionState(user: {
-  plan: string;
-  subscriptionExpiresAt: Date | null;
-  guestExpiresAt: Date | null;
-  guestUsed: boolean;
-}) {
-  const now = new Date();
-
-  if (
-    user.subscriptionExpiresAt &&
-    user.subscriptionExpiresAt.getTime() > now.getTime()
-  ) {
-    return {
-      label: "اشتراک فعال",
-      className: "active",
-    };
-  }
-
-  if (
-    !user.guestUsed &&
-    user.guestExpiresAt &&
-    user.guestExpiresAt.getTime() > now.getTime()
-  ) {
-    return {
-      label: "دوره مهمان",
-      className: "guest",
-    };
-  }
-
-  if (user.plan.toUpperCase() !== "FREE") {
-    return {
-      label: "منقضی شده",
-      className: "expired",
-    };
-  }
-
-  return {
-    label: "رایگان",
-    className: "free",
-  };
 }
 
 async function requireAdmin() {
@@ -120,31 +90,159 @@ async function requireAdmin() {
   return admin;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Block / Unblock
-|--------------------------------------------------------------------------
-*/
+/* =========================================================
+   تغییر پلن
+========================================================= */
 
-async function toggleBlockUser(formData: FormData) {
+async function changePlan(formData: FormData) {
   "use server";
 
   const admin = await requireAdmin();
 
-  const userId = normalize(formData.get("userId"));
-  const action = normalize(formData.get("action"));
-  const reason = normalize(formData.get("reason"));
+  const userId = text(formData.get("userId"));
+  const plan = text(formData.get("plan")).toUpperCase();
 
-  if (!userId) {
+  if (!userId || !PLANS.includes(plan as (typeof PLANS)[number])) {
     return;
   }
 
-  // جلوگیری از مسدود کردن خود ادمین
   if (userId === admin.id) {
     return;
   }
 
-  const targetUser = await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+
+  if (!user || String(user.role).toUpperCase() === "ADMIN") {
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      plan,
+    },
+  });
+
+  revalidatePath("/admin/users");
+  revalidatePath("/admin");
+}
+
+/* =========================================================
+   فعال سازی / تمدید اشتراک
+========================================================= */
+
+async function activateSubscription(formData: FormData) {
+  "use server";
+
+  const admin = await requireAdmin();
+
+  const userId = text(formData.get("userId"));
+  const plan = text(formData.get("plan")).toUpperCase();
+  const daysRaw = Number(formData.get("days"));
+
+  if (!userId) return;
+
+  if (!["VIP", "PREMIUM", "PRO"].includes(plan)) {
+    return;
+  }
+
+  if (![7, 30, 90, 365].includes(daysRaw)) {
+    return;
+  }
+
+  if (userId === admin.id) {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      role: true,
+      subscriptionExpiresAt: true,
+    },
+  });
+
+  if (!user || String(user.role).toUpperCase() === "ADMIN") {
+    return;
+  }
+
+  const now = new Date();
+
+  const currentExpiry =
+    user.subscriptionExpiresAt &&
+    user.subscriptionExpiresAt.getTime() > now.getTime()
+      ? user.subscriptionExpiresAt
+      : now;
+
+  const expiresAt = new Date(currentExpiry);
+
+  expiresAt.setDate(expiresAt.getDate() + daysRaw);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        plan,
+        subscriptionStartedAt:
+          user.subscriptionExpiresAt &&
+          user.subscriptionExpiresAt.getTime() > now.getTime()
+            ? undefined
+            : now,
+        subscriptionExpiresAt: expiresAt,
+      },
+    }),
+
+    prisma.userSubscription.create({
+      data: {
+        userId,
+        plan,
+        status: "ACTIVE",
+        startsAt: now,
+        expiresAt,
+        note: `فعال‌سازی/تمدید توسط مدیر: ${daysRaw} روز`,
+        autoRenew: false,
+      },
+    }),
+
+    prisma.userNotification.create({
+      data: {
+        userId,
+        type: "SUBSCRIPTION",
+        title: "اشتراک شما فعال شد",
+        message: `پلن ${plan} برای شما تا ${formatDate(expiresAt)} فعال است.`,
+        dedupeKey: `subscription-${userId}-${expiresAt.getTime()}-${Date.now()}`,
+      },
+    }),
+  ]);
+
+  revalidatePath("/admin/users");
+  revalidatePath("/admin");
+}
+
+/* =========================================================
+   مسدود / رفع مسدودی
+========================================================= */
+
+async function toggleBlock(formData: FormData) {
+  "use server";
+
+  const admin = await requireAdmin();
+
+  const userId = text(formData.get("userId"));
+  const action = text(formData.get("action"));
+  const reason = text(formData.get("reason"));
+
+  if (!userId || userId === admin.id) {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
     where: {
       id: userId,
     },
@@ -155,15 +253,11 @@ async function toggleBlockUser(formData: FormData) {
     },
   });
 
-  if (!targetUser) {
+  if (!user || String(user.role).toUpperCase() === "ADMIN") {
     return;
   }
 
-  if (String(targetUser.role).toUpperCase() === "ADMIN") {
-    return;
-  }
-
-  if (action === "block") {
+  if (action === "BLOCK") {
     await prisma.user.update({
       where: {
         id: userId,
@@ -175,15 +269,25 @@ async function toggleBlockUser(formData: FormData) {
       },
     });
 
-    // Sessionهای کاربر مسدودشده را هم حذف می‌کنیم
     await prisma.session.deleteMany({
       where: {
         userId,
       },
     });
+
+    await prisma.userNotification.create({
+      data: {
+        userId,
+        type: "ACCOUNT",
+        title: "حساب شما مسدود شد",
+        message:
+          reason || "دسترسی حساب شما توسط مدیریت سیستم متوقف شده است.",
+        dedupeKey: `blocked-${userId}-${Date.now()}`,
+      },
+    });
   }
 
-  if (action === "unblock") {
+  if (action === "UNBLOCK") {
     await prisma.user.update({
       where: {
         id: userId,
@@ -194,54 +298,25 @@ async function toggleBlockUser(formData: FormData) {
         blockedReason: null,
       },
     });
+
+    await prisma.userNotification.create({
+      data: {
+        userId,
+        type: "ACCOUNT",
+        title: "حساب شما فعال شد",
+        message: "دسترسی حساب شما توسط مدیریت سیستم فعال شد.",
+        dedupeKey: `unblocked-${userId}-${Date.now()}`,
+      },
+    });
   }
 
   revalidatePath("/admin/users");
   revalidatePath("/admin");
 }
 
-/*
-|--------------------------------------------------------------------------
-| Change Plan
-|--------------------------------------------------------------------------
-*/
-
-async function changeUserPlan(formData: FormData) {
-  "use server";
-
-  await requireAdmin();
-
-  const userId = normalize(formData.get("userId"));
-  const plan = normalize(formData.get("plan")).toUpperCase();
-
-  if (!userId) {
-    return;
-  }
-
-  const allowedPlans = ["FREE", "VIP", "PREMIUM", "PRO"];
-
-  if (!allowedPlans.includes(plan)) {
-    return;
-  }
-
-  await prisma.user.update({
-    where: {
-      id: userId,
-    },
-    data: {
-      plan,
-    },
-  });
-
-  revalidatePath("/admin/users");
-  revalidatePath("/admin");
-}
-
-/*
-|--------------------------------------------------------------------------
-| Page
-|--------------------------------------------------------------------------
-*/
+/* =========================================================
+   Page
+========================================================= */
 
 export default async function AdminUsersPage({
   searchParams,
@@ -252,9 +327,9 @@ export default async function AdminUsersPage({
 
   const params = await searchParams;
 
-  const q = normalize(params.q);
-  const selectedPlan = normalize(params.plan).toUpperCase();
-  const selectedStatus = normalize(params.status).toUpperCase();
+  const q = text(params.q);
+  const selectedPlan = text(params.plan).toUpperCase();
+  const selectedStatus = text(params.status).toUpperCase();
 
   const where: any = {};
 
@@ -275,20 +350,19 @@ export default async function AdminUsersPage({
     ];
   }
 
-  if (
-    selectedPlan &&
-    ["FREE", "VIP", "PREMIUM", "PRO"].includes(selectedPlan)
-  ) {
+  if (PLANS.includes(selectedPlan as (typeof PLANS)[number])) {
     where.plan = selectedPlan;
+  }
+
+  if (selectedStatus === "ACTIVE") {
+    where.isBlocked = false;
   }
 
   if (selectedStatus === "BLOCKED") {
     where.isBlocked = true;
   }
 
-  if (selectedStatus === "ACTIVE") {
-    where.isBlocked = false;
-  }
+  const now = new Date();
 
   const [
     users,
@@ -296,6 +370,7 @@ export default async function AdminUsersPage({
     blockedUsers,
     vipUsers,
     premiumUsers,
+    proUsers,
     activeSubscriptions,
   ] = await Promise.all([
     prisma.user.findMany({
@@ -344,53 +419,53 @@ export default async function AdminUsersPage({
 
     prisma.user.count({
       where: {
-        subscriptionExpiresAt: {
-          gt: new Date(),
-        },
+        plan: "PRO",
+      },
+    }),
+
+    prisma.user.count({
+      where: {
         isBlocked: false,
+        subscriptionExpiresAt: {
+          gt: now,
+        },
       },
     }),
   ]);
 
   return (
     <main dir="rtl" className="page">
-      <div className="backgroundGlow glowOne" />
-      <div className="backgroundGlow glowTwo" />
+      <div className="ambient ambientGold" />
+      <div className="ambient ambientBlue" />
 
-      <div className="shell">
+      <div className="container">
+
         {/* HEADER */}
-        <header className="topbar">
-          <div className="brandArea">
-            <Link href="/admin" className="backButton">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M15 18l-6-6 6-6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              بازگشت
+
+        <header className="header">
+          <div className="headerLeft">
+            <Link href="/admin" className="back">
+              <span>‹</span>
+              مرکز مدیریت
             </Link>
 
-            <div className="titleBlock">
-              <div className="eyebrow">
-                <span className="liveDot" />
-                ADMIN CONTROL CENTER
+            <div className="headerTitle">
+              <div className="miniLabel">
+                <i />
+                USER MANAGEMENT
               </div>
 
-              <h1>مدیریت کاربران</h1>
+              <h1>کاربران</h1>
+
               <p>
-                مدیریت حساب‌ها، پلن‌ها، وضعیت دسترسی و مسدودسازی کاربران
+                مدیریت حساب‌ها، اشتراک‌ها و دسترسی کاربران
               </p>
             </div>
           </div>
 
-          <div className="adminBadge">
-            <div className="adminIcon">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+          <div className="adminProfile">
+            <div className="shield">
+              <svg viewBox="0 0 24 24">
                 <path
                   d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"
                   fill="none"
@@ -416,147 +491,86 @@ export default async function AdminUsersPage({
         </header>
 
         {/* STATS */}
-        <section className="statsGrid">
-          <div className="statCard">
-            <div className="statIcon">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M16 20v-1.5a4.5 4.5 0 00-4.5-4.5h-3A4.5 4.5 0 004 18.5V20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                />
-                <circle
-                  cx="10"
-                  cy="7"
-                  r="3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                />
-                <path
-                  d="M16 11a3 3 0 100-6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M17 14.5a4.5 4.5 0 013 4V20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                />
-              </svg>
+
+        <section className="stats">
+
+          <div className="stat">
+            <div className="statIcon users">
+              <span>◉</span>
             </div>
 
             <div>
-              <span>کل کاربران</span>
+              <small>کل کاربران</small>
               <strong>{totalUsers.toLocaleString("fa-IR")}</strong>
             </div>
           </div>
 
-          <div className="statCard">
-            <div className="statIcon goldIcon">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M12 3l2.2 5.2L20 9l-4.1 4 1 5.7-4.9-2.7-4.9 2.7 1-5.7L4 9l5.8-.8L12 3z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <div className="stat">
+            <div className="statIcon active">
+              <span>✓</span>
             </div>
 
             <div>
-              <span>VIP</span>
-              <strong>{vipUsers.toLocaleString("fa-IR")}</strong>
-            </div>
-          </div>
-
-          <div className="statCard">
-            <div className="statIcon purpleIcon">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M12 3l7 4v5c0 4.3-2.8 7.9-7 9-4.2-1.1-7-4.7-7-9V7l7-4z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M9.5 12l1.7 1.7 3.6-3.6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            <div>
-              <span>Premium</span>
-              <strong>{premiumUsers.toLocaleString("fa-IR")}</strong>
-            </div>
-          </div>
-
-          <div className="statCard">
-            <div className="statIcon greenIcon">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M4 12.5l5 5L20 6.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            <div>
-              <span>اشتراک فعال</span>
+              <small>اشتراک فعال</small>
               <strong>
                 {activeSubscriptions.toLocaleString("fa-IR")}
               </strong>
             </div>
           </div>
 
-          <div className="statCard">
-            <div className="statIcon redIcon">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M12 3L21 20H3L12 3z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M12 9v5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-                <circle cx="12" cy="17" r="1" fill="currentColor" />
-              </svg>
+          <div className="stat">
+            <div className="statIcon vip">
+              <span>★</span>
             </div>
 
             <div>
-              <span>مسدود شده</span>
+              <small>VIP</small>
+              <strong>{vipUsers.toLocaleString("fa-IR")}</strong>
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="statIcon premium">
+              <span>◆</span>
+            </div>
+
+            <div>
+              <small>Premium</small>
+              <strong>{premiumUsers.toLocaleString("fa-IR")}</strong>
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="statIcon pro">
+              <span>↗</span>
+            </div>
+
+            <div>
+              <small>Pro</small>
+              <strong>{proUsers.toLocaleString("fa-IR")}</strong>
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="statIcon blocked">
+              <span>!</span>
+            </div>
+
+            <div>
+              <small>مسدود</small>
               <strong>{blockedUsers.toLocaleString("fa-IR")}</strong>
             </div>
           </div>
+
         </section>
 
-        {/* FILTER */}
-        <section className="controlPanel">
-          <form method="GET" className="filterForm">
-            <div className="searchBox">
+        {/* SEARCH */}
+
+        <section className="toolbar">
+
+          <form method="GET" className="filters">
+
+            <div className="search">
               <svg viewBox="0 0 24 24">
                 <circle
                   cx="11"
@@ -578,1150 +592,1415 @@ export default async function AdminUsersPage({
               <input
                 name="q"
                 defaultValue={q}
-                placeholder="جستجو بر اساس نام یا ایمیل..."
+                placeholder="نام یا ایمیل کاربر..."
               />
             </div>
 
-            <select name="plan" defaultValue={selectedPlan}>
-              <option value="">همه پلن‌ها</option>
-              <option value="FREE">Free</option>
+            <select
+              name="plan"
+              defaultValue={selectedPlan}
+            >
+              <option value="">تمام پلن‌ها</option>
+              <option value="FREE">FREE</option>
               <option value="VIP">VIP</option>
-              <option value="PREMIUM">Premium</option>
-              <option value="PRO">Pro</option>
+              <option value="PREMIUM">PREMIUM</option>
+              <option value="PRO">PRO</option>
             </select>
 
-            <select name="status" defaultValue={selectedStatus}>
-              <option value="">همه وضعیت‌ها</option>
+            <select
+              name="status"
+              defaultValue={selectedStatus}
+            >
+              <option value="">تمام وضعیت‌ها</option>
               <option value="ACTIVE">فعال</option>
               <option value="BLOCKED">مسدود</option>
             </select>
 
-            <button type="submit" className="filterButton">
-              اعمال فیلتر
+            <button type="submit">
+              جستجو
             </button>
 
-            <Link href="/admin/users" className="clearButton">
+            <Link href="/admin/users">
               پاک کردن
             </Link>
+
           </form>
+
         </section>
 
-        {/* TABLE */}
-        <section className="usersPanel">
-          <div className="panelHeader">
+        {/* MAIN USER LIST */}
+
+        <section className="userPanel">
+
+          <div className="panelTop">
             <div>
-              <span className="panelEyebrow">USER DIRECTORY</span>
+              <span>USER DIRECTORY</span>
               <h2>لیست کاربران</h2>
             </div>
 
-            <div className="resultCount">
-              {users.length.toLocaleString("fa-IR")} نتیجه
+            <div className="result">
+              {users.length.toLocaleString("fa-IR")} کاربر
             </div>
           </div>
 
           {users.length === 0 ? (
-            <div className="emptyState">
-              <div className="emptyIcon">
-                <svg viewBox="0 0 24 24">
-                  <circle
-                    cx="11"
-                    cy="11"
-                    r="6.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                  />
-                  <path
-                    d="M16 16l5 5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
 
+            <div className="empty">
+              <div>⌕</div>
               <h3>کاربری پیدا نشد</h3>
-              <p>عبارت جستجو یا فیلترهای انتخاب‌شده را تغییر بده.</p>
+              <p>
+                جستجو یا فیلترهای انتخاب‌شده را تغییر بده.
+              </p>
             </div>
+
           ) : (
-            <div className="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>کاربر</th>
-                    <th>نقش</th>
-                    <th>پلن</th>
-                    <th>وضعیت حساب</th>
-                    <th>اشتراک</th>
-                    <th>ثبت‌نام</th>
-                    <th>عملیات</th>
-                  </tr>
-                </thead>
 
-                <tbody>
-                  {users.map((user) => {
-                    const subscription = subscriptionState(user);
-                    const isAdmin =
-                      String(user.role).toUpperCase() === "ADMIN";
+            <div className="users">
 
-                    return (
-                      <tr key={user.id}>
-                        <td>
-                          <div className="userCell">
-                            <div className="avatar">
-                              {normalize(user.name)
-                                .charAt(0)
-                                .toUpperCase() || "U"}
-                            </div>
+              {users.map((user) => {
+                const isAdmin =
+                  String(user.role).toUpperCase() === "ADMIN";
 
-                            <div className="userInfo">
-                              <strong>{user.name}</strong>
-                              <span>{user.email}</span>
-                            </div>
-                          </div>
-                        </td>
+                const remaining =
+                  daysLeft(user.subscriptionExpiresAt);
 
-                        <td>
-                          {isAdmin ? (
-                            <span className="role adminRole">ADMIN</span>
-                          ) : (
-                            <span className="role userRole">USER</span>
+                const active =
+                  !user.isBlocked &&
+                  !!user.subscriptionExpiresAt &&
+                  remaining !== null &&
+                  remaining > 0;
+
+                const guestActive =
+                  !user.guestUsed &&
+                  !!user.guestExpiresAt &&
+                  user.guestExpiresAt.getTime() > Date.now();
+
+                return (
+                  <article
+                    key={user.id}
+                    className={`userCard ${
+                      user.isBlocked ? "isBlocked" : ""
+                    }`}
+                  >
+
+                    {/* USER */}
+
+                    <div className="identity">
+
+                      <div className="avatar">
+                        {text(user.name)
+                          .charAt(0)
+                          .toUpperCase() || "U"}
+                      </div>
+
+                      <div className="identityText">
+
+                        <div className="nameRow">
+                          <strong>{user.name}</strong>
+
+                          {isAdmin && (
+                            <span className="adminTag">
+                              ADMIN
+                            </span>
                           )}
-                        </td>
+                        </div>
 
-                        <td>
-                          <span
-                            className={`planBadge ${planClass(user.plan)}`}
-                          >
-                            {planLabel(user.plan)}
+                        <span className="email">
+                          {user.email}
+                        </span>
+
+                        <span className="joined">
+                          عضویت: {formatDate(user.createdAt)}
+                        </span>
+
+                      </div>
+
+                    </div>
+
+                    {/* PLAN */}
+
+                    <div className="userColumn">
+
+                      <label>پلن</label>
+
+                      <span
+                        className={`plan ${planClass(
+                          user.plan
+                        )}`}
+                      >
+                        {planName(user.plan)}
+                      </span>
+
+                    </div>
+
+                    {/* ACCOUNT STATUS */}
+
+                    <div className="userColumn">
+
+                      <label>حساب</label>
+
+                      {user.isBlocked ? (
+
+                        <div>
+                          <span className="status blocked">
+                            <i />
+                            مسدود
                           </span>
-                        </td>
 
-                        <td>
-                          {user.isBlocked ? (
-                            <div className="statusColumn">
-                              <span className="accountStatus blocked">
-                                <i />
-                                مسدود
+                          {user.blockedReason && (
+                            <small className="reason">
+                              {user.blockedReason}
+                            </small>
+                          )}
+                        </div>
+
+                      ) : (
+
+                        <span className="status active">
+                          <i />
+                          فعال
+                        </span>
+
+                      )}
+
+                    </div>
+
+                    {/* SUBSCRIPTION */}
+
+                    <div className="userColumn subscription">
+
+                      <label>اشتراک</label>
+
+                      {active ? (
+
+                        <>
+                          <span className="subscriptionActive">
+                            فعال
+                          </span>
+
+                          <small>
+                            {remaining === 1
+                              ? "فردا منقضی می‌شود"
+                              : `${remaining} روز باقی‌مانده`}
+                          </small>
+                        </>
+
+                      ) : guestActive ? (
+
+                        <>
+                          <span className="guest">
+                            Guest
+                          </span>
+
+                          <small>
+                            تا{" "}
+                            {formatDate(
+                              user.guestExpiresAt
+                            )}
+                          </small>
+                        </>
+
+                      ) : user.plan !== "FREE" ? (
+
+                        <>
+                          <span className="expired">
+                            منقضی
+                          </span>
+
+                          {user.subscriptionExpiresAt && (
+                            <small>
+                              {formatDate(
+                                user.subscriptionExpiresAt
+                              )}
+                            </small>
+                          )}
+                        </>
+
+                      ) : (
+
+                        <span className="freeText">
+                          رایگان
+                        </span>
+
+                      )}
+
+                    </div>
+
+                    {/* ACTIONS */}
+
+                    <div className="actions">
+
+                      {!isAdmin && (
+                        <details className="manage">
+
+                          <summary>
+                            مدیریت
+                            <span>⌄</span>
+                          </summary>
+
+                          <div className="menu">
+
+                            {/* CHANGE PLAN */}
+
+                            <div className="menuSection">
+
+                              <span className="menuLabel">
+                                تغییر پلن
                               </span>
 
-                              {user.blockedReason && (
-                                <small>{user.blockedReason}</small>
-                              )}
+                              <form action={changePlan}>
+
+                                <input
+                                  type="hidden"
+                                  name="userId"
+                                  value={user.id}
+                                />
+
+                                <select
+                                  name="plan"
+                                  defaultValue={user.plan}
+                                >
+                                  <option value="FREE">
+                                    FREE
+                                  </option>
+                                  <option value="VIP">
+                                    VIP
+                                  </option>
+                                  <option value="PREMIUM">
+                                    PREMIUM
+                                  </option>
+                                  <option value="PRO">
+                                    PRO
+                                  </option>
+                                </select>
+
+                                <button
+                                  type="submit"
+                                  className="goldAction"
+                                >
+                                  ذخیره پلن
+                                </button>
+
+                              </form>
+
                             </div>
-                          ) : (
-                            <span className="accountStatus active">
-                              <i />
-                              فعال
-                            </span>
-                          )}
-                        </td>
 
-                        <td>
-                          <div className="subscriptionColumn">
-                            <span
-                              className={`subscriptionBadge ${subscription.className}`}
-                            >
-                              {subscription.label}
-                            </span>
+                            {/* SUBSCRIPTION */}
 
-                            {user.subscriptionExpiresAt && (
-                              <small>
-                                انقضا:{" "}
-                                {formatDate(user.subscriptionExpiresAt)}
-                              </small>
-                            )}
+                            <div className="menuSection">
+
+                              <span className="menuLabel">
+                                فعال‌سازی / تمدید
+                              </span>
+
+                              <form
+                                action={activateSubscription}
+                              >
+
+                                <input
+                                  type="hidden"
+                                  name="userId"
+                                  value={user.id}
+                                />
+
+                                <select
+                                  name="plan"
+                                  defaultValue={
+                                    user.plan === "FREE"
+                                      ? "VIP"
+                                      : user.plan
+                                  }
+                                >
+                                  <option value="VIP">
+                                    VIP
+                                  </option>
+                                  <option value="PREMIUM">
+                                    PREMIUM
+                                  </option>
+                                  <option value="PRO">
+                                    PRO
+                                  </option>
+                                </select>
+
+                                <select
+                                  name="days"
+                                  defaultValue="30"
+                                >
+                                  <option value="7">
+                                    7 روز
+                                  </option>
+                                  <option value="30">
+                                    30 روز
+                                  </option>
+                                  <option value="90">
+                                    90 روز
+                                  </option>
+                                  <option value="365">
+                                    1 سال
+                                  </option>
+                                </select>
+
+                                <button
+                                  type="submit"
+                                  className="greenAction"
+                                >
+                                  فعال / تمدید اشتراک
+                                </button>
+
+                              </form>
+
+                            </div>
+
+                            {/* BLOCK */}
+
+                            <div className="menuSection dangerSection">
+
+                              <span className="menuLabel">
+                                کنترل دسترسی
+                              </span>
+
+                              {user.isBlocked ? (
+
+                                <form action={toggleBlock}>
+
+                                  <input
+                                    type="hidden"
+                                    name="userId"
+                                    value={user.id}
+                                  />
+
+                                  <input
+                                    type="hidden"
+                                    name="action"
+                                    value="UNBLOCK"
+                                  />
+
+                                  <button
+                                    type="submit"
+                                    className="restoreAction"
+                                  >
+                                    رفع مسدودی
+                                  </button>
+
+                                </form>
+
+                              ) : (
+
+                                <form action={toggleBlock}>
+
+                                  <input
+                                    type="hidden"
+                                    name="userId"
+                                    value={user.id}
+                                  />
+
+                                  <input
+                                    type="hidden"
+                                    name="action"
+                                    value="BLOCK"
+                                  />
+
+                                  <input
+                                    type="text"
+                                    name="reason"
+                                    placeholder="دلیل مسدودی..."
+                                  />
+
+                                  <button
+                                    type="submit"
+                                    className="dangerAction"
+                                  >
+                                    مسدود کردن حساب
+                                  </button>
+
+                                </form>
+
+                              )}
+
+                            </div>
+
                           </div>
-                        </td>
 
-                        <td>
-                          <span className="dateText">
-                            {formatDate(user.createdAt)}
-                          </span>
-                        </td>
+                        </details>
+                      )}
 
-                        <td>
-                          <div className="actions">
-                            <details className="actionMenu">
-                              <summary>مدیریت</summary>
+                      {isAdmin && (
+                        <span className="protected">
+                          حساب محافظت‌شده
+                        </span>
+                      )}
 
-                              <div className="menuContent">
-                                <div className="menuTitle">
-                                  مدیریت {user.name}
-                                </div>
+                    </div>
 
-                                {!isAdmin && (
-                                  <>
-                                    <form action={changeUserPlan}>
-                                      <input
-                                        type="hidden"
-                                        name="userId"
-                                        value={user.id}
-                                      />
+                  </article>
+                );
+              })}
 
-                                      <label>تغییر پلن</label>
-
-                                      <select
-                                        name="plan"
-                                        defaultValue={user.plan}
-                                      >
-                                        <option value="FREE">Free</option>
-                                        <option value="VIP">VIP</option>
-                                        <option value="PREMIUM">
-                                          Premium
-                                        </option>
-                                        <option value="PRO">Pro</option>
-                                      </select>
-
-                                      <button
-                                        type="submit"
-                                        className="menuButton goldButton"
-                                      >
-                                        ذخیره پلن
-                                      </button>
-                                    </form>
-
-                                    <div className="menuDivider" />
-
-                                    {user.isBlocked ? (
-                                      <form action={toggleBlockUser}>
-                                        <input
-                                          type="hidden"
-                                          name="userId"
-                                          value={user.id}
-                                        />
-
-                                        <input
-                                          type="hidden"
-                                          name="action"
-                                          value="unblock"
-                                        />
-
-                                        <button
-                                          type="submit"
-                                          className="menuButton greenButton"
-                                        >
-                                          رفع مسدودی
-                                        </button>
-                                      </form>
-                                    ) : (
-                                      <form action={toggleBlockUser}>
-                                        <input
-                                          type="hidden"
-                                          name="userId"
-                                          value={user.id}
-                                        />
-
-                                        <input
-                                          type="hidden"
-                                          name="action"
-                                          value="block"
-                                        />
-
-                                        <input
-                                          name="reason"
-                                          placeholder="دلیل مسدودی..."
-                                          className="reasonInput"
-                                        />
-
-                                        <button
-                                          type="submit"
-                                          className="menuButton redButton"
-                                        >
-                                          مسدود کردن حساب
-                                        </button>
-                                      </form>
-                                    )}
-                                  </>
-                                )}
-
-                                {isAdmin && (
-                                  <div className="protectedMessage">
-                                    <svg viewBox="0 0 24 24">
-                                      <path
-                                        d="M12 3l7 4v5c0 4.3-2.8 7.9-7 9-4.2-1.1-7-4.7-7-9V7l7-4z"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.6"
-                                      />
-                                    </svg>
-                                    حساب مدیر سیستم محافظت شده است.
-                                  </div>
-                                )}
-                              </div>
-                            </details>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             </div>
           )}
+
         </section>
 
-        {/* SECURITY NOTE */}
-        <section className="securityNote">
+        {/* SECURITY */}
+
+        <section className="security">
+
           <div className="securityIcon">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M12 3l7 4v5c0 4.3-2.8 7.9-7 9-4.2-1.1-7-4.7-7-9V7l7-4z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              />
-              <path
-                d="M9.5 12l1.7 1.7 3.6-3.6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            ✓
           </div>
 
           <div>
-            <strong>کنترل سمت سرور فعال است</strong>
+            <strong>
+              سیستم مدیریت امن است
+            </strong>
+
             <p>
-              تمام عملیات این صفحه قبل از اجرا دوباره نقش مدیر را بررسی
-              می‌کنند. همچنین مدیر نمی‌تواند حساب ADMIN را از این صفحه
-              مسدود کند.
+              تمام عملیات مدیریتی سمت سرور بررسی می‌شوند.
+              حساب‌های ADMIN قابل مسدودسازی یا تغییر از این
+              بخش نیستند و هنگام مسدودسازی کاربر، Sessionهای
+              فعال او نیز حذف می‌شوند.
             </p>
           </div>
+
         </section>
+
       </div>
 
       <style>{`
+
         * {
           box-sizing: border-box;
         }
 
         .page {
           min-height: 100vh;
-          color: #f5f7fb;
           background:
-            radial-gradient(circle at 10% 0%, rgba(212, 165, 74, 0.10), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(61, 120, 255, 0.08), transparent 25%),
+            radial-gradient(
+              circle at 80% -10%,
+              rgba(202,155,62,.11),
+              transparent 30%
+            ),
+            radial-gradient(
+              circle at 5% 60%,
+              rgba(21,94,140,.08),
+              transparent 30%
+            ),
             #05070b;
+
+          color: #f4f5f7;
           padding: 28px;
           position: relative;
           overflow-x: hidden;
         }
 
-        .shell {
+        .container {
           width: min(1500px, 100%);
-          margin: 0 auto;
+          margin: auto;
           position: relative;
           z-index: 2;
         }
 
-        .backgroundGlow {
+        .ambient {
           position: fixed;
           width: 420px;
           height: 420px;
           border-radius: 50%;
-          filter: blur(110px);
+          filter: blur(130px);
           pointer-events: none;
-          opacity: .16;
+          opacity: .14;
         }
 
-        .glowOne {
-          top: -220px;
+        .ambientGold {
+          top: -250px;
           right: -150px;
-          background: #d8a84e;
+          background: #d9a943;
         }
 
-        .glowTwo {
-          bottom: -220px;
+        .ambientBlue {
+          bottom: -250px;
           left: -150px;
-          background: #2563eb;
+          background: #0c7cc4;
         }
 
-        .topbar {
+        /* HEADER */
+
+        .header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 24px;
-          margin-bottom: 28px;
+          gap: 20px;
+          margin-bottom: 25px;
         }
 
-        .brandArea {
+        .headerLeft {
           display: flex;
           align-items: center;
           gap: 22px;
         }
 
-        .backButton {
-          display: inline-flex;
+        .back {
+          display: flex;
           align-items: center;
           gap: 7px;
-          padding: 11px 15px;
-          color: #cdd3df;
-          border: 1px solid rgba(255,255,255,.08);
-          border-radius: 13px;
-          background: rgba(255,255,255,.035);
+          height: 42px;
+          padding: 0 14px;
+          color: #aab2c0;
+          border: 1px solid rgba(255,255,255,.07);
+          border-radius: 12px;
+          background: rgba(255,255,255,.025);
           text-decoration: none;
-          font-size: 13px;
-          transition: .2s ease;
+          font-size: 11px;
+          transition: .2s;
         }
 
-        .backButton:hover {
-          color: #fff;
-          border-color: rgba(216,168,78,.4);
-          background: rgba(216,168,78,.07);
+        .back:hover {
+          color: #e1b85c;
+          border-color: rgba(216,168,78,.3);
         }
 
-        .backButton svg {
-          width: 17px;
-          height: 17px;
+        .back span {
+          font-size: 24px;
+          line-height: 0;
         }
 
-        .titleBlock {
+        .headerTitle {
           border-right: 1px solid rgba(255,255,255,.08);
           padding-right: 22px;
         }
 
-        .eyebrow,
-        .panelEyebrow {
-          color: #c9a35c;
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: 1.8px;
-        }
-
-        .eyebrow {
+        .miniLabel {
           display: flex;
           align-items: center;
           gap: 7px;
+          color: #c9a45c;
           direction: ltr;
-          justify-content: flex-end;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 2px;
           margin-bottom: 7px;
         }
 
-        .liveDot {
-          width: 7px;
-          height: 7px;
+        .miniLabel i {
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
-          background: #5ee38b;
-          box-shadow: 0 0 12px rgba(94,227,139,.7);
+          background: #5ce18b;
+          box-shadow: 0 0 10px #5ce18b;
         }
 
         h1 {
           margin: 0;
-          font-size: clamp(25px, 3vw, 35px);
+          font-size: 31px;
           letter-spacing: -.7px;
         }
 
-        .titleBlock p {
-          margin: 8px 0 0;
-          color: #7f899b;
-          font-size: 13px;
-        }
-
-        .adminBadge {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 11px 14px;
-          border: 1px solid rgba(216,168,78,.16);
-          border-radius: 16px;
-          background: linear-gradient(135deg, rgba(216,168,78,.09), rgba(255,255,255,.025));
-        }
-
-        .adminIcon {
-          width: 42px;
-          height: 42px;
-          display: grid;
-          place-items: center;
-          color: #dfb968;
-          border-radius: 12px;
-          background: rgba(216,168,78,.10);
-        }
-
-        .adminIcon svg {
-          width: 23px;
-          height: 23px;
-        }
-
-        .adminBadge strong,
-        .adminBadge span {
-          display: block;
-        }
-
-        .adminBadge strong {
-          font-size: 13px;
-        }
-
-        .adminBadge span {
-          margin-top: 3px;
-          color: #7e8796;
+        .headerTitle p {
+          margin: 6px 0 0;
+          color: #737c8c;
           font-size: 11px;
         }
 
-        .statsGrid {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 13px;
-          margin-bottom: 18px;
-        }
-
-        .statCard {
-          min-height: 108px;
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          padding: 17px;
-          border: 1px solid rgba(255,255,255,.065);
-          border-radius: 18px;
-          background:
-            linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
-          backdrop-filter: blur(18px);
-        }
-
-        .statIcon {
-          flex: 0 0 auto;
-          width: 45px;
-          height: 45px;
-          display: grid;
-          place-items: center;
-          color: #aeb7c8;
-          border-radius: 13px;
-          background: rgba(255,255,255,.045);
-        }
-
-        .statIcon svg {
-          width: 23px;
-          height: 23px;
-        }
-
-        .goldIcon {
-          color: #e0b65f;
-          background: rgba(216,168,78,.09);
-        }
-
-        .purpleIcon {
-          color: #b993ff;
-          background: rgba(139,92,246,.09);
-        }
-
-        .greenIcon {
-          color: #5ee38b;
-          background: rgba(34,197,94,.08);
-        }
-
-        .redIcon {
-          color: #ff7070;
-          background: rgba(239,68,68,.08);
-        }
-
-        .statCard span {
-          display: block;
-          color: #7f8999;
-          font-size: 11px;
-          margin-bottom: 7px;
-        }
-
-        .statCard strong {
-          font-size: 22px;
-          letter-spacing: -.5px;
-        }
-
-        .controlPanel,
-        .usersPanel {
-          border: 1px solid rgba(255,255,255,.065);
-          background: rgba(10,13,19,.82);
-          box-shadow: 0 20px 60px rgba(0,0,0,.22);
-          backdrop-filter: blur(18px);
-        }
-
-        .controlPanel {
-          padding: 14px;
-          border-radius: 18px;
-          margin-bottom: 18px;
-        }
-
-        .filterForm {
-          display: grid;
-          grid-template-columns: minmax(260px, 1fr) 170px 170px auto auto;
-          gap: 9px;
-        }
-
-        .searchBox {
-          height: 46px;
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          padding: 0 13px;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 12px;
-          background: rgba(255,255,255,.025);
-        }
-
-        .searchBox svg {
-          width: 18px;
-          height: 18px;
-          color: #737d8f;
-          flex: 0 0 auto;
-        }
-
-        .searchBox input {
-          width: 100%;
-          height: 100%;
-          border: 0;
-          outline: 0;
-          color: #f2f4f8;
-          background: transparent;
-          font-family: inherit;
-          font-size: 13px;
-        }
-
-        .searchBox input::placeholder {
-          color: #656e7e;
-        }
-
-        select {
-          height: 46px;
-          padding: 0 12px;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 12px;
-          outline: none;
-          color: #dfe4ec;
-          background: #10141c;
-          font-family: inherit;
-          font-size: 12px;
-        }
-
-        .filterButton,
-        .clearButton {
-          height: 46px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 18px;
-          border-radius: 12px;
-          font-family: inherit;
-          font-size: 12px;
-          font-weight: 700;
-          cursor: pointer;
-          text-decoration: none;
-          white-space: nowrap;
-        }
-
-        .filterButton {
-          color: #090a0c;
-          border: 1px solid #d8aa54;
-          background: linear-gradient(135deg, #f0ca78, #b8862d);
-        }
-
-        .clearButton {
-          color: #aab2c0;
-          border: 1px solid rgba(255,255,255,.07);
-          background: rgba(255,255,255,.025);
-        }
-
-        .usersPanel {
-          border-radius: 20px;
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          min-height: 82px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 17px 20px;
-          border-bottom: 1px solid rgba(255,255,255,.055);
-        }
-
-        .panelHeader h2 {
-          margin: 5px 0 0;
-          font-size: 19px;
-        }
-
-        .resultCount {
-          padding: 8px 12px;
-          color: #aeb6c5;
-          border: 1px solid rgba(255,255,255,.06);
-          border-radius: 10px;
-          background: rgba(255,255,255,.025);
-          font-size: 11px;
-        }
-
-        .tableWrap {
-          width: 100%;
-          overflow-x: auto;
-        }
-
-        table {
-          width: 100%;
-          min-width: 1080px;
-          border-collapse: collapse;
-        }
-
-        th {
-          padding: 13px 16px;
-          color: #666f7f;
-          background: rgba(255,255,255,.018);
-          border-bottom: 1px solid rgba(255,255,255,.05);
-          text-align: right;
-          font-size: 10px;
-          font-weight: 700;
-          white-space: nowrap;
-        }
-
-        td {
-          padding: 15px 16px;
-          border-bottom: 1px solid rgba(255,255,255,.045);
-          vertical-align: middle;
-          font-size: 12px;
-        }
-
-        tbody tr {
-          transition: .18s ease;
-        }
-
-        tbody tr:hover {
-          background: rgba(255,255,255,.018);
-        }
-
-        tbody tr:last-child td {
-          border-bottom: 0;
-        }
-
-        .userCell {
+        .adminProfile {
           display: flex;
           align-items: center;
           gap: 11px;
-          min-width: 220px;
+          min-width: 175px;
+          padding: 9px 12px;
+          border: 1px solid rgba(216,168,78,.15);
+          border-radius: 15px;
+          background: linear-gradient(
+            135deg,
+            rgba(216,168,78,.08),
+            rgba(255,255,255,.025)
+          );
         }
 
-        .avatar {
+        .shield {
           width: 39px;
           height: 39px;
           display: grid;
           place-items: center;
-          color: #dfb866;
-          border: 1px solid rgba(216,168,78,.2);
-          border-radius: 12px;
-          background: linear-gradient(135deg, rgba(216,168,78,.15), rgba(216,168,78,.04));
-          font-size: 14px;
-          font-weight: 800;
-        }
-
-        .userInfo strong,
-        .userInfo span {
-          display: block;
-        }
-
-        .userInfo strong {
-          color: #eef1f6;
-          font-size: 12px;
-        }
-
-        .userInfo span {
-          max-width: 210px;
-          overflow: hidden;
-          color: #6f7888;
-          margin-top: 4px;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          direction: ltr;
-          text-align: right;
-          font-size: 10px;
-        }
-
-        .role,
-        .planBadge,
-        .accountStatus,
-        .subscriptionBadge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-          padding: 6px 9px;
-          border-radius: 8px;
-          white-space: nowrap;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .adminRole {
-          color: #e4bd68;
-          border: 1px solid rgba(216,168,78,.17);
-          background: rgba(216,168,78,.08);
-        }
-
-        .userRole {
-          color: #9ca6b7;
-          border: 1px solid rgba(255,255,255,.07);
-          background: rgba(255,255,255,.03);
-        }
-
-        .planBadge.gray {
-          color: #aeb6c5;
-          background: rgba(255,255,255,.05);
-        }
-
-        .planBadge.gold {
-          color: #e4bd68;
-          border: 1px solid rgba(216,168,78,.16);
+          color: #dfb764;
+          border-radius: 11px;
           background: rgba(216,168,78,.09);
         }
 
-        .planBadge.purple {
-          color: #c19bff;
-          border: 1px solid rgba(139,92,246,.16);
-          background: rgba(139,92,246,.09);
+        .shield svg {
+          width: 21px;
+          height: 21px;
         }
 
-        .planBadge.blue {
-          color: #72b7ff;
-          border: 1px solid rgba(59,130,246,.16);
-          background: rgba(59,130,246,.09);
-        }
-
-        .accountStatus {
-          border: 1px solid transparent;
-        }
-
-        .accountStatus i {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-        }
-
-        .accountStatus.active {
-          color: #62dc8c;
-          background: rgba(34,197,94,.07);
-        }
-
-        .accountStatus.active i {
-          background: #5ee38b;
-          box-shadow: 0 0 8px rgba(94,227,139,.7);
-        }
-
-        .accountStatus.blocked {
-          color: #ff7777;
-          background: rgba(239,68,68,.07);
-        }
-
-        .accountStatus.blocked i {
-          background: #ff6464;
-        }
-
-        .statusColumn small,
-        .subscriptionColumn small {
+        .adminProfile strong,
+        .adminProfile span {
           display: block;
-          max-width: 170px;
-          margin-top: 5px;
-          overflow: hidden;
-          color: #606979;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          font-size: 9px;
         }
 
-        .subscriptionBadge.active {
-          color: #5fe18b;
-          background: rgba(34,197,94,.07);
-        }
-
-        .subscriptionBadge.guest {
-          color: #68c8ff;
-          background: rgba(59,130,246,.08);
-        }
-
-        .subscriptionBadge.expired {
-          color: #ff7b7b;
-          background: rgba(239,68,68,.07);
-        }
-
-        .subscriptionBadge.free {
-          color: #9099a9;
-          background: rgba(255,255,255,.04);
-        }
-
-        .dateText {
-          color: #7e8797;
-          font-size: 10px;
-          white-space: nowrap;
-        }
-
-        .actionMenu {
-          position: relative;
-          min-width: 100px;
-        }
-
-        .actionMenu summary {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 8px 12px;
-          color: #d8b465;
-          border: 1px solid rgba(216,168,78,.16);
-          border-radius: 9px;
-          background: rgba(216,168,78,.06);
-          cursor: pointer;
-          list-style: none;
-          font-size: 10px;
-          font-weight: 700;
-          user-select: none;
-        }
-
-        .actionMenu summary::-webkit-details-marker {
-          display: none;
-        }
-
-        .menuContent {
-          position: absolute;
-          z-index: 30;
-          top: calc(100% + 8px);
-          left: 0;
-          width: 230px;
-          padding: 13px;
-          border: 1px solid rgba(255,255,255,.09);
-          border-radius: 14px;
-          background: #0d1118;
-          box-shadow: 0 25px 70px rgba(0,0,0,.55);
-        }
-
-        .menuTitle {
-          margin-bottom: 11px;
-          color: #dfe4eb;
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .menuContent form {
-          display: grid;
-          gap: 7px;
-        }
-
-        .menuContent label {
-          color: #777f8f;
-          font-size: 9px;
-        }
-
-        .menuContent select,
-        .reasonInput {
-          width: 100%;
-          height: 38px;
-          padding: 0 9px;
-          color: #dce1e9;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 9px;
-          background: #151a23;
-          outline: none;
-          font-family: inherit;
-          font-size: 10px;
-        }
-
-        .reasonInput::placeholder {
-          color: #596272;
-        }
-
-        .menuButton {
-          width: 100%;
-          height: 37px;
-          border-radius: 9px;
-          cursor: pointer;
-          font-family: inherit;
-          font-size: 10px;
-          font-weight: 800;
-        }
-
-        .goldButton {
-          color: #08090b;
-          border: 0;
-          background: linear-gradient(135deg, #efc873, #b98a35);
-        }
-
-        .greenButton {
-          color: #62e191;
-          border: 1px solid rgba(34,197,94,.16);
-          background: rgba(34,197,94,.07);
-        }
-
-        .redButton {
-          color: #ff7777;
-          border: 1px solid rgba(239,68,68,.16);
-          background: rgba(239,68,68,.07);
-        }
-
-        .menuDivider {
-          height: 1px;
-          margin: 12px 0;
-          background: rgba(255,255,255,.055);
-        }
-
-        .protectedMessage {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px;
-          color: #d8b465;
-          border-radius: 10px;
-          background: rgba(216,168,78,.06);
-          font-size: 10px;
-          line-height: 1.8;
-        }
-
-        .protectedMessage svg {
-          width: 18px;
-          height: 18px;
-          flex: 0 0 auto;
-        }
-
-        .emptyState {
-          min-height: 280px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-        }
-
-        .emptyIcon {
-          width: 58px;
-          height: 58px;
-          display: grid;
-          place-items: center;
-          color: #717b8d;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 18px;
-          background: rgba(255,255,255,.025);
-        }
-
-        .emptyIcon svg {
-          width: 25px;
-          height: 25px;
-        }
-
-        .emptyState h3 {
-          margin: 15px 0 6px;
-          font-size: 15px;
-        }
-
-        .emptyState p {
-          margin: 0;
-          color: #70798a;
+        .adminProfile strong {
           font-size: 11px;
         }
 
-        .securityNote {
+        .adminProfile span {
+          margin-top: 3px;
+          color: #717a89;
+          font-size: 9px;
+        }
+
+        /* STATS */
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(6, 1fr);
+          gap: 10px;
+          margin-bottom: 15px;
+        }
+
+        .stat {
           display: flex;
-          align-items: flex-start;
-          gap: 13px;
-          margin-top: 17px;
-          padding: 15px 17px;
-          border: 1px solid rgba(34,197,94,.10);
+          align-items: center;
+          gap: 11px;
+          min-height: 86px;
+          padding: 14px;
+          border: 1px solid rgba(255,255,255,.055);
           border-radius: 16px;
-          background: rgba(34,197,94,.025);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255,255,255,.035),
+              rgba(255,255,255,.012)
+            );
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.02);
         }
 
-        .securityIcon {
+        .statIcon {
           width: 38px;
           height: 38px;
           display: grid;
           place-items: center;
           flex: 0 0 auto;
-          color: #5ee38b;
           border-radius: 11px;
-          background: rgba(34,197,94,.07);
+          font-size: 17px;
         }
 
-        .securityIcon svg {
-          width: 20px;
-          height: 20px;
+        .statIcon.users {
+          color: #73c5ff;
+          background: rgba(59,130,246,.09);
         }
 
-        .securityNote strong {
+        .statIcon.active {
+          color: #5de18a;
+          background: rgba(34,197,94,.08);
+        }
+
+        .statIcon.vip {
+          color: #e1b65c;
+          background: rgba(216,168,78,.09);
+        }
+
+        .statIcon.premium {
+          color: #bd91ff;
+          background: rgba(139,92,246,.09);
+        }
+
+        .statIcon.pro {
+          color: #65b4ff;
+          background: rgba(59,130,246,.08);
+        }
+
+        .statIcon.blocked {
+          color: #ff7777;
+          background: rgba(239,68,68,.08);
+        }
+
+        .stat small {
           display: block;
-          margin-bottom: 4px;
-          color: #aee9c3;
+          color: #6e7788;
+          font-size: 9px;
+          margin-bottom: 6px;
+        }
+
+        .stat strong {
+          font-size: 19px;
+        }
+
+        /* TOOLBAR */
+
+        .toolbar {
+          padding: 12px;
+          margin-bottom: 15px;
+          border: 1px solid rgba(255,255,255,.055);
+          border-radius: 16px;
+          background: rgba(9,12,17,.75);
+        }
+
+        .filters {
+          display: grid;
+          grid-template-columns: minmax(280px, 1fr) 170px 170px auto auto;
+          gap: 8px;
+        }
+
+        .search {
+          height: 44px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 12px;
+          border: 1px solid rgba(255,255,255,.065);
+          border-radius: 11px;
+          background: rgba(255,255,255,.022);
+        }
+
+        .search svg {
+          width: 17px;
+          height: 17px;
+          color: #687284;
+        }
+
+        .search input {
+          width: 100%;
+          height: 100%;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: #edf0f5;
+          font-family: inherit;
           font-size: 11px;
         }
 
-        .securityNote p {
-          margin: 0;
-          color: #697385;
+        .search input::placeholder {
+          color: #606a7a;
+        }
+
+        .filters select {
+          height: 44px;
+          padding: 0 10px;
+          border: 1px solid rgba(255,255,255,.065);
+          border-radius: 11px;
+          background: #10141b;
+          color: #cbd1db;
+          outline: 0;
+          font-family: inherit;
           font-size: 10px;
+        }
+
+        .filters button,
+        .filters a {
+          height: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 17px;
+          border-radius: 11px;
+          text-decoration: none;
+          font-family: inherit;
+          font-size: 10px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .filters button {
+          border: 1px solid #d8aa55;
+          color: #090a0c;
+          background: linear-gradient(
+            135deg,
+            #f0ca77,
+            #b88732
+          );
+        }
+
+        .filters a {
+          color: #9ea7b7;
+          border: 1px solid rgba(255,255,255,.065);
+          background: rgba(255,255,255,.025);
+        }
+
+        /* PANEL */
+
+        .userPanel {
+          overflow: visible;
+          border: 1px solid rgba(255,255,255,.06);
+          border-radius: 18px;
+          background: rgba(8,11,16,.78);
+          box-shadow: 0 25px 80px rgba(0,0,0,.22);
+        }
+
+        .panelTop {
+          min-height: 77px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 15px 18px;
+          border-bottom: 1px solid rgba(255,255,255,.05);
+        }
+
+        .panelTop > div:first-child span {
+          color: #c9a45c;
+          font-size: 8px;
+          font-weight: 800;
+          letter-spacing: 2px;
+        }
+
+        .panelTop h2 {
+          margin: 5px 0 0;
+          font-size: 18px;
+        }
+
+        .result {
+          padding: 7px 11px;
+          color: #8d96a6;
+          border: 1px solid rgba(255,255,255,.06);
+          border-radius: 9px;
+          background: rgba(255,255,255,.025);
+          font-size: 9px;
+        }
+
+        /* USER CARDS */
+
+        .users {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .userCard {
+          display: grid;
+          grid-template-columns: minmax(260px, 1.8fr) .65fr .85fr 1fr auto;
+          align-items: center;
+          gap: 18px;
+          min-height: 102px;
+          padding: 14px 18px;
+          border-bottom: 1px solid rgba(255,255,255,.045);
+          transition: background .2s;
+        }
+
+        .userCard:hover {
+          background: rgba(255,255,255,.018);
+        }
+
+        .userCard:last-child {
+          border-bottom: 0;
+        }
+
+        .userCard.isBlocked {
+          background: rgba(239,68,68,.018);
+        }
+
+        .identity {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          min-width: 0;
+        }
+
+        .avatar {
+          width: 43px;
+          height: 43px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 auto;
+          color: #dfb762;
+          border: 1px solid rgba(216,168,78,.17);
+          border-radius: 13px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(216,168,78,.13),
+              rgba(216,168,78,.035)
+            );
+          font-size: 15px;
+          font-weight: 900;
+        }
+
+        .identityText {
+          min-width: 0;
+        }
+
+        .nameRow {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .nameRow strong {
+          color: #e9ecf1;
+          font-size: 12px;
+        }
+
+        .adminTag {
+          padding: 3px 6px;
+          color: #e4bb62;
+          border: 1px solid rgba(216,168,78,.14);
+          border-radius: 5px;
+          background: rgba(216,168,78,.06);
+          font-size: 7px;
+          font-weight: 800;
+        }
+
+        .email,
+        .joined {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .email {
+          margin-top: 4px;
+          color: #717a8b;
+          direction: ltr;
+          text-align: right;
+          font-size: 9px;
+        }
+
+        .joined {
+          margin-top: 3px;
+          color: #555e6d;
+          font-size: 8px;
+        }
+
+        .userColumn {
+          min-width: 0;
+        }
+
+        .userColumn label {
+          display: block;
+          color: #555f70;
+          margin-bottom: 7px;
+          font-size: 8px;
+        }
+
+        .plan,
+        .status,
+        .subscriptionActive,
+        .guest,
+        .expired,
+        .freeText {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 5px 8px;
+          border-radius: 7px;
+          font-size: 8px;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .plan.free {
+          color: #a0a8b5;
+          background: rgba(255,255,255,.045);
+        }
+
+        .plan.vip {
+          color: #e4ba5f;
+          border: 1px solid rgba(216,168,78,.13);
+          background: rgba(216,168,78,.08);
+        }
+
+        .plan.premium {
+          color: #c29aff;
+          border: 1px solid rgba(139,92,246,.13);
+          background: rgba(139,92,246,.08);
+        }
+
+        .plan.pro {
+          color: #6bb9ff;
+          border: 1px solid rgba(59,130,246,.13);
+          background: rgba(59,130,246,.08);
+        }
+
+        .status {
+          gap: 5px;
+        }
+
+        .status i {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+        }
+
+        .status.active {
+          color: #5fe08a;
+          background: rgba(34,197,94,.065);
+        }
+
+        .status.active i {
+          background: #5fe08a;
+          box-shadow: 0 0 7px #5fe08a;
+        }
+
+        .status.blocked {
+          color: #ff7474;
+          background: rgba(239,68,68,.065);
+        }
+
+        .status.blocked i {
+          background: #ff7474;
+        }
+
+        .reason {
+          display: block;
+          max-width: 130px;
+          margin-top: 5px;
+          overflow: hidden;
+          color: #686f7d;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 7px;
+        }
+
+        .subscriptionActive {
+          color: #5ee18a;
+          background: rgba(34,197,94,.065);
+        }
+
+        .guest {
+          color: #67c8ff;
+          background: rgba(59,130,246,.07);
+        }
+
+        .expired {
+          color: #ff7474;
+          background: rgba(239,68,68,.06);
+        }
+
+        .freeText {
+          color: #858e9e;
+          background: rgba(255,255,255,.035);
+        }
+
+        .subscription small {
+          display: block;
+          margin-top: 5px;
+          color: #616a79;
+          font-size: 7px;
+        }
+
+        /* ACTIONS */
+
+        .actions {
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .manage {
+          position: relative;
+        }
+
+        .manage summary {
+          min-width: 85px;
+          height: 35px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 0 10px;
+          color: #dfb65d;
+          border: 1px solid rgba(216,168,78,.17);
+          border-radius: 9px;
+          background: rgba(216,168,78,.055);
+          cursor: pointer;
+          list-style: none;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .manage summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .manage summary span {
+          font-size: 15px;
+          line-height: 0;
+        }
+
+        .menu {
+          position: absolute;
+          z-index: 100;
+          top: calc(100% + 8px);
+          left: 0;
+          width: 245px;
+          padding: 12px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 14px;
+          background: #0d1118;
+          box-shadow: 0 30px 80px rgba(0,0,0,.6);
+        }
+
+        .menuSection {
+          padding-bottom: 12px;
+          margin-bottom: 12px;
+          border-bottom: 1px solid rgba(255,255,255,.055);
+        }
+
+        .menuSection:last-child {
+          padding-bottom: 0;
+          margin-bottom: 0;
+          border-bottom: 0;
+        }
+
+        .menuLabel {
+          display: block;
+          margin-bottom: 7px;
+          color: #70798a;
+          font-size: 8px;
+          font-weight: 700;
+        }
+
+        .menu form {
+          display: grid;
+          gap: 6px;
+        }
+
+        .menu select,
+        .menu input {
+          width: 100%;
+          height: 35px;
+          padding: 0 8px;
+          border: 1px solid rgba(255,255,255,.07);
+          border-radius: 8px;
+          outline: 0;
+          background: #151a22;
+          color: #dce1e8;
+          font-family: inherit;
+          font-size: 9px;
+        }
+
+        .menu input::placeholder {
+          color: #555e6c;
+        }
+
+        .menu button {
+          width: 100%;
+          height: 35px;
+          border-radius: 8px;
+          font-family: inherit;
+          font-size: 9px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .goldAction {
+          color: #090a0c;
+          border: 0;
+          background: linear-gradient(
+            135deg,
+            #edc56e,
+            #b88632
+          );
+        }
+
+        .greenAction {
+          color: #64e292;
+          border: 1px solid rgba(34,197,94,.13);
+          background: rgba(34,197,94,.07);
+        }
+
+        .restoreAction {
+          color: #64e292;
+          border: 1px solid rgba(34,197,94,.13);
+          background: rgba(34,197,94,.07);
+        }
+
+        .dangerAction {
+          color: #ff7777;
+          border: 1px solid rgba(239,68,68,.14);
+          background: rgba(239,68,68,.07);
+        }
+
+        .protected {
+          padding: 8px 10px;
+          color: #767f90;
+          border-radius: 8px;
+          background: rgba(255,255,255,.025);
+          font-size: 8px;
+          white-space: nowrap;
+        }
+
+        /* EMPTY */
+
+        .empty {
+          min-height: 280px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          color: #737c8c;
+          text-align: center;
+        }
+
+        .empty > div {
+          width: 50px;
+          height: 50px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,.06);
+          border-radius: 15px;
+          background: rgba(255,255,255,.025);
+          font-size: 25px;
+        }
+
+        .empty h3 {
+          margin: 13px 0 5px;
+          color: #dfe3e9;
+          font-size: 14px;
+        }
+
+        .empty p {
+          margin: 0;
+          font-size: 9px;
+        }
+
+        /* SECURITY */
+
+        .security {
+          display: flex;
+          align-items: flex-start;
+          gap: 11px;
+          margin-top: 14px;
+          padding: 13px 15px;
+          border: 1px solid rgba(34,197,94,.08);
+          border-radius: 14px;
+          background: rgba(34,197,94,.018);
+        }
+
+        .securityIcon {
+          width: 34px;
+          height: 34px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 auto;
+          color: #5de08a;
+          border-radius: 10px;
+          background: rgba(34,197,94,.06);
+          font-size: 15px;
+          font-weight: 900;
+        }
+
+        .security strong {
+          display: block;
+          color: #a5e8bc;
+          font-size: 10px;
+        }
+
+        .security p {
+          margin: 4px 0 0;
+          color: #626c7c;
+          font-size: 8px;
           line-height: 1.9;
         }
 
-        @media (max-width: 1100px) {
-          .statsGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+        /* RESPONSIVE */
+
+        @media (max-width: 1200px) {
+          .stats {
+            grid-template-columns: repeat(3, 1fr);
           }
 
-          .filterForm {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .searchBox {
-            grid-column: 1 / -1;
+          .userCard {
+            grid-template-columns:
+              minmax(240px, 1.6fr)
+              .7fr
+              .8fr
+              .9fr
+              auto;
           }
         }
 
-        @media (max-width: 760px) {
+        @media (max-width: 900px) {
           .page {
             padding: 15px;
           }
 
-          .topbar {
+          .header {
             align-items: stretch;
             flex-direction: column;
           }
 
-          .brandArea {
+          .headerLeft {
             align-items: flex-start;
             flex-direction: column;
           }
 
-          .titleBlock {
+          .headerTitle {
             width: 100%;
             padding-right: 0;
             border-right: 0;
           }
 
-          .adminBadge {
+          .adminProfile {
             align-self: flex-start;
           }
 
-          .statsGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+          .filters {
+            grid-template-columns: 1fr 1fr;
           }
 
-          .filterForm {
+          .search {
+            grid-column: 1 / -1;
+          }
+
+          .filters button,
+          .filters a {
+            width: 100%;
+          }
+
+          .userCard {
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            padding: 17px;
+          }
+
+          .identity {
+            grid-column: 1 / -1;
+          }
+
+          .actions {
+            justify-content: flex-start;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .stats {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .filters {
             grid-template-columns: 1fr;
           }
 
-          .searchBox {
+          .search {
             grid-column: auto;
           }
 
-          .panelHeader {
-            padding: 15px;
+          h1 {
+            font-size: 26px;
           }
-        }
 
-        @media (max-width: 480px) {
-          .statsGrid {
+          .userCard {
             grid-template-columns: 1fr;
           }
 
-          h1 {
-            font-size: 25px;
+          .identity {
+            grid-column: auto;
           }
 
-          .titleBlock p {
-            line-height: 1.8;
+          .actions {
+            justify-content: stretch;
+          }
+
+          .manage,
+          .manage summary {
+            width: 100%;
+          }
+
+          .menu {
+            position: relative;
+            top: 7px;
+            left: auto;
+            width: 100%;
+            margin-bottom: 7px;
           }
         }
+
       `}</style>
     </main>
   );
