@@ -33,17 +33,18 @@ model User {
   blockedReason String?
 
   // =========================
-  // Subscription Summary
+  // Current Subscription Summary
   // =========================
 
   subscriptionStartedAt DateTime?
   subscriptionExpiresAt DateTime?
 
   // =========================
-  // One-Time Guest Access
+  // Guest Access
+  // Exactly 7 days from activation
   // =========================
 
-  guestUsed     Boolean   @default(false)
+  guestUsed      Boolean  @default(false)
   guestStartedAt DateTime?
   guestExpiresAt DateTime?
   guestEndedAt   DateTime?
@@ -62,7 +63,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   newsSetting NewsSetting?
-  newsAlerts  NewsAlert?
+  newsAlerts  NewsAlert[]
 
   subscriptions UserSubscription[]
   notifications UserNotification[]
@@ -190,7 +191,7 @@ model TradingBot {
 
   lotMode     String @default("FIXED")
   lotSize     Float  @default(0.01)
-  riskPercent Float @default(1)
+  riskPercent Float  @default(1)
 
   takeProfit Float?
   stopLoss   Float?
@@ -518,6 +519,7 @@ model NewsDelivery {
 
   @@index([alertId])
   @@index([channel])
+  @@index([status])
 }
 
 model UserSubscription {
@@ -525,7 +527,7 @@ model UserSubscription {
 
   userId String
 
-  plan String
+  plan   String
   status String @default("ACTIVE")
 
   startsAt  DateTime
