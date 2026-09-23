@@ -15,22 +15,14 @@ type PageProps = {
   searchParams?: Promise<SearchParams>;
 };
 
-const plans = ["FREE", "VIP", "PREMIUM", "PRO"];
+const PLANS = ["FREE", "VIP", "PREMIUM", "PRO"] as const;
 
-function text(value: FormDataEntryValue | null) {
+function getText(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function money(value: number | null | undefined, currency?: string | null) {
-  if (value === null || value === undefined) return "—";
-
-  return `${new Intl.NumberFormat("fa-IR").format(value)} ${
-    currency || "تومان"
-  }`;
-}
-
-function dateFa(value: Date | null | undefined) {
-  if (!value) return "—";
+function formatDate(date: Date | null | undefined): string {
+  if (!date) return "—";
 
   return new Intl.DateTimeFormat("fa-IR", {
     year: "numeric",
@@ -38,20 +30,35 @@ function dateFa(value: Date | null | undefined) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(value);
+  }).format(date);
 }
 
-function shortDate(value: Date | null | undefined) {
-  if (!value) return "—";
+function formatShortDate(date: Date | null | undefined): string {
+  if (!date) return "—";
 
   return new Intl.DateTimeFormat("fa-IR", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(value);
+  }).format(date);
 }
 
-function planLabel(plan: string | null | undefined) {
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("fa-IR").format(value);
+}
+
+function formatMoney(
+  value: number | null | undefined,
+  currency: string | null | undefined
+): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+
+  return `${formatNumber(value)} ${currency || "تومان"}`;
+}
+
+function planName(plan: string | null | undefined): string {
   switch (plan) {
     case "VIP":
       return "VIP";
@@ -64,7 +71,7 @@ function planLabel(plan: string | null | undefined) {
   }
 }
 
-function ticketLabel(status: string) {
+function ticketStatusName(status: string): string {
   switch (status) {
     case "OPEN":
       return "باز";
@@ -79,18 +86,18 @@ function ticketLabel(status: string) {
   }
 }
 
-function ticketClass(status: string) {
+function ticketStatusClass(status: string): string {
   switch (status) {
     case "OPEN":
-      return "status-open";
+      return "ticket-open";
     case "IN_PROGRESS":
-      return "status-progress";
+      return "ticket-progress";
     case "ANSWERED":
-      return "status-answered";
+      return "ticket-answered";
     case "CLOSED":
-      return "status-closed";
+      return "ticket-closed";
     default:
-      return "status-default";
+      return "ticket-default";
   }
 }
 
@@ -101,7 +108,7 @@ async function requireAdmin() {
     redirect("/login");
   }
 
-  const user = await prisma.user.findUnique({
+  const admin = await prisma.user.findUnique({
     where: {
       id: session.userId,
     },
@@ -113,27 +120,32 @@ async function requireAdmin() {
     },
   });
 
-  if (!user || user.role !== "ADMIN") {
+  if (!admin || admin.role !== "ADMIN") {
     redirect("/");
   }
 
-  return user;
+  return admin;
 }
+
+/* -------------------------------------------------------------------------- */
+/* SERVER ACTIONS                                                            */
+/* -------------------------------------------------------------------------- */
 
 async function blockUser(formData: FormData) {
   "use server";
 
   const admin = await requireAdmin();
 
-  const userId = text(formData.get("userId"));
-  const reason = text(formData.get("reason")) || "مسدود شده توسط مدیر";
+  const userId = getText(formData.get("userId"));
+  const reason =
+    getText(formData.get("reason")) || "حساب توسط مدیریت مسدود شد.";
 
   if (!userId) {
     redirect("/admin/users");
   }
 
   if (userId === admin.id) {
-    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+    redirect("/admin/users?error=self");
   }
 
   await prisma.user.update({
@@ -147,12 +159,14 @@ async function blockUser(formData: FormData) {
     },
   });
 
+  // حذف Session های فعال کاربر
   await prisma.session.deleteMany({
     where: {
       userId,
     },
   });
 
+  // ثبت اعلان واقعی برای کاربر
   await prisma.userNotification.create({
     data: {
       userId,
@@ -173,7 +187,7 @@ async function unblockUser(formData: FormData) {
 
   await requireAdmin();
 
-  const userId = text(formData.get("userId"));
+  const userId = getText(formData.get("userId"));
 
   if (!userId) {
     redirect("/admin/users");
@@ -210,11 +224,11 @@ async function changePlan(formData: FormData) {
 
   await requireAdmin();
 
-  const userId = text(formData.get("userId"));
-  const plan = text(formData.get("plan"));
+  const userId = getText(formData.get("userId"));
+  const plan = getText(formData.get("plan"));
 
-  if (!userId || !plans.includes(plan)) {
-    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+  if (!userId || !PLANS.includes(plan as (typeof PLANS)[number])) {
+    redirect("/admin/users");
   }
 
   await prisma.user.update({
@@ -231,7 +245,7 @@ async function changePlan(formData: FormData) {
       userId,
       type: "PLAN_CHANGED",
       title: "پلن حساب شما تغییر کرد",
-      message: `پلن حساب شما به ${planLabel(plan)} تغییر کرد.`,
+      message: `پلن حساب شما به ${planName(plan)} تغییر کرد.`,
       dedupeKey: `plan-changed-${userId}-${Date.now()}`,
     },
   });
@@ -246,39 +260,48 @@ async function createSubscription(formData: FormData) {
 
   await requireAdmin();
 
-  const userId = text(formData.get("userId"));
-  const plan = text(formData.get("plan"));
-  const daysRaw = text(formData.get("days"));
-  const priceRaw = text(formData.get("price"));
-  const currency = text(formData.get("currency")) || "تومان";
-  const note = text(formData.get("note"));
+  const userId = getText(formData.get("userId"));
+  const plan = getText(formData.get("plan"));
+  const daysText = getText(formData.get("days"));
+  const priceText = getText(formData.get("price"));
+  const currency = getText(formData.get("currency")) || "تومان";
+  const note = getText(formData.get("note"));
 
-  if (!userId || !plans.includes(plan)) {
-    redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
+  if (!userId || !PLANS.includes(plan as (typeof PLANS)[number])) {
+    redirect("/admin/users");
   }
 
-  const days = Math.max(1, Number(daysRaw || 30));
-  const parsedPrice = priceRaw ? Number(priceRaw) : null;
+  const parsedDays = Number(daysText || "30");
+  const days =
+    Number.isFinite(parsedDays) && parsedDays > 0
+      ? Math.floor(parsedDays)
+      : 30;
 
-  const price =
-    parsedPrice !== null && Number.isFinite(parsedPrice)
-      ? parsedPrice
-      : null;
+  let price: number | null = null;
+
+  if (priceText) {
+    const parsedPrice = Number(priceText);
+
+    if (Number.isFinite(parsedPrice) && parsedPrice >= 0) {
+      price = parsedPrice;
+    }
+  }
 
   const now = new Date();
 
-  const activeSubscription = await prisma.userSubscription.findFirst({
-    where: {
-      userId,
-      status: "ACTIVE",
-      expiresAt: {
-        gt: now,
+  const activeSubscription =
+    await prisma.userSubscription.findFirst({
+      where: {
+        userId,
+        status: "ACTIVE",
+        expiresAt: {
+          gt: now,
+        },
       },
-    },
-    orderBy: {
-      expiresAt: "desc",
-    },
-  });
+      orderBy: {
+        expiresAt: "desc",
+      },
+    });
 
   const startsAt = activeSubscription?.expiresAt || now;
 
@@ -329,9 +352,9 @@ async function createSubscription(formData: FormData) {
       userId,
       type: "SUBSCRIPTION_CREATED",
       title: "اشتراک شما فعال شد",
-      message: `اشتراک ${planLabel(
+      message: `اشتراک ${planName(
         plan
-      )} برای شما فعال شد و تا ${dateFa(expiresAt)} اعتبار دارد.`,
+      )} تا ${formatDate(expiresAt)} فعال است.`,
       dedupeKey: `subscription-created-${userId}-${Date.now()}`,
     },
   });
@@ -346,8 +369,8 @@ async function cancelSubscription(formData: FormData) {
 
   await requireAdmin();
 
-  const subscriptionId = text(formData.get("subscriptionId"));
-  const userId = text(formData.get("userId"));
+  const subscriptionId = getText(formData.get("subscriptionId"));
+  const userId = getText(formData.get("userId"));
 
   if (!subscriptionId || !userId) {
     redirect("/admin/users");
@@ -368,9 +391,9 @@ async function cancelSubscription(formData: FormData) {
     data: {
       userId,
       type: "SUBSCRIPTION_CANCELLED",
-      title: "اشتراک لغو شد",
+      title: "اشتراک شما لغو شد",
       message:
-        "تمدید خودکار اشتراک شما توسط مدیریت لغو شد. در صورت داشتن زمان باقی‌مانده، دسترسی تا تاریخ انقضا ادامه دارد.",
+        "تمدید خودکار اشتراک شما توسط مدیریت لغو شد. دسترسی باقی‌مانده تا تاریخ انقضا ادامه دارد.",
       dedupeKey: `subscription-cancelled-${subscriptionId}-${Date.now()}`,
     },
   });
@@ -385,9 +408,9 @@ async function sendUserMessage(formData: FormData) {
 
   await requireAdmin();
 
-  const userId = text(formData.get("userId"));
-  const title = text(formData.get("title"));
-  const message = text(formData.get("message"));
+  const userId = getText(formData.get("userId"));
+  const title = getText(formData.get("title"));
+  const message = getText(formData.get("message"));
 
   if (!userId || !title || !message) {
     redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
@@ -399,7 +422,7 @@ async function sendUserMessage(formData: FormData) {
       type: "ADMIN_MESSAGE",
       title,
       message,
-      dedupeKey: crypto.randomUUID(),
+      dedupeKey: `admin-message-${userId}-${Date.now()}`,
     },
   });
 
@@ -413,9 +436,9 @@ async function changeTicketStatus(formData: FormData) {
 
   await requireAdmin();
 
-  const ticketId = text(formData.get("ticketId"));
-  const userId = text(formData.get("userId"));
-  const status = text(formData.get("status"));
+  const ticketId = getText(formData.get("ticketId"));
+  const userId = getText(formData.get("userId"));
+  const status = getText(formData.get("status"));
 
   if (!ticketId || !userId || !status) {
     redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
@@ -435,57 +458,59 @@ async function changeTicketStatus(formData: FormData) {
   redirect(`/admin/users?user=${encodeURIComponent(userId)}`);
 }
 
+/* -------------------------------------------------------------------------- */
+/* PAGE                                                                      */
+/* -------------------------------------------------------------------------- */
+
 export default async function AdminUsersPage({
   searchParams,
 }: PageProps) {
   const admin = await requireAdmin();
 
-  const params = await searchParams;
+  const params = searchParams ? await searchParams : {};
 
-  const q = params?.q?.trim() || "";
-  const planFilter = params?.plan || "";
-  const statusFilter = params?.status || "";
-  const requestedUserId = params?.user || "";
+  const q = params.q?.trim() || "";
+  const planFilter = params.plan || "";
+  const statusFilter = params.status || "";
+  const requestedUserId = params.user || "";
 
   const now = new Date();
 
-  const where: {
-    OR?: Array<{
-      name?: { contains: string; mode: "insensitive" };
-      email?: { contains: string; mode: "insensitive" };
-    }>;
-    plan?: string;
-    isBlocked?: boolean;
-  } = {};
-
-  if (q) {
-    where.OR = [
-      {
-        name: {
-          contains: q,
-          mode: "insensitive",
-        },
-      },
-      {
-        email: {
-          contains: q,
-          mode: "insensitive",
-        },
-      },
-    ];
-  }
-
-  if (planFilter) {
-    where.plan = planFilter;
-  }
-
-  if (statusFilter === "BLOCKED") {
-    where.isBlocked = true;
-  }
-
-  if (statusFilter === "ACTIVE") {
-    where.isBlocked = false;
-  }
+  const userWhere = {
+    ...(q
+      ? {
+          OR: [
+            {
+              name: {
+                contains: q,
+                mode: "insensitive" as const,
+              },
+            },
+            {
+              email: {
+                contains: q,
+                mode: "insensitive" as const,
+              },
+            },
+          ],
+        }
+      : {}),
+    ...(planFilter
+      ? {
+          plan: planFilter,
+        }
+      : {}),
+    ...(statusFilter === "BLOCKED"
+      ? {
+          isBlocked: true,
+        }
+      : {}),
+    ...(statusFilter === "ACTIVE"
+      ? {
+          isBlocked: false,
+        }
+      : {}),
+  };
 
   const [
     totalUsers,
@@ -520,7 +545,7 @@ export default async function AdminUsersPage({
     }),
 
     prisma.user.findMany({
-      where,
+      where: userWhere,
       orderBy: {
         createdAt: "desc",
       },
@@ -552,7 +577,8 @@ export default async function AdminUsersPage({
   ]);
 
   const selectedId =
-    requestedUserId && users.some((user) => user.id === requestedUserId)
+    requestedUserId &&
+    users.some((user) => user.id === requestedUserId)
       ? requestedUserId
       : users[0]?.id || "";
 
@@ -568,6 +594,7 @@ export default async function AdminUsersPage({
             },
             take: 10,
           },
+
           supportTickets: {
             orderBy: {
               updatedAt: "desc",
@@ -582,6 +609,7 @@ export default async function AdminUsersPage({
               },
             },
           },
+
           _count: {
             select: {
               supportTickets: true,
@@ -598,454 +626,503 @@ export default async function AdminUsersPage({
 
   const currentSubscription = selectedUser?.subscriptions.find(
     (subscription) =>
-      subscription.status === "ACTIVE" && subscription.expiresAt > now
+      subscription.status === "ACTIVE" &&
+      subscription.expiresAt > now
   );
 
-  const subscriptionIsActive =
-    !!currentSubscription && currentSubscription.expiresAt > now;
+  const subscriptionActive = Boolean(currentSubscription);
 
   return (
-    <>
-      <div className="admin-page" dir="rtl">
-        <aside className="sidebar">
-          <div className="brand">
-            <div className="brand-logo">
-              <span>✦</span>
+    <div className="admin-page" dir="rtl">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo">✦</div>
+
+          <div className="brand-text">
+            <strong>Trading AI</strong>
+            <span>ADMIN PANEL</span>
+          </div>
+        </div>
+
+        <nav className="navigation">
+          <Link href="/admin" className="nav-link">
+            <span>⌂</span>
+            <b>داشبورد</b>
+          </Link>
+
+          <Link
+            href="/admin/users"
+            className="nav-link active"
+          >
+            <span>♙</span>
+            <b>کاربران</b>
+          </Link>
+
+          <Link href="/admin/support" className="nav-link">
+            <span>◉</span>
+            <b>پشتیبانی</b>
+          </Link>
+
+          <Link
+            href="/admin/subscriptions"
+            className="nav-link"
+          >
+            <span>◆</span>
+            <b>اشتراک‌ها</b>
+          </Link>
+
+          <Link href="/admin/signals" className="nav-link">
+            <span>↗</span>
+            <b>کانال سیگنال VIP</b>
+          </Link>
+
+          <Link href="/admin/settings" className="nav-link">
+            <span>⚙</span>
+            <b>تنظیمات</b>
+          </Link>
+
+          <Link href="/admin/reports" className="nav-link">
+            <span>▦</span>
+            <b>گزارش‌ها</b>
+          </Link>
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="admin-user">
+            <div className="admin-avatar">
+              {(admin.name || "A").charAt(0)}
             </div>
 
             <div>
-              <strong>Trading AI</strong>
-              <small>ADMIN PANEL</small>
+              <strong>{admin.name}</strong>
+              <span>مدیر سیستم</span>
             </div>
           </div>
 
-          <nav className="nav">
-            <Link href="/admin" className="nav-item">
-              <span>⌂</span>
-              داشبورد
-            </Link>
+          <Link href="/logout" className="logout-link">
+            ⇥ خروج از حساب
+          </Link>
+        </div>
+      </aside>
 
-            <Link href="/admin/users" className="nav-item active">
-              <span>♙</span>
-              کاربران
-            </Link>
+      <main className="main">
+        <header className="header">
+          <div>
+            <div className="breadcrumb">
+              پنل مدیریت <span>›</span> مدیریت کاربران
+            </div>
 
-            <Link href="/admin/support" className="nav-item">
-              <span>◉</span>
-              پشتیبانی
-            </Link>
+            <h1>مدیریت کاربران</h1>
 
-            <Link href="/admin/subscriptions" className="nav-item">
-              <span>◆</span>
-              اشتراک‌ها
-            </Link>
+            <p>
+              مدیریت حساب‌ها، اشتراک‌ها، پشتیبانی و دسترسی کاربران
+            </p>
+          </div>
 
-            <Link href="/admin/signals" className="nav-item">
-              <span>↗</span>
-              کانال سیگنال VIP
-            </Link>
+          <div className="header-admin">
+            <div className="notification-button">♧</div>
 
-            <Link href="/admin/settings" className="nav-item">
-              <span>⚙</span>
-              تنظیمات
-            </Link>
-
-            <Link href="/admin/reports" className="nav-item">
-              <span>▦</span>
-              گزارش‌ها
-            </Link>
-          </nav>
-
-          <div className="sidebar-bottom">
-            <div className="admin-mini">
-              <div className="admin-avatar">
-                {(admin.name || "A").slice(0, 1)}
+            <div className="admin-chip">
+              <div className="mini-avatar">
+                {(admin.name || "A").charAt(0)}
               </div>
 
               <div>
                 <strong>{admin.name}</strong>
-                <small>مدیر سیستم</small>
+                <span>Administrator</span>
               </div>
             </div>
-
-            <Link href="/logout" className="logout">
-              <span>⇥</span>
-              خروج
-            </Link>
           </div>
-        </aside>
+        </header>
 
-        <main className="main">
-          <header className="topbar">
+        <section className="stats">
+          <div className="stat">
+            <div className="stat-icon gold">♙</div>
+
             <div>
-              <div className="breadcrumb">
-                پنل مدیریت
-                <span>›</span>
-                کاربران
-              </div>
+              <span>کاربران کل</span>
+              <strong>{formatNumber(totalUsers)}</strong>
+            </div>
+          </div>
 
-              <h1>مدیریت کاربران</h1>
+          <div className="stat">
+            <div className="stat-icon green">✓</div>
 
-              <p>
-                مدیریت حساب‌ها، اشتراک‌ها، پشتیبانی و وضعیت دسترسی کاربران
-              </p>
+            <div>
+              <span>اشتراک فعال</span>
+              <strong>{formatNumber(activeSubscriptions)}</strong>
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="stat-icon orange">◉</div>
+
+            <div>
+              <span>تیکت‌های باز</span>
+              <strong>{formatNumber(openTickets)}</strong>
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="stat-icon red">!</div>
+
+            <div>
+              <span>کاربران مسدود</span>
+              <strong>{formatNumber(blockedUsers)}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="filter-box">
+          <form method="get" className="filter-form">
+            <div className="search">
+              <span>⌕</span>
+
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="جستجو با نام یا ایمیل..."
+              />
             </div>
 
-            <div className="top-actions">
-              <button className="icon-button" type="button">
-                🔔
-              </button>
+            <select
+              name="plan"
+              defaultValue={planFilter}
+            >
+              <option value="">همه پلن‌ها</option>
+              <option value="FREE">Free</option>
+              <option value="VIP">VIP</option>
+              <option value="PREMIUM">Premium</option>
+              <option value="PRO">Pro</option>
+            </select>
 
-              <div className="admin-pill">
-                <div className="avatar-small">
-                  {(admin.name || "A").slice(0, 1)}
+            <select
+              name="status"
+              defaultValue={statusFilter}
+            >
+              <option value="">همه وضعیت‌ها</option>
+              <option value="ACTIVE">فعال</option>
+              <option value="BLOCKED">مسدود</option>
+            </select>
+
+            <button type="submit" className="gold-button">
+              جستجو
+            </button>
+
+            <Link href="/admin/users" className="clear-button">
+              پاک کردن
+            </Link>
+          </form>
+        </section>
+
+        <div className="layout">
+          <section className="users-card card">
+            <div className="card-title">
+              <div>
+                <h2>لیست کاربران</h2>
+                <span>
+                  {formatNumber(users.length)} کاربر
+                </span>
+              </div>
+            </div>
+
+            <div className="users">
+              {users.length === 0 ? (
+                <div className="empty">
+                  <div>⌕</div>
+                  <strong>کاربری پیدا نشد</strong>
+                  <span>
+                    فیلتر یا عبارت جستجو را تغییر دهید.
+                  </span>
                 </div>
+              ) : (
+                users.map((user) => (
+                  <Link
+                    key={user.id}
+                    href={`/admin/users?user=${encodeURIComponent(
+                      user.id
+                    )}`}
+                    className={`user ${
+                      user.id === selectedId ? "selected" : ""
+                    }`}
+                  >
+                    <div className="user-avatar">
+                      {(user.name || "U").charAt(0)}
+                    </div>
 
-                <div>
-                  <strong>{admin.name}</strong>
-                  <span>Administrator</span>
-                </div>
-              </div>
-            </div>
-          </header>
+                    <div className="user-details">
+                      <strong>{user.name}</strong>
+                      <span>{user.email}</span>
+                    </div>
 
-          <section className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-icon purple">♙</div>
-              <div>
-                <span>کاربران کل</span>
-                <strong>{totalUsers.toLocaleString("fa-IR")}</strong>
-              </div>
-              <small>ثبت‌نام شده</small>
-            </div>
+                    <div className="user-status">
+                      <span className={`plan ${user.plan}`}>
+                        {planName(user.plan)}
+                      </span>
 
-            <div className="stat-card">
-              <div className="stat-icon green">✓</div>
-              <div>
-                <span>اشتراک فعال</span>
-                <strong>
-                  {activeSubscriptions.toLocaleString("fa-IR")}
-                </strong>
-              </div>
-              <small>در حال استفاده</small>
-            </div>
+                      <small
+                        className={
+                          user.isBlocked
+                            ? "blocked"
+                            : "active"
+                        }
+                      >
+                        {user.isBlocked ? "مسدود" : "فعال"}
+                      </small>
+                    </div>
 
-            <div className="stat-card">
-              <div className="stat-icon orange">◉</div>
-              <div>
-                <span>درخواست پشتیبانی</span>
-                <strong>{openTickets.toLocaleString("fa-IR")}</strong>
-              </div>
-              <small>باز و در حال بررسی</small>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-icon red">!</div>
-              <div>
-                <span>کاربران مسدود</span>
-                <strong>{blockedUsers.toLocaleString("fa-IR")}</strong>
-              </div>
-              <small>حساب‌های محدود شده</small>
-            </div>
-          </section>
-
-          <section className="filter-card">
-            <form method="get" className="filter-form">
-              {selectedId && (
-                <input type="hidden" name="user" value={selectedId} />
+                    <div className="arrow">‹</div>
+                  </Link>
+                ))
               )}
-
-              <div className="search-box">
-                <span>⌕</span>
-
-                <input
-                  name="q"
-                  defaultValue={q}
-                  placeholder="جستجو با نام یا ایمیل کاربر..."
-                />
-              </div>
-
-              <select name="plan" defaultValue={planFilter}>
-                <option value="">همه پلن‌ها</option>
-                <option value="FREE">Free</option>
-                <option value="VIP">VIP</option>
-                <option value="PREMIUM">Premium</option>
-                <option value="PRO">Pro</option>
-              </select>
-
-              <select name="status" defaultValue={statusFilter}>
-                <option value="">همه وضعیت‌ها</option>
-                <option value="ACTIVE">فعال</option>
-                <option value="BLOCKED">مسدود</option>
-              </select>
-
-              <button className="gold-button" type="submit">
-                جستجو
-              </button>
-
-              <Link href="/admin/users" className="reset-button">
-                پاک کردن
-              </Link>
-            </form>
+            </div>
           </section>
 
-          <div className="content-grid">
-            <section className="users-panel glass-card">
-              <div className="section-header">
-                <div>
-                  <h2>لیست کاربران</h2>
-                  <span>{users.length.toLocaleString("fa-IR")} نتیجه</span>
-                </div>
-              </div>
-
-              <div className="user-list">
-                {users.length === 0 ? (
-                  <div className="empty">
-                    <div>⌕</div>
-                    <strong>کاربری پیدا نشد</strong>
-                    <span>عبارت جستجو یا فیلتر را تغییر دهید.</span>
-                  </div>
-                ) : (
-                  users.map((user) => (
-                    <Link
-                      key={user.id}
-                      href={`/admin/users?user=${encodeURIComponent(
-                        user.id
-                      )}`}
-                      className={`user-row ${
-                        user.id === selectedId ? "selected" : ""
-                      }`}
-                    >
-                      <div className="user-avatar">
-                        {(user.name || "U").slice(0, 1)}
-                      </div>
-
-                      <div className="user-info">
-                        <strong>{user.name}</strong>
-                        <span>{user.email}</span>
-                      </div>
-
-                      <div className="user-plan">
-                        <span className={`plan plan-${user.plan}`}>
-                          {planLabel(user.plan)}
-                        </span>
-
-                        {user.isBlocked ? (
-                          <small className="blocked-text">مسدود</small>
-                        ) : (
-                          <small className="active-text">فعال</small>
-                        )}
-                      </div>
-
-                      <div className="user-arrow">‹</div>
-                    </Link>
-                  ))
-                )}
-              </div>
-            </section>
-
-            {selectedUser ? (
-              <section className="details-area">
-                <div className="profile-card glass-card">
-                  <div className="profile-top">
-                    <div className="profile-avatar">
-                      {(selectedUser.name || "U").slice(0, 1)}
-                    </div>
-
-                    <div className="profile-main">
-                      <div className="profile-name-line">
-                        <h2>{selectedUser.name}</h2>
-
-                        {selectedUser.isBlocked ? (
-                          <span className="danger-badge">مسدود</span>
-                        ) : (
-                          <span className="success-badge">فعال</span>
-                        )}
-                      </div>
-
-                      <p>{selectedUser.email}</p>
-
-                      <div className="profile-meta">
-                        <span>
-                          عضویت: {shortDate(selectedUser.createdAt)}
-                        </span>
-
-                        <span>
-                          آخرین بروزرسانی:{" "}
-                          {dateFa(selectedUser.updatedAt)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="profile-plan">
-                      <span>پلن فعلی</span>
-                      <strong>{planLabel(selectedUser.plan)}</strong>
-                    </div>
+          {selectedUser ? (
+            <section className="details">
+              <div className="profile card">
+                <div className="profile-head">
+                  <div className="profile-avatar">
+                    {(selectedUser.name || "U").charAt(0)}
                   </div>
 
-                  {selectedUser.isBlocked &&
-                    selectedUser.blockedReason && (
-                      <div className="blocked-notice">
-                        <strong>علت مسدودی:</strong>
-                        <span>{selectedUser.blockedReason}</span>
-                      </div>
-                    )}
+                  <div className="profile-info">
+                    <div className="profile-name">
+                      <h2>{selectedUser.name}</h2>
 
-                  <div className="quick-stats">
-                    <div>
-                      <span>ربات‌ها</span>
-                      <strong>
-                        {selectedUser._count.tradingBots.toLocaleString(
-                          "fa-IR"
-                        )}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>سیگنال‌ها</span>
-                      <strong>
-                        {selectedUser._count.tradingSignals.toLocaleString(
-                          "fa-IR"
-                        )}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>معاملات</span>
-                      <strong>
-                        {selectedUser._count.trades.toLocaleString("fa-IR")}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>تیکت‌ها</span>
-                      <strong>
-                        {selectedUser._count.supportTickets.toLocaleString(
-                          "fa-IR"
-                        )}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="action-grid">
-                    <a href="#message-user" className="action-button">
-                      <span>✉</span>
-                      پیام به کاربر
-                    </a>
-
-                    <a href="#subscription" className="action-button">
-                      <span>◆</span>
-                      مدیریت اشتراک
-                    </a>
-
-                    <a href="#change-plan" className="action-button">
-                      <span>✎</span>
-                      تغییر پلن
-                    </a>
-
-                    {selectedUser.isBlocked ? (
-                      <form action={unblockUser}>
-                        <input
-                          type="hidden"
-                          name="userId"
-                          value={selectedUser.id}
-                        />
-
-                        <button
-                          type="submit"
-                          className="action-button unblock"
-                        >
-                          <span>✓</span>
-                          فعال کردن حساب
-                        </button>
-                      </form>
-                    ) : (
-                      <form action={blockUser}>
-                        <input
-                          type="hidden"
-                          name="userId"
-                          value={selectedUser.id}
-                        />
-
-                        <input
-                          type="hidden"
-                          name="reason"
-                          value="حساب توسط مدیریت مسدود شد."
-                        />
-
-                        <button
-                          type="submit"
-                          className="action-button danger"
-                        >
-                          <span>⊘</span>
-                          مسدود کردن حساب
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                </div>
-
-                <div className="two-column">
-                  <section className="glass-card support-card">
-                    <div className="section-header">
-                      <div>
-                        <h2>درخواست‌های پشتیبانی</h2>
-                        <span>
-                          {selectedUser.supportTickets.length.toLocaleString(
-                            "fa-IR"
-                          )}{" "}
-                          درخواست
+                      {selectedUser.isBlocked ? (
+                        <span className="danger-badge">
+                          مسدود
                         </span>
-                      </div>
-
-                      <Link href="/admin/support" className="view-all">
-                        مشاهده همه
-                      </Link>
-                    </div>
-
-                    <div className="ticket-list">
-                      {selectedUser.supportTickets.length === 0 ? (
-                        <div className="empty compact">
-                          <div>✓</div>
-                          <strong>درخواستی ثبت نشده</strong>
-                          <span>این کاربر هنوز تیکتی ندارد.</span>
-                        </div>
                       ) : (
-                        selectedUser.supportTickets.map((ticket) => {
-                          const lastMessage = ticket.messages[0];
+                        <span className="success-badge">
+                          فعال
+                        </span>
+                      )}
+                    </div>
+
+                    <p>{selectedUser.email}</p>
+
+                    <div className="meta">
+                      <span>
+                        تاریخ عضویت:{" "}
+                        {formatShortDate(
+                          selectedUser.createdAt
+                        )}
+                      </span>
+
+                      <span>
+                        آخرین بروزرسانی:{" "}
+                        {formatDate(
+                          selectedUser.updatedAt
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="current-plan">
+                    <span>پلن فعلی</span>
+                    <strong>
+                      {planName(selectedUser.plan)}
+                    </strong>
+                  </div>
+                </div>
+
+                {selectedUser.isBlocked &&
+                selectedUser.blockedReason ? (
+                  <div className="blocked-box">
+                    <strong>علت مسدودی:</strong>
+                    <span>
+                      {selectedUser.blockedReason}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="profile-stats">
+                  <div>
+                    <span>ربات‌ها</span>
+                    <strong>
+                      {formatNumber(
+                        selectedUser._count.tradingBots
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>سیگنال‌ها</span>
+                    <strong>
+                      {formatNumber(
+                        selectedUser._count.tradingSignals
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>معاملات</span>
+                    <strong>
+                      {formatNumber(
+                        selectedUser._count.trades
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>تیکت‌ها</span>
+                    <strong>
+                      {formatNumber(
+                        selectedUser._count.supportTickets
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="actions">
+                  <a
+                    href="#message"
+                    className="action"
+                  >
+                    ✉ پیام به کاربر
+                  </a>
+
+                  <a
+                    href="#subscription"
+                    className="action"
+                  >
+                    ◆ مدیریت اشتراک
+                  </a>
+
+                  <a
+                    href="#plan"
+                    className="action"
+                  >
+                    ✎ تغییر پلن
+                  </a>
+
+                  {selectedUser.isBlocked ? (
+                    <form action={unblockUser}>
+                      <input
+                        type="hidden"
+                        name="userId"
+                        value={selectedUser.id}
+                      />
+
+                      <button
+                        type="submit"
+                        className="action unblock"
+                      >
+                        ✓ فعال کردن حساب
+                      </button>
+                    </form>
+                  ) : (
+                    <form action={blockUser}>
+                      <input
+                        type="hidden"
+                        name="userId"
+                        value={selectedUser.id}
+                      />
+
+                      <input
+                        type="hidden"
+                        name="reason"
+                        value="حساب توسط مدیریت مسدود شد."
+                      />
+
+                      <button
+                        type="submit"
+                        className="action danger"
+                      >
+                        ⊘ مسدود کردن حساب
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+
+              <div className="columns">
+                <section className="card support">
+                  <div className="card-title">
+                    <div>
+                      <h2>درخواست‌های پشتیبانی</h2>
+                      <span>
+                        {formatNumber(
+                          selectedUser.supportTickets.length
+                        )}{" "}
+                        درخواست
+                      </span>
+                    </div>
+
+                    <Link
+                      href="/admin/support"
+                      className="gold-link"
+                    >
+                      مشاهده همه
+                    </Link>
+                  </div>
+
+                  <div className="tickets">
+                    {selectedUser.supportTickets.length ===
+                    0 ? (
+                      <div className="empty compact">
+                        <div>✓</div>
+                        <strong>
+                          درخواست پشتیبانی ندارد
+                        </strong>
+                        <span>
+                          برای این کاربر هنوز تیکتی ثبت نشده است.
+                        </span>
+                      </div>
+                    ) : (
+                      selectedUser.supportTickets.map(
+                        (ticket) => {
+                          const lastMessage =
+                            ticket.messages[0];
 
                           return (
-                            <div className="ticket" key={ticket.id}>
-                              <div className="ticket-icon">✉</div>
+                            <div
+                              className="ticket"
+                              key={ticket.id}
+                            >
+                              <div className="ticket-icon">
+                                ✉
+                              </div>
 
-                              <div className="ticket-body">
-                                <div className="ticket-title">
-                                  <strong>{ticket.subject}</strong>
+                              <div className="ticket-content">
+                                <div className="ticket-top">
+                                  <strong>
+                                    {ticket.subject}
+                                  </strong>
 
                                   <span
-                                    className={`ticket-status ${ticketClass(
+                                    className={`ticket-status ${ticketStatusClass(
                                       ticket.status
                                     )}`}
                                   >
-                                    {ticketLabel(ticket.status)}
+                                    {ticketStatusName(
+                                      ticket.status
+                                    )}
                                   </span>
                                 </div>
 
                                 <p>
                                   {lastMessage?.message ||
-                                    "هنوز پیامی ثبت نشده است."}
+                                    "هنوز پیامی ارسال نشده است."}
                                 </p>
 
-                                <div className="ticket-footer">
+                                <div className="ticket-bottom">
                                   <span>
                                     آخرین پیام:{" "}
-                                    {dateFa(
+                                    {formatDate(
                                       lastMessage?.createdAt ||
                                         ticket.updatedAt
                                     )}
                                   </span>
 
-                                  <form action={changeTicketStatus}>
+                                  <form
+                                    action={
+                                      changeTicketStatus
+                                    }
+                                    className="status-form"
+                                  >
                                     <input
                                       type="hidden"
                                       name="ticketId"
@@ -1055,316 +1132,417 @@ export default async function AdminUsersPage({
                                     <input
                                       type="hidden"
                                       name="userId"
-                                      value={selectedUser.id}
+                                      value={
+                                        selectedUser.id
+                                      }
                                     />
 
                                     <select
                                       name="status"
-                                      defaultValue={ticket.status}
-                                      onChange={(event) => {
-                                        event.currentTarget.form?.requestSubmit();
-                                      }}
+                                      defaultValue={
+                                        ticket.status
+                                      }
                                     >
-                                      <option value="OPEN">باز</option>
+                                      <option value="OPEN">
+                                        باز
+                                      </option>
+
                                       <option value="IN_PROGRESS">
                                         در حال بررسی
                                       </option>
+
                                       <option value="ANSWERED">
                                         پاسخ داده شده
                                       </option>
-                                      <option value="CLOSED">بسته</option>
+
+                                      <option value="CLOSED">
+                                        بسته
+                                      </option>
                                     </select>
+
+                                    <button
+                                      type="submit"
+                                      className="status-button"
+                                    >
+                                      ذخیره
+                                    </button>
                                   </form>
                                 </div>
                               </div>
                             </div>
                           );
-                        })
-                      )}
-                    </div>
-                  </section>
+                        }
+                      )
+                    )}
+                  </div>
+                </section>
 
-                  <section
-                    className="glass-card subscription-card"
-                    id="subscription"
-                  >
-                    <div className="section-header">
-                      <div>
-                        <h2>اشتراک کاربر</h2>
-                        <span>اطلاعات واقعی از دیتابیس</span>
+                <section
+                  className="card subscription"
+                  id="subscription"
+                >
+                  <div className="card-title">
+                    <div>
+                      <h2>اشتراک کاربر</h2>
+                      <span>
+                        اطلاعات واقعی دیتابیس
+                      </span>
+                    </div>
+
+                    <span
+                      className={
+                        subscriptionActive
+                          ? "live"
+                          : "offline"
+                      }
+                    >
+                      {subscriptionActive
+                        ? "فعال"
+                        : "غیرفعال"}
+                    </span>
+                  </div>
+
+                  {currentSubscription ? (
+                    <div className="current-subscription">
+                      <div className="subscription-name">
+                        <div className="crown">♛</div>
+
+                        <div>
+                          <strong>
+                            {planName(
+                              currentSubscription.plan
+                            )}
+                          </strong>
+
+                          <span>
+                            اشتراک فعلی کاربر
+                          </span>
+                        </div>
                       </div>
 
-                      <span
-                        className={
-                          subscriptionIsActive
-                            ? "subscription-live"
-                            : "subscription-off"
+                      <div className="subscription-data">
+                        <div>
+                          <span>شروع</span>
+                          <strong>
+                            {formatShortDate(
+                              currentSubscription.startsAt
+                            )}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>انقضا</span>
+                          <strong>
+                            {formatShortDate(
+                              currentSubscription.expiresAt
+                            )}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>مبلغ</span>
+                          <strong>
+                            {formatMoney(
+                              currentSubscription.price,
+                              currentSubscription.currency
+                            )}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <form action={cancelSubscription}>
+                        <input
+                          type="hidden"
+                          name="subscriptionId"
+                          value={
+                            currentSubscription.id
+                          }
+                        />
+
+                        <input
+                          type="hidden"
+                          name="userId"
+                          value={selectedUser.id}
+                        />
+
+                        <button
+                          type="submit"
+                          className="cancel-button"
+                        >
+                          لغو تمدید اشتراک
+                        </button>
+                      </form>
+                    </div>
+                  ) : (
+                    <div className="no-subscription">
+                      <div>◆</div>
+                      <strong>
+                        اشتراک فعال وجود ندارد
+                      </strong>
+                      <span>
+                        از فرم زیر اشتراک ایجاد یا تمدید کنید.
+                      </span>
+                    </div>
+                  )}
+
+                  <form
+                    action={createSubscription}
+                    className="subscription-form"
+                  >
+                    <input
+                      type="hidden"
+                      name="userId"
+                      value={selectedUser.id}
+                    />
+
+                    <h3>
+                      ایجاد / تمدید اشتراک
+                    </h3>
+
+                    <div className="form-row">
+                      <select
+                        name="plan"
+                        defaultValue={
+                          selectedUser.plan
                         }
                       >
-                        {subscriptionIsActive ? "فعال" : "غیرفعال"}
-                      </span>
+                        <option value="FREE">
+                          Free
+                        </option>
+
+                        <option value="VIP">
+                          VIP
+                        </option>
+
+                        <option value="PREMIUM">
+                          Premium
+                        </option>
+
+                        <option value="PRO">
+                          Pro
+                        </option>
+                      </select>
+
+                      <input
+                        name="days"
+                        type="number"
+                        min="1"
+                        defaultValue="30"
+                        placeholder="تعداد روز"
+                      />
                     </div>
 
-                    {currentSubscription ? (
-                      <div className="current-subscription">
-                        <div className="subscription-header">
-                          <div className="crown">♛</div>
-
-                          <div>
-                            <strong>
-                              {planLabel(currentSubscription.plan)}
-                            </strong>
-                            <span>اشتراک فعلی</span>
-                          </div>
-                        </div>
-
-                        <div className="subscription-details">
-                          <div>
-                            <span>شروع</span>
-                            <strong>
-                              {shortDate(currentSubscription.startsAt)}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <span>انقضا</span>
-                            <strong>
-                              {shortDate(currentSubscription.expiresAt)}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <span>مبلغ</span>
-                            <strong>
-                              {money(
-                                currentSubscription.price,
-                                currentSubscription.currency
-                              )}
-                            </strong>
-                          </div>
-                        </div>
-
-                        <form action={cancelSubscription}>
-                          <input
-                            type="hidden"
-                            name="subscriptionId"
-                            value={currentSubscription.id}
-                          />
-
-                          <input
-                            type="hidden"
-                            name="userId"
-                            value={selectedUser.id}
-                          />
-
-                          <button type="submit" className="cancel-button">
-                            لغو تمدید این اشتراک
-                          </button>
-                        </form>
-                      </div>
-                    ) : (
-                      <div className="no-subscription">
-                        <div>◆</div>
-                        <strong>اشتراک فعال ندارد</strong>
-                        <span>
-                          می‌توانید از فرم پایین یک اشتراک واقعی ثبت کنید.
-                        </span>
-                      </div>
-                    )}
-
-                    <form className="subscription-form" action={createSubscription}>
+                    <div className="form-row">
                       <input
-                        type="hidden"
-                        name="userId"
-                        value={selectedUser.id}
+                        name="price"
+                        type="number"
+                        min="0"
+                        placeholder="مبلغ"
                       />
 
-                      <div className="form-title">ایجاد / تمدید اشتراک</div>
-
-                      <div className="form-row">
-                        <select name="plan" defaultValue={selectedUser.plan}>
-                          <option value="FREE">Free</option>
-                          <option value="VIP">VIP</option>
-                          <option value="PREMIUM">Premium</option>
-                          <option value="PRO">Pro</option>
-                        </select>
-
-                        <input
-                          name="days"
-                          type="number"
-                          min="1"
-                          defaultValue="30"
-                          placeholder="روز"
-                        />
-                      </div>
-
-                      <div className="form-row">
-                        <input
-                          name="price"
-                          type="number"
-                          min="0"
-                          placeholder="مبلغ"
-                        />
-
-                        <input
-                          name="currency"
-                          defaultValue="تومان"
-                          placeholder="واحد پول"
-                        />
-                      </div>
-
                       <input
-                        name="note"
-                        placeholder="یادداشت اشتراک..."
+                        name="currency"
+                        defaultValue="تومان"
+                        placeholder="واحد پول"
                       />
+                    </div>
 
-                      <button className="gold-button full" type="submit">
-                        فعال‌سازی اشتراک
-                      </button>
-                    </form>
-                  </section>
+                    <input
+                      name="note"
+                      placeholder="یادداشت اشتراک..."
+                    />
+
+                    <button
+                      type="submit"
+                      className="gold-button full"
+                    >
+                      فعال‌سازی اشتراک
+                    </button>
+                  </form>
+                </section>
+              </div>
+
+              <section
+                className="card message-card"
+                id="message"
+              >
+                <div className="card-title">
+                  <div>
+                    <h2>ارسال پیام به کاربر</h2>
+                    <span>
+                      پیام در اعلان‌های واقعی کاربر ثبت می‌شود.
+                    </span>
+                  </div>
                 </div>
 
-                <section
-                  className="glass-card message-card"
-                  id="message-user"
+                <form
+                  action={sendUserMessage}
+                  className="message-form"
                 >
-                  <div className="section-header">
-                    <div>
-                      <h2>ارسال پیام به کاربر</h2>
-                      <span>
-                        پیام در جدول اعلان‌های واقعی کاربر ثبت می‌شود.
-                      </span>
-                    </div>
+                  <input
+                    type="hidden"
+                    name="userId"
+                    value={selectedUser.id}
+                  />
+
+                  <input
+                    name="title"
+                    required
+                    placeholder="عنوان پیام"
+                  />
+
+                  <textarea
+                    name="message"
+                    required
+                    rows={5}
+                    placeholder="متن پیام..."
+                  />
+
+                  <button
+                    type="submit"
+                    className="gold-button"
+                  >
+                    ارسال پیام
+                  </button>
+                </form>
+              </section>
+
+              <section className="access-grid">
+                <div className="access-card card">
+                  <div className="access-icon">
+                    ↗
                   </div>
 
-                  <form action={sendUserMessage} className="message-form">
-                    <input
-                      type="hidden"
-                      name="userId"
-                      value={selectedUser.id}
-                    />
-
-                    <input
-                      name="title"
-                      required
-                      placeholder="عنوان پیام"
-                    />
-
-                    <textarea
-                      name="message"
-                      required
-                      rows={5}
-                      placeholder="متن پیام را بنویسید..."
-                    />
-
-                    <button className="gold-button" type="submit">
-                      ارسال پیام
-                    </button>
-                  </form>
-                </section>
-
-                <section className="access-grid">
-                  <div className="access-card glass-card">
-                    <div className="access-icon">↗</div>
-
-                    <div>
-                      <strong>کانال سیگنال VIP</strong>
-                      <span>
-                        مدیریت ارسال سیگنال‌ها و اتصال Telegram
-                      </span>
-                    </div>
-
-                    <Link href="/admin/signals">
-                      مدیریت
-                      <b>‹</b>
-                    </Link>
-                  </div>
-
-                  <div className="access-card glass-card">
-                    <div className="access-icon">◈</div>
-
-                    <div>
-                      <strong>دسترسی VPN</strong>
-                      <span>
-                        بخش مدیریت دسترسی کاربران به سرویس‌ها
-                      </span>
-                    </div>
-
-                    <Link href="/admin/settings">
-                      تنظیمات
-                      <b>‹</b>
-                    </Link>
-                  </div>
-
-                  <div className="access-card glass-card">
-                    <div className="access-icon">▣</div>
-
-                    <div>
-                      <strong>گزارش فعالیت</strong>
-                      <span>
-                        {selectedUser._count.trades.toLocaleString(
-                          "fa-IR"
-                        )}{" "}
-                        معامله و{" "}
-                        {selectedUser._count.tradingSignals.toLocaleString(
-                          "fa-IR"
-                        )}{" "}
-                        سیگنال
-                      </span>
-                    </div>
-
-                    <Link href="/admin/reports">
-                      مشاهده
-                      <b>‹</b>
-                    </Link>
-                  </div>
-                </section>
-
-                <section
-                  className="glass-card plan-card"
-                  id="change-plan"
-                >
                   <div>
-                    <h2>تغییر پلن کاربر</h2>
-                    <p>
-                      تغییر مستقیم پلن در حساب کاربر ثبت می‌شود.
-                    </p>
+                    <strong>
+                      کانال سیگنال VIP
+                    </strong>
+
+                    <span>
+                      مدیریت سیگنال‌ها و اتصال Telegram
+                    </span>
                   </div>
 
-                  <form action={changePlan}>
-                    <input
-                      type="hidden"
-                      name="userId"
-                      value={selectedUser.id}
-                    />
+                  <Link href="/admin/signals">
+                    مدیریت
+                    <b>‹</b>
+                  </Link>
+                </div>
 
-                    <select
-                      name="plan"
-                      defaultValue={selectedUser.plan}
-                    >
-                      <option value="FREE">Free</option>
-                      <option value="VIP">VIP</option>
-                      <option value="PREMIUM">Premium</option>
-                      <option value="PRO">Pro</option>
-                    </select>
+                <div className="access-card card">
+                  <div className="access-icon">
+                    ◈
+                  </div>
 
-                    <button className="gold-button" type="submit">
-                      ذخیره پلن
-                    </button>
-                  </form>
-                </section>
+                  <div>
+                    <strong>
+                      دسترسی VPN
+                    </strong>
+
+                    <span>
+                      مدیریت دسترسی سرویس‌های کاربران
+                    </span>
+                  </div>
+
+                  <Link href="/admin/settings">
+                    تنظیمات
+                    <b>‹</b>
+                  </Link>
+                </div>
+
+                <div className="access-card card">
+                  <div className="access-icon">
+                    ▣
+                  </div>
+
+                  <div>
+                    <strong>
+                      فعالیت کاربر
+                    </strong>
+
+                    <span>
+                      {formatNumber(
+                        selectedUser._count.trades
+                      )}{" "}
+                      معامله و{" "}
+                      {formatNumber(
+                        selectedUser._count.tradingSignals
+                      )}{" "}
+                      سیگنال
+                    </span>
+                  </div>
+
+                  <Link href="/admin/reports">
+                    گزارش
+                    <b>‹</b>
+                  </Link>
+                </div>
               </section>
-            ) : (
-              <section className="glass-card no-user">
-                <div>♙</div>
-                <h2>کاربری برای نمایش وجود ندارد</h2>
-                <p>ابتدا یک کاربر انتخاب کنید.</p>
+
+              <section
+                className="card plan-card"
+                id="plan"
+              >
+                <div>
+                  <h2>تغییر پلن کاربر</h2>
+
+                  <p>
+                    پلن حساب مستقیماً در دیتابیس تغییر می‌کند.
+                  </p>
+                </div>
+
+                <form action={changePlan}>
+                  <input
+                    type="hidden"
+                    name="userId"
+                    value={selectedUser.id}
+                  />
+
+                  <select
+                    name="plan"
+                    defaultValue={selectedUser.plan}
+                  >
+                    <option value="FREE">
+                      Free
+                    </option>
+
+                    <option value="VIP">
+                      VIP
+                    </option>
+
+                    <option value="PREMIUM">
+                      Premium
+                    </option>
+
+                    <option value="PRO">
+                      Pro
+                    </option>
+                  </select>
+
+                  <button
+                    type="submit"
+                    className="gold-button"
+                  >
+                    ذخیره پلن
+                  </button>
+                </form>
               </section>
-            )}
-          </div>
-        </main>
-      </div>
+            </section>
+          ) : (
+            <section className="card no-user">
+              <div>♙</div>
+
+              <h2>
+                کاربری برای نمایش وجود ندارد
+              </h2>
+
+              <p>
+                کاربر موردنظر پیدا نشد.
+              </p>
+            </section>
+          )}
+        </div>
+      </main>
 
       <style>{`
         * {
@@ -1373,167 +1551,182 @@ export default async function AdminUsersPage({
 
         body {
           margin: 0;
-          background: #050608;
+          background: #050607;
           color: #f5f5f5;
           font-family: Arial, Tahoma, sans-serif;
         }
 
         a {
-          color: inherit;
           text-decoration: none;
+          color: inherit;
         }
 
         button,
         input,
         select,
         textarea {
-          font: inherit;
+          font-family: inherit;
+        }
+
+        button {
+          cursor: pointer;
         }
 
         .admin-page {
           min-height: 100vh;
           display: flex;
           background:
-            radial-gradient(circle at 80% 0%, rgba(214, 166, 72, .08), transparent 28%),
-            radial-gradient(circle at 10% 30%, rgba(35, 104, 255, .06), transparent 30%),
-            #050608;
+            radial-gradient(
+              circle at 80% 0%,
+              rgba(214, 166, 72, 0.08),
+              transparent 28%
+            ),
+            radial-gradient(
+              circle at 10% 40%,
+              rgba(0, 130, 255, 0.045),
+              transparent 30%
+            ),
+            #050607;
         }
 
         .sidebar {
-          width: 255px;
+          width: 250px;
           min-height: 100vh;
           position: sticky;
           top: 0;
           height: 100vh;
-          padding: 28px 18px;
-          border-left: 1px solid rgba(255,255,255,.07);
-          background: rgba(8, 9, 12, .92);
-          backdrop-filter: blur(25px);
+          padding: 25px 16px;
+          background: rgba(7, 8, 10, 0.95);
+          border-left: 1px solid rgba(255,255,255,.06);
+          backdrop-filter: blur(20px);
           display: flex;
           flex-direction: column;
-          z-index: 20;
+          z-index: 10;
         }
 
         .brand {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 11px;
           padding: 4px 8px 28px;
         }
 
         .brand-logo {
-          width: 44px;
-          height: 44px;
-          border-radius: 14px;
+          width: 43px;
+          height: 43px;
           display: grid;
           place-items: center;
-          background: linear-gradient(145deg, #e9c36a, #76551b);
-          color: #050608;
-          font-size: 23px;
-          box-shadow: 0 10px 35px rgba(218,170,70,.2);
+          border-radius: 13px;
+          background: linear-gradient(
+            145deg,
+            #efd078,
+            #805b1f
+          );
+          color: #080705;
+          font-size: 22px;
+          box-shadow:
+            0 10px 30px rgba(218,170,70,.15);
         }
 
-        .brand strong {
+        .brand-text strong {
           display: block;
-          font-size: 17px;
+          font-size: 16px;
         }
 
-        .brand small {
-          color: #8e8e95;
-          font-size: 9px;
-          letter-spacing: 1.5px;
+        .brand-text span {
+          display: block;
           margin-top: 4px;
-          display: block;
+          color: #73747a;
+          font-size: 8px;
+          letter-spacing: 1.5px;
         }
 
-        .nav {
+        .navigation {
           display: flex;
           flex-direction: column;
-          gap: 7px;
+          gap: 6px;
         }
 
-        .nav-item {
-          min-height: 47px;
+        .nav-link {
+          min-height: 46px;
           display: flex;
           align-items: center;
-          gap: 13px;
-          padding: 0 15px;
-          color: #92939a;
-          border-radius: 13px;
+          gap: 12px;
+          padding: 0 14px;
+          border-radius: 12px;
+          color: #85868c;
+          border: 1px solid transparent;
           transition: .2s;
-          font-size: 14px;
+          font-size: 12px;
         }
 
-        .nav-item span {
+        .nav-link span {
           width: 22px;
           text-align: center;
           font-size: 17px;
         }
 
-        .nav-item:hover,
-        .nav-item.active {
+        .nav-link:hover,
+        .nav-link.active {
           color: #fff;
-          background: linear-gradient(
-            90deg,
-            rgba(217,168,68,.17),
-            rgba(217,168,68,.05)
-          );
-          border: 1px solid rgba(218,174,77,.14);
+          background: rgba(218,174,73,.08);
+          border-color: rgba(218,174,73,.12);
         }
 
-        .nav-item.active {
-          box-shadow: inset -3px 0 0 #d8ae55;
+        .nav-link.active {
+          box-shadow: inset -3px 0 #dcb35a;
         }
 
-        .sidebar-bottom {
+        .sidebar-footer {
           margin-top: auto;
         }
 
-        .admin-mini {
+        .admin-user {
           display: flex;
           align-items: center;
-          gap: 10px;
-          padding: 14px;
-          border-radius: 15px;
+          gap: 9px;
+          padding: 12px;
+          border-radius: 13px;
           background: rgba(255,255,255,.035);
-          border: 1px solid rgba(255,255,255,.06);
-          margin-bottom: 10px;
+          border: 1px solid rgba(255,255,255,.055);
         }
 
         .admin-avatar,
-        .avatar-small {
+        .mini-avatar {
           display: grid;
           place-items: center;
           border-radius: 50%;
-          background: linear-gradient(145deg, #e7c267, #86611e);
-          color: #080808;
+          background: linear-gradient(
+            145deg,
+            #e8c56c,
+            #79571e
+          );
+          color: #090806;
           font-weight: 800;
         }
 
         .admin-avatar {
-          width: 38px;
-          height: 38px;
+          width: 37px;
+          height: 37px;
         }
 
-        .admin-mini strong {
+        .admin-user strong {
           display: block;
-          font-size: 12px;
+          font-size: 11px;
         }
 
-        .admin-mini small {
+        .admin-user span {
           display: block;
-          color: #85858b;
-          margin-top: 4px;
-          font-size: 10px;
+          color: #6f7076;
+          font-size: 8px;
+          margin-top: 3px;
         }
 
-        .logout {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          color: #8b8c91;
-          padding: 12px 15px;
-          font-size: 13px;
+        .logout-link {
+          display: block;
+          color: #777980;
+          padding: 12px;
+          font-size: 11px;
         }
 
         .main {
@@ -1542,596 +1735,603 @@ export default async function AdminUsersPage({
           padding: 28px 30px 60px;
         }
 
-        .topbar {
+        .header {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
           gap: 20px;
-          margin-bottom: 28px;
+          margin-bottom: 25px;
         }
 
         .breadcrumb {
-          color: #777981;
-          font-size: 12px;
-          margin-bottom: 9px;
+          color: #66686f;
+          font-size: 10px;
+          margin-bottom: 8px;
         }
 
         .breadcrumb span {
-          padding: 0 8px;
-          color: #c7a052;
+          color: #cba64e;
+          padding: 0 7px;
         }
 
-        h1 {
-          font-size: 28px;
-          margin: 0 0 8px;
+        .header h1 {
+          margin: 0 0 7px;
+          font-size: 27px;
         }
 
-        .topbar p {
+        .header p {
           margin: 0;
-          color: #777980;
-          font-size: 13px;
+          color: #6e7076;
+          font-size: 11px;
         }
 
-        .top-actions {
+        .header-admin {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
         }
 
-        .icon-button {
-          width: 43px;
-          height: 43px;
-          border-radius: 13px;
-          background: rgba(255,255,255,.04);
+        .notification-button {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 12px;
           border: 1px solid rgba(255,255,255,.07);
-          color: #ddd;
-          cursor: pointer;
+          background: rgba(255,255,255,.035);
+          color: #bbb;
         }
 
-        .admin-pill {
+        .admin-chip {
           display: flex;
           align-items: center;
-          gap: 9px;
-          padding: 7px 11px;
-          border-radius: 14px;
+          gap: 8px;
+          padding: 6px 10px;
+          border-radius: 13px;
           background: rgba(255,255,255,.035);
           border: 1px solid rgba(255,255,255,.07);
         }
 
-        .avatar-small {
+        .mini-avatar {
           width: 33px;
           height: 33px;
-          font-size: 13px;
+          font-size: 12px;
         }
 
-        .admin-pill strong {
+        .admin-chip strong {
           display: block;
-          font-size: 11px;
+          font-size: 10px;
         }
 
-        .admin-pill span {
+        .admin-chip span {
           display: block;
-          color: #777980;
-          font-size: 9px;
+          color: #6e7076;
+          font-size: 8px;
           margin-top: 3px;
         }
 
-        .stats-grid {
+        .stats {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 14px;
-          margin-bottom: 18px;
+          gap: 13px;
+          margin-bottom: 16px;
         }
 
-        .stat-card,
-        .glass-card,
-        .filter-card {
+        .stat,
+        .card,
+        .filter-box {
           background:
             linear-gradient(
               145deg,
               rgba(255,255,255,.055),
               rgba(255,255,255,.018)
             );
-          border: 1px solid rgba(255,255,255,.075);
-          box-shadow: 0 20px 50px rgba(0,0,0,.16);
-          backdrop-filter: blur(22px);
+          border: 1px solid rgba(255,255,255,.065);
+          box-shadow: 0 20px 50px rgba(0,0,0,.15);
+          backdrop-filter: blur(20px);
         }
 
-        .stat-card {
-          min-height: 112px;
-          border-radius: 19px;
-          padding: 18px;
-          display: grid;
-          grid-template-columns: 46px 1fr;
-          gap: 11px;
+        .stat {
+          min-height: 100px;
+          border-radius: 17px;
+          padding: 17px;
+          display: flex;
           align-items: center;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .stat-card > small {
-          position: absolute;
-          left: 18px;
-          bottom: 12px;
-          color: #66686e;
-          font-size: 9px;
+          gap: 12px;
         }
 
         .stat-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 13px;
+          width: 43px;
+          height: 43px;
+          flex: 0 0 43px;
           display: grid;
           place-items: center;
-          font-size: 19px;
+          border-radius: 12px;
+          font-size: 18px;
         }
 
-        .purple {
-          background: rgba(144,94,255,.13);
-          color: #b795ff;
+        .stat-icon.gold {
+          color: #e2bc62;
+          background: rgba(218,174,73,.1);
         }
 
-        .green {
-          background: rgba(62,205,135,.11);
-          color: #56d99a;
+        .stat-icon.green {
+          color: #52d58e;
+          background: rgba(82,213,142,.09);
         }
 
-        .orange {
-          background: rgba(235,164,62,.12);
-          color: #e9ae53;
+        .stat-icon.orange {
+          color: #e8ad4e;
+          background: rgba(232,173,78,.09);
         }
 
-        .red {
-          background: rgba(235,77,77,.11);
-          color: #ef7373;
+        .stat-icon.red {
+          color: #ea7070;
+          background: rgba(234,112,112,.09);
         }
 
-        .stat-card span {
+        .stat span {
           display: block;
-          color: #85868d;
-          font-size: 11px;
+          color: #777980;
+          font-size: 10px;
           margin-bottom: 5px;
         }
 
-        .stat-card strong {
-          display: block;
-          font-size: 23px;
+        .stat strong {
+          font-size: 22px;
         }
 
-        .filter-card {
-          border-radius: 18px;
-          padding: 13px;
-          margin-bottom: 18px;
+        .filter-box {
+          border-radius: 16px;
+          padding: 12px;
+          margin-bottom: 17px;
         }
 
         .filter-form {
           display: flex;
-          gap: 9px;
           align-items: center;
+          gap: 8px;
         }
 
-        .search-box {
+        .search {
           flex: 1;
           min-width: 180px;
-          height: 43px;
+          height: 42px;
           display: flex;
           align-items: center;
-          gap: 9px;
-          padding: 0 13px;
-          border-radius: 11px;
-          background: rgba(0,0,0,.22);
-          border: 1px solid rgba(255,255,255,.06);
+          gap: 8px;
+          padding: 0 12px;
+          border-radius: 10px;
+          background: rgba(0,0,0,.2);
+          border: 1px solid rgba(255,255,255,.055);
         }
 
-        .search-box span {
-          color: #85868b;
-          font-size: 20px;
+        .search span {
+          color: #73757b;
+          font-size: 19px;
         }
 
-        .search-box input {
-          flex: 1;
+        .search input {
+          width: 100%;
           border: 0;
           outline: 0;
           background: transparent;
-          color: white;
-          min-width: 0;
+          color: #fff;
         }
 
-        select,
         input,
+        select,
         textarea {
-          background: #0d0f13;
-          border: 1px solid rgba(255,255,255,.08);
           color: #eee;
-          border-radius: 11px;
+          background: #0d0f12;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 10px;
           outline: none;
         }
 
-        select {
-          height: 43px;
+        input {
+          height: 42px;
           padding: 0 12px;
-          min-width: 125px;
         }
 
-        input {
-          height: 43px;
-          padding: 0 13px;
+        select {
+          height: 42px;
+          padding: 0 11px;
+          min-width: 120px;
         }
 
         textarea {
-          padding: 13px;
+          padding: 12px;
           resize: vertical;
         }
 
         input::placeholder,
         textarea::placeholder {
-          color: #666970;
+          color: #5f6167;
         }
 
         .gold-button,
-        .reset-button {
-          min-height: 43px;
-          border-radius: 11px;
-          padding: 0 18px;
+        .clear-button {
+          min-height: 42px;
+          padding: 0 17px;
           display: inline-flex;
-          justify-content: center;
           align-items: center;
-          cursor: pointer;
-          border: 0;
+          justify-content: center;
+          border-radius: 10px;
           white-space: nowrap;
         }
 
         .gold-button {
-          background: linear-gradient(135deg, #ebc66c, #a87527);
-          color: #0b0a08;
+          border: 0;
+          color: #0b0906;
+          background: linear-gradient(
+            135deg,
+            #edc96d,
+            #a97629
+          );
           font-weight: 800;
-          box-shadow: 0 9px 25px rgba(209,161,61,.14);
+          box-shadow: 0 10px 25px rgba(211,165,63,.12);
         }
 
         .gold-button.full {
           width: 100%;
         }
 
-        .reset-button {
-          border: 1px solid rgba(255,255,255,.08);
-          color: #aaa;
+        .clear-button {
+          border: 1px solid rgba(255,255,255,.07);
           background: rgba(255,255,255,.025);
-        }
-
-        .content-grid {
-          display: grid;
-          grid-template-columns: 350px minmax(0, 1fr);
-          gap: 18px;
-          align-items: start;
-        }
-
-        .glass-card {
-          border-radius: 19px;
-          overflow: hidden;
-        }
-
-        .users-panel {
-          position: sticky;
-          top: 20px;
-        }
-
-        .section-header {
-          padding: 18px 20px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          border-bottom: 1px solid rgba(255,255,255,.06);
-        }
-
-        .section-header h2 {
-          margin: 0 0 5px;
-          font-size: 15px;
-        }
-
-        .section-header span {
-          color: #707178;
+          color: #999ba1;
           font-size: 10px;
         }
 
-        .view-all {
-          color: #d8af57;
-          font-size: 11px;
+        .layout {
+          display: grid;
+          grid-template-columns: 340px minmax(0,1fr);
+          gap: 17px;
+          align-items: start;
         }
 
-        .user-list {
+        .card {
+          border-radius: 18px;
+          overflow: hidden;
+        }
+
+        .users-card {
+          position: sticky;
+          top: 18px;
+        }
+
+        .card-title {
+          min-height: 65px;
+          padding: 16px 18px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid rgba(255,255,255,.055);
+        }
+
+        .card-title h2 {
+          margin: 0 0 4px;
+          font-size: 14px;
+        }
+
+        .card-title span {
+          color: #66686e;
+          font-size: 9px;
+        }
+
+        .gold-link {
+          color: #d9b05a !important;
+          font-size: 10px !important;
+        }
+
+        .users {
           padding: 8px;
-          max-height: 720px;
+          max-height: 700px;
           overflow-y: auto;
         }
 
-        .user-row {
+        .user {
+          min-height: 62px;
           display: grid;
-          grid-template-columns: 41px 1fr auto 15px;
-          gap: 9px;
+          grid-template-columns: 40px 1fr auto 12px;
           align-items: center;
-          padding: 11px 10px;
-          border-radius: 14px;
+          gap: 9px;
+          padding: 9px;
+          border-radius: 12px;
           border: 1px solid transparent;
-          margin-bottom: 5px;
+          margin-bottom: 4px;
         }
 
-        .user-row:hover,
-        .user-row.selected {
-          background: rgba(218,174,82,.075);
-          border-color: rgba(218,174,82,.13);
+        .user:hover,
+        .user.selected {
+          background: rgba(218,174,73,.07);
+          border-color: rgba(218,174,73,.12);
         }
 
         .user-avatar {
           width: 39px;
           height: 39px;
-          border-radius: 12px;
           display: grid;
           place-items: center;
-          background: linear-gradient(145deg,#30343b,#15171c);
-          border: 1px solid rgba(255,255,255,.08);
-          color: #d9b65f;
+          border-radius: 11px;
+          background: linear-gradient(
+            145deg,
+            #30343a,
+            #15171b
+          );
+          border: 1px solid rgba(255,255,255,.07);
+          color: #ddb75e;
           font-weight: 800;
         }
 
-        .user-info {
+        .user-details {
           min-width: 0;
         }
 
-        .user-info strong {
+        .user-details strong {
           display: block;
-          font-size: 12px;
+          font-size: 11px;
           overflow: hidden;
           white-space: nowrap;
           text-overflow: ellipsis;
         }
 
-        .user-info span {
+        .user-details span {
           display: block;
-          color: #6e7077;
-          font-size: 9px;
-          overflow: hidden;
-          white-space: nowrap;
-          text-overflow: ellipsis;
+          color: #66686e;
+          font-size: 8px;
           margin-top: 4px;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
         }
 
-        .user-plan {
+        .user-status {
           text-align: left;
         }
 
         .plan {
+          display: inline-block;
           padding: 4px 7px;
           border-radius: 6px;
           font-size: 8px;
-          border: 1px solid rgba(255,255,255,.07);
         }
 
-        .plan-VIP {
-          color: #e7c46b;
-          background: rgba(221,174,69,.1);
+        .plan.VIP {
+          color: #e3bd61;
+          background: rgba(218,174,73,.1);
         }
 
-        .plan-PREMIUM {
-          color: #b998ff;
-          background: rgba(143,99,232,.1);
+        .plan.PREMIUM {
+          color: #b99aff;
+          background: rgba(145,100,235,.1);
         }
 
-        .plan-PRO {
-          color: #62c9ff;
-          background: rgba(74,164,220,.1);
+        .plan.PRO {
+          color: #65caff;
+          background: rgba(72,164,219,.1);
         }
 
-        .plan-FREE {
-          color: #96979d;
+        .plan.FREE {
+          color: #999ba0;
           background: rgba(255,255,255,.05);
         }
 
-        .user-plan small {
+        .user-status small {
           display: block;
           margin-top: 4px;
-          font-size: 8px;
+          font-size: 7px;
         }
 
-        .active-text {
-          color: #53d491;
+        .active {
+          color: #52d28c;
         }
 
-        .blocked-text {
-          color: #e86b6b;
+        .blocked {
+          color: #e36f6f;
         }
 
-        .user-arrow {
-          color: #66676c;
-          font-size: 18px;
+        .arrow {
+          color: #5c5e64;
+          font-size: 17px;
         }
 
-        .details-area {
+        .details {
           min-width: 0;
           display: flex;
           flex-direction: column;
-          gap: 18px;
+          gap: 17px;
         }
 
-        .profile-card {
-          padding: 22px;
+        .profile {
+          padding: 20px;
         }
 
-        .profile-top {
+        .profile-head {
           display: flex;
           align-items: center;
-          gap: 16px;
+          gap: 15px;
         }
 
         .profile-avatar {
-          width: 72px;
-          height: 72px;
-          flex: 0 0 72px;
-          border-radius: 20px;
+          width: 70px;
+          height: 70px;
+          flex: 0 0 70px;
           display: grid;
           place-items: center;
-          background:
-            linear-gradient(145deg,#e6c066,#805c20);
-          color: #080706;
-          font-size: 28px;
+          border-radius: 19px;
+          background: linear-gradient(
+            145deg,
+            #e8c56a,
+            #805b20
+          );
+          color: #080705;
+          font-size: 27px;
           font-weight: 900;
-          box-shadow: 0 15px 35px rgba(219,170,65,.15);
         }
 
-        .profile-main {
+        .profile-info {
           flex: 1;
           min-width: 0;
         }
 
-        .profile-name-line {
+        .profile-name {
           display: flex;
           align-items: center;
-          gap: 9px;
+          gap: 8px;
         }
 
-        .profile-main h2 {
+        .profile-name h2 {
           margin: 0;
-          font-size: 21px;
+          font-size: 20px;
         }
 
-        .profile-main p {
-          color: #888990;
+        .profile-info p {
           margin: 7px 0;
-          font-size: 12px;
-        }
-
-        .profile-meta {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 15px;
-          color: #64666d;
-          font-size: 9px;
+          color: #888a90;
+          font-size: 11px;
         }
 
         .success-badge,
         .danger-badge {
           padding: 4px 8px;
-          border-radius: 7px;
-          font-size: 9px;
+          border-radius: 6px;
+          font-size: 8px;
         }
 
         .success-badge {
-          color: #55d493;
-          background: rgba(60,202,129,.1);
+          color: #52d28c;
+          background: rgba(82,210,140,.09);
         }
 
         .danger-badge {
-          color: #f07777;
-          background: rgba(232,76,76,.1);
+          color: #e87373;
+          background: rgba(232,115,115,.09);
         }
 
-        .profile-plan {
-          min-width: 125px;
-          text-align: center;
-          padding: 13px;
-          border-radius: 14px;
-          background: rgba(218,174,77,.06);
-          border: 1px solid rgba(218,174,77,.1);
-        }
-
-        .profile-plan span {
-          display: block;
-          color: #76777e;
-          font-size: 9px;
-          margin-bottom: 7px;
-        }
-
-        .profile-plan strong {
-          color: #e2bd65;
-          font-size: 17px;
-        }
-
-        .blocked-notice {
+        .meta {
           display: flex;
-          gap: 8px;
-          margin-top: 16px;
-          padding: 11px 13px;
-          border-radius: 11px;
-          background: rgba(230,76,76,.07);
-          border: 1px solid rgba(230,76,76,.13);
-          color: #db8585;
-          font-size: 11px;
+          flex-wrap: wrap;
+          gap: 13px;
+          color: #62646a;
+          font-size: 8px;
         }
 
-        .quick-stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-          margin-top: 18px;
-        }
-
-        .quick-stats > div {
+        .current-plan {
+          min-width: 115px;
           padding: 12px;
+          text-align: center;
           border-radius: 12px;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.05);
+          background: rgba(218,174,73,.06);
+          border: 1px solid rgba(218,174,73,.1);
         }
 
-        .quick-stats span {
+        .current-plan span {
           display: block;
-          color: #707178;
-          font-size: 9px;
+          color: #6c6e74;
+          font-size: 8px;
           margin-bottom: 5px;
         }
 
-        .quick-stats strong {
+        .current-plan strong {
+          color: #e0b95d;
           font-size: 15px;
         }
 
-        .action-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-          margin-top: 14px;
-        }
-
-        .action-button {
-          min-height: 43px;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          gap: 7px;
-          border: 1px solid rgba(255,255,255,.07);
-          border-radius: 11px;
-          background: rgba(255,255,255,.025);
-          color: #bdbec3;
-          cursor: pointer;
+        .blocked-box {
+          margin-top: 15px;
+          padding: 11px 13px;
+          border-radius: 10px;
+          background: rgba(226,83,83,.07);
+          border: 1px solid rgba(226,83,83,.12);
+          color: #d98585;
           font-size: 10px;
         }
 
-        .action-button:hover {
-          border-color: rgba(220,174,70,.25);
-          color: #e7c36b;
+        .blocked-box strong {
+          margin-left: 7px;
         }
 
-        .action-button.danger {
-          color: #e77a7a;
+        .profile-stats {
+          display: grid;
+          grid-template-columns: repeat(4,1fr);
+          gap: 8px;
+          margin-top: 16px;
         }
 
-        .action-button.unblock {
-          color: #5bd493;
+        .profile-stats div {
+          padding: 11px;
+          border-radius: 11px;
+          background: rgba(255,255,255,.025);
+          border: 1px solid rgba(255,255,255,.045);
         }
 
-        .two-column {
+        .profile-stats span {
+          display: block;
+          color: #676970;
+          font-size: 8px;
+          margin-bottom: 5px;
+        }
+
+        .profile-stats strong {
+          font-size: 14px;
+        }
+
+        .actions {
+          display: grid;
+          grid-template-columns: repeat(4,1fr);
+          gap: 7px;
+          margin-top: 12px;
+        }
+
+        .action {
+          width: 100%;
+          min-height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 0 8px;
+          border-radius: 10px;
+          border: 1px solid rgba(255,255,255,.07);
+          background: rgba(255,255,255,.025);
+          color: #aaa;
+          font-size: 9px;
+        }
+
+        .action:hover {
+          color: #e0ba61;
+          border-color: rgba(218,174,73,.2);
+        }
+
+        button.action {
+          font-size: 9px;
+        }
+
+        .action.danger {
+          color: #e37878;
+        }
+
+        .action.unblock {
+          color: #55d591;
+        }
+
+        .columns {
           display: grid;
           grid-template-columns: 1.1fr .9fr;
-          gap: 18px;
+          gap: 17px;
         }
 
-        .ticket-list {
-          padding: 10px 14px 14px;
+        .tickets {
+          padding: 8px 14px 14px;
         }
 
         .ticket {
           display: flex;
-          gap: 11px;
-          padding: 13px 6px;
-          border-bottom: 1px solid rgba(255,255,255,.05);
+          gap: 10px;
+          padding: 13px 5px;
+          border-bottom: 1px solid rgba(255,255,255,.045);
         }
 
         .ticket:last-child {
@@ -2144,201 +2344,232 @@ export default async function AdminUsersPage({
           flex: 0 0 35px;
           display: grid;
           place-items: center;
-          border-radius: 10px;
-          background: rgba(218,174,75,.08);
-          color: #dcb45d;
+          border-radius: 9px;
+          background: rgba(218,174,73,.08);
+          color: #d9b15a;
         }
 
-        .ticket-body {
-          min-width: 0;
+        .ticket-content {
           flex: 1;
+          min-width: 0;
         }
 
-        .ticket-title {
+        .ticket-top {
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          justify-content: space-between;
           gap: 8px;
         }
 
-        .ticket-title strong {
-          font-size: 11px;
+        .ticket-top strong {
+          font-size: 10px;
         }
 
         .ticket-status {
           padding: 4px 7px;
           border-radius: 6px;
-          font-size: 8px;
+          font-size: 7px;
           white-space: nowrap;
         }
 
-        .status-open {
-          color: #f0bb59;
-          background: rgba(240,187,89,.09);
+        .ticket-open {
+          color: #eab354;
+          background: rgba(234,179,84,.08);
         }
 
-        .status-progress {
-          color: #61b8e8;
-          background: rgba(97,184,232,.09);
+        .ticket-progress {
+          color: #63b8e8;
+          background: rgba(99,184,232,.08);
         }
 
-        .status-answered {
-          color: #59d694;
-          background: rgba(89,214,148,.09);
+        .ticket-answered {
+          color: #54d28d;
+          background: rgba(84,210,141,.08);
         }
 
-        .status-closed {
+        .ticket-closed {
           color: #777980;
-          background: rgba(255,255,255,.05);
+          background: rgba(255,255,255,.04);
         }
 
-        .status-default {
-          color: #aaa;
-          background: rgba(255,255,255,.05);
+        .ticket-default {
+          color: #999;
+          background: rgba(255,255,255,.04);
         }
 
-        .ticket-body p {
-          color: #85868d;
-          font-size: 15px;
-          line-height: 2;
+        .ticket-content p {
           margin: 9px 0;
+          color: #92949a;
+          font-size: 14px;
+          line-height: 2;
           white-space: pre-wrap;
           word-break: break-word;
         }
 
-        .ticket-footer {
+        .ticket-bottom {
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          justify-content: space-between;
           gap: 8px;
-          color: #62646a;
+          color: #5f6167;
           font-size: 8px;
         }
 
-        .ticket-footer select {
-          height: 30px;
-          min-width: 105px;
-          font-size: 9px;
-          padding: 0 7px;
+        .status-form {
+          display: flex;
+          align-items: center;
+          gap: 4px;
         }
 
-        .subscription-card {
-          padding-bottom: 16px;
+        .status-form select {
+          height: 29px;
+          min-width: 100px;
+          font-size: 8px;
+          padding: 0 5px;
         }
 
-        .subscription-live,
-        .subscription-off {
-          padding: 5px 9px;
+        .status-button {
+          height: 29px;
           border-radius: 7px;
-          font-size: 9px;
+          border: 1px solid rgba(218,174,73,.16);
+          background: rgba(218,174,73,.07);
+          color: #dcb45c;
+          padding: 0 8px;
+          font-size: 8px;
         }
 
-        .subscription-live {
-          color: #55d493;
-          background: rgba(85,212,147,.08);
+        .live,
+        .offline {
+          padding: 5px 8px !important;
+          border-radius: 6px;
         }
 
-        .subscription-off {
-          color: #888a90;
-          background: rgba(255,255,255,.05);
+        .live {
+          color: #54d38e !important;
+          background: rgba(84,211,142,.08);
+        }
+
+        .offline {
+          color: #777980 !important;
+          background: rgba(255,255,255,.04);
         }
 
         .current-subscription {
-          margin: 14px;
-          padding: 15px;
-          border-radius: 14px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(217,174,72,.09),
-              rgba(255,255,255,.025)
-            );
-          border: 1px solid rgba(217,174,72,.12);
+          margin: 13px;
+          padding: 14px;
+          border-radius: 13px;
+          background: rgba(218,174,73,.055);
+          border: 1px solid rgba(218,174,73,.1);
         }
 
-        .subscription-header {
+        .subscription-name {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 9px;
         }
 
         .crown {
-          width: 40px;
-          height: 40px;
+          width: 39px;
+          height: 39px;
           display: grid;
           place-items: center;
-          border-radius: 11px;
-          background: rgba(218,174,72,.12);
-          color: #e4bd62;
-          font-size: 20px;
+          border-radius: 10px;
+          background: rgba(218,174,73,.1);
+          color: #e1b960;
+          font-size: 19px;
         }
 
-        .subscription-header strong {
+        .subscription-name strong {
           display: block;
-          color: #e3bd62;
-          font-size: 15px;
+          color: #e1bb61;
+          font-size: 14px;
         }
 
-        .subscription-header span {
+        .subscription-name span {
           display: block;
-          color: #707177;
-          font-size: 9px;
+          color: #686a70;
+          font-size: 8px;
           margin-top: 3px;
         }
 
-        .subscription-details {
+        .subscription-data {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 7px;
-          margin-top: 14px;
+          grid-template-columns: repeat(3,1fr);
+          gap: 6px;
+          margin-top: 13px;
         }
 
-        .subscription-details div {
-          padding: 9px;
-          border-radius: 9px;
-          background: rgba(0,0,0,.15);
+        .subscription-data div {
+          padding: 8px;
+          border-radius: 8px;
+          background: rgba(0,0,0,.13);
         }
 
-        .subscription-details span {
+        .subscription-data span {
           display: block;
-          color: #65676d;
-          font-size: 8px;
+          color: #61636a;
+          font-size: 7px;
           margin-bottom: 4px;
         }
 
-        .subscription-details strong {
-          font-size: 10px;
+        .subscription-data strong {
+          font-size: 9px;
         }
 
         .cancel-button {
           width: 100%;
-          margin-top: 11px;
-          height: 35px;
-          border-radius: 9px;
-          border: 1px solid rgba(231,105,105,.16);
-          color: #df8585;
-          background: rgba(231,105,105,.05);
-          cursor: pointer;
-          font-size: 9px;
+          height: 34px;
+          margin-top: 10px;
+          border-radius: 8px;
+          border: 1px solid rgba(228,106,106,.15);
+          background: rgba(228,106,106,.05);
+          color: #dc7d7d;
+          font-size: 8px;
+        }
+
+        .no-subscription {
+          margin: 13px;
+          padding: 23px 12px;
+          text-align: center;
+          border: 1px dashed rgba(255,255,255,.08);
+          border-radius: 12px;
+        }
+
+        .no-subscription div {
+          color: #98782f;
+          font-size: 23px;
+          margin-bottom: 7px;
+        }
+
+        .no-subscription strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .no-subscription span {
+          display: block;
+          color: #64666c;
+          font-size: 8px;
+          margin-top: 5px;
         }
 
         .subscription-form {
-          padding: 0 14px;
+          padding: 0 13px 14px;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 7px;
         }
 
-        .form-title {
-          color: #bbbcc1;
+        .subscription-form h3 {
+          margin: 2px 0;
+          color: #aaa;
           font-size: 10px;
-          margin: 4px 0;
         }
 
         .form-row {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 8px;
+          gap: 7px;
         }
 
         .subscription-form input,
@@ -2346,105 +2577,78 @@ export default async function AdminUsersPage({
           width: 100%;
         }
 
-        .no-subscription {
-          margin: 14px;
-          padding: 25px;
-          border: 1px dashed rgba(255,255,255,.09);
-          border-radius: 14px;
-          text-align: center;
-        }
-
-        .no-subscription div {
-          font-size: 23px;
-          color: #777;
-          margin-bottom: 8px;
-        }
-
-        .no-subscription strong {
-          display: block;
-          font-size: 12px;
-        }
-
-        .no-subscription span {
-          display: block;
-          color: #686a70;
-          font-size: 9px;
-          margin-top: 6px;
-        }
-
         .message-card {
-          padding-bottom: 18px;
+          padding-bottom: 15px;
         }
 
         .message-form {
-          padding: 15px 18px 0;
+          padding: 13px 16px 0;
           display: grid;
           grid-template-columns: 220px 1fr auto;
-          gap: 9px;
+          gap: 8px;
           align-items: start;
         }
 
         .message-form textarea {
-          min-height: 86px;
+          min-height: 85px;
         }
 
         .access-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 12px;
+          grid-template-columns: repeat(3,1fr);
+          gap: 11px;
         }
 
         .access-card {
-          padding: 16px;
+          padding: 15px;
           display: grid;
-          grid-template-columns: 42px 1fr;
-          gap: 10px;
-          align-items: center;
+          grid-template-columns: 40px 1fr;
+          gap: 9px;
         }
 
         .access-icon {
-          width: 42px;
-          height: 42px;
+          width: 40px;
+          height: 40px;
           display: grid;
           place-items: center;
-          border-radius: 12px;
-          background: rgba(216,174,79,.08);
-          color: #dcb65f;
-          font-size: 18px;
+          border-radius: 11px;
+          background: rgba(218,174,73,.08);
+          color: #dcb45c;
+          font-size: 17px;
         }
 
         .access-card strong {
           display: block;
-          font-size: 11px;
+          font-size: 10px;
         }
 
         .access-card span {
           display: block;
-          color: #6e7076;
-          font-size: 8px;
-          line-height: 1.7;
+          color: #66686e;
+          font-size: 7px;
+          line-height: 1.8;
           margin-top: 3px;
         }
 
         .access-card a {
           grid-column: 1 / -1;
-          height: 32px;
+          height: 31px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 9px;
+          padding: 0 8px;
           border-radius: 8px;
-          color: #cda94f;
-          background: rgba(216,174,79,.055);
-          font-size: 9px;
+          background: rgba(218,174,73,.05);
+          color: #d5ae56;
+          font-size: 8px;
         }
 
         .access-card b {
-          font-size: 16px;
+          font-size: 15px;
         }
 
         .plan-card {
-          padding: 18px;
+          padding: 17px;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -2452,69 +2656,75 @@ export default async function AdminUsersPage({
         }
 
         .plan-card h2 {
-          margin: 0 0 6px;
-          font-size: 14px;
+          margin: 0 0 5px;
+          font-size: 13px;
         }
 
         .plan-card p {
           margin: 0;
-          color: #6e7076;
-          font-size: 9px;
+          color: #66686e;
+          font-size: 8px;
         }
 
         .plan-card form {
           display: flex;
-          gap: 8px;
+          gap: 7px;
         }
 
         .plan-card select {
-          min-width: 150px;
+          min-width: 145px;
         }
 
-        .empty,
-        .no-user {
+        .empty {
           text-align: center;
-          padding: 45px 20px;
-          color: #777980;
+          padding: 42px 15px;
         }
 
         .empty div,
         .no-user > div {
-          font-size: 28px;
-          margin-bottom: 10px;
-          color: #b18a39;
+          color: #aa8538;
+          font-size: 27px;
+          margin-bottom: 9px;
         }
 
         .empty strong,
         .no-user h2 {
           display: block;
-          color: #bbbcc1;
-          font-size: 13px;
+          color: #b7b8bd;
+          font-size: 12px;
         }
 
         .empty span,
         .no-user p {
           display: block;
-          color: #62646a;
-          font-size: 9px;
-          margin-top: 6px;
+          color: #606268;
+          font-size: 8px;
+          margin-top: 5px;
         }
 
         .empty.compact {
-          padding: 25px 10px;
+          padding: 27px 10px;
+        }
+
+        .no-user {
+          min-height: 300px;
+          display: grid;
+          place-items: center;
+          align-content: center;
+          text-align: center;
         }
 
         @media (max-width: 1250px) {
-          .content-grid {
-            grid-template-columns: 310px minmax(0, 1fr);
+          .layout {
+            grid-template-columns: 300px minmax(0,1fr);
           }
 
-          .stats-grid {
-            grid-template-columns: repeat(2, 1fr);
+          .stats {
+            grid-template-columns: repeat(2,1fr);
           }
 
-          .action-grid {
-            grid-template-columns: repeat(2, 1fr);
+          .actions {
+            grid-template-columns: repeat(2,1fr);
           }
 
           .message-form {
@@ -2528,97 +2738,90 @@ export default async function AdminUsersPage({
 
         @media (max-width: 1000px) {
           .sidebar {
-            width: 75px;
-            padding: 18px 10px;
+            width: 72px;
+            padding: 17px 9px;
           }
 
           .brand {
             justify-content: center;
           }
 
-          .brand > div:last-child,
-          .nav-item {
-            font-size: 0;
+          .brand-text,
+          .nav-link b,
+          .admin-user > div:last-child,
+          .logout-link {
+            display: none;
           }
 
-          .nav-item {
+          .nav-link {
             justify-content: center;
             padding: 0;
           }
 
-          .nav-item span {
+          .nav-link span {
             font-size: 18px;
           }
 
-          .admin-mini > div:last-child,
-          .logout {
+          .admin-user {
             justify-content: center;
-            font-size: 0;
           }
 
-          .admin-mini {
-            justify-content: center;
-            padding: 8px;
-          }
-
-          .content-grid {
+          .layout {
             grid-template-columns: 1fr;
           }
 
-          .users-panel {
+          .users-card {
             position: static;
           }
 
-          .user-list {
-            max-height: 320px;
+          .users {
+            max-height: 330px;
+          }
+
+          .columns {
+            grid-template-columns: 1fr;
           }
         }
 
         @media (max-width: 760px) {
           .main {
-            padding: 18px 12px 40px;
+            padding: 18px 12px 45px;
           }
 
-          .topbar {
+          .header {
             flex-direction: column;
           }
 
-          .top-actions {
+          .header-admin {
             width: 100%;
           }
 
-          .admin-pill {
+          .admin-chip {
             margin-right: auto;
-          }
-
-          .stats-grid {
-            grid-template-columns: 1fr 1fr;
           }
 
           .filter-form {
             flex-wrap: wrap;
           }
 
-          .search-box {
+          .search {
             flex-basis: 100%;
           }
 
-          .two-column,
-          .access-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .profile-top {
-            align-items: flex-start;
+          .profile-head {
             flex-wrap: wrap;
           }
 
-          .profile-plan {
+          .current-plan {
             width: 100%;
           }
 
-          .quick-stats {
+          .profile-stats {
             grid-template-columns: 1fr 1fr;
+          }
+
+          .access-grid {
+            grid-template-columns: 1fr;
           }
 
           .message-form {
@@ -2644,43 +2847,37 @@ export default async function AdminUsersPage({
             display: none;
           }
 
-          h1 {
+          .stats {
+            grid-template-columns: 1fr;
+          }
+
+          .header h1 {
             font-size: 23px;
           }
 
-          .stats-grid {
+          .actions {
             grid-template-columns: 1fr;
           }
 
-          .profile-avatar {
-            width: 60px;
-            height: 60px;
-            flex-basis: 60px;
-          }
-
-          .profile-main h2 {
-            font-size: 17px;
-          }
-
-          .subscription-details {
+          .subscription-data {
             grid-template-columns: 1fr;
           }
 
-          .action-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .ticket-title {
+          .ticket-top {
             align-items: flex-start;
             flex-direction: column;
           }
 
-          .ticket-footer {
+          .ticket-bottom {
             align-items: flex-start;
             flex-direction: column;
+          }
+
+          .status-form {
+            width: 100%;
           }
         }
       `}</style>
-    </>
+    </div>
   );
 }
