@@ -1,583 +1,145 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type IconName =
-  | "dashboard"
-  | "signals"
-  | "bots"
-  | "market"
-  | "wallet"
-  | "settings"
-  | "bell"
-  | "chart"
-  | "trade"
-  | "shield"
-  | "news"
-  | "support"
-  | "arrow"
-  | "menu"
-  | "spark"
-  | "user"
-  | "activity"
-  | "refresh";
+type Lang = "fa" | "en";
 
-function Icon({
-  name,
-  size = 20,
-}: {
-  name: IconName;
-  size?: number;
-}) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    xmlns: "http://www.w3.org/2000/svg",
-    "aria-hidden": true,
-  };
+const faPlan: Record<string, string> = {
+  FREE: "رایگان",
+  BASIC: "پایه",
+  PRO: "حرفه‌ای",
+  PREMIUM: "پریمیوم",
+};
 
-  switch (name) {
-    case "dashboard":
-      return (
-        <svg {...common}>
-          <rect
-            x="3"
-            y="3"
-            width="7"
-            height="7"
-            rx="1.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <rect
-            x="14"
-            y="3"
-            width="7"
-            height="7"
-            rx="1.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <rect
-            x="3"
-            y="14"
-            width="7"
-            height="7"
-            rx="1.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <rect
-            x="14"
-            y="14"
-            width="7"
-            height="7"
-            rx="1.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-        </svg>
-      );
+const enPlan: Record<string, string> = {
+  FREE: "Free",
+  BASIC: "Basic",
+  PRO: "Professional",
+  PREMIUM: "Premium",
+};
 
-    case "signals":
-      return (
-        <svg {...common}>
-          <path
-            d="M4 17L9 12L13 15L20 7"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M16 7H20V11"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "bots":
-      return (
-        <svg {...common}>
-          <rect
-            x="5"
-            y="6"
-            width="14"
-            height="12"
-            rx="3"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M12 3V6"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <circle cx="9" cy="12" r="1" fill="currentColor" />
-          <circle cx="15" cy="12" r="1" fill="currentColor" />
-          <path
-            d="M9 15H15"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-
-    case "market":
-      return (
-        <svg {...common}>
-          <path
-            d="M4 19V5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M4 19H21"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M7 15L10 11L13 13L18 7"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "wallet":
-      return (
-        <svg {...common}>
-          <path
-            d="M4 7.5C4 6.12 5.12 5 6.5 5H19V19H6.5C5.12 19 4 17.88 4 16.5V7.5Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path d="M4 8H18" stroke="currentColor" strokeWidth="1.7" />
-          <path d="M16 13H20" stroke="currentColor" strokeWidth="1.7" />
-          <circle cx="16" cy="13" r="1" fill="currentColor" />
-        </svg>
-      );
-
-    case "settings":
-      return (
-        <svg {...common}>
-          <circle
-            cx="12"
-            cy="12"
-            r="3.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M19 13.5L21 14.7L19.1 18L17.1 16.8C16.5 17.3 15.8 17.6 15 17.9V20H9V17.9C8.2 17.6 7.5 17.3 6.9 16.8L4.9 18L3 14.7L5 13.5C4.8 13 4.7 12.5 4.7 12C4.7 11.5 4.8 11 5 10.5L3 9.3L4.9 6L6.9 7.2C7.5 6.7 8.2 6.4 9 6.1V4H15V6.1C15.8 6.4 16.5 6.7 17.1 7.2L19.1 6L21 9.3L19 10.5C19.2 11 19.3 11.5 19.3 12C19.3 12.5 19.2 13 19 13.5Z"
-            stroke="currentColor"
-            strokeWidth="1.25"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "bell":
-      return (
-        <svg {...common}>
-          <path
-            d="M18 9.5C18 6.2 15.8 4 12 4C8.2 4 6 6.2 6 9.5C6 14 4.5 16 4.5 16H19.5C19.5 16 18 14 18 9.5Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M10 19C10.5 20 11.2 20.5 12 20.5C12.8 20.5 13.5 20 14 19"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-
-    case "chart":
-      return (
-        <svg {...common}>
-          <path
-            d="M4 19V5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M4 19H21"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M7 15L10 12L13 14L18 8"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "trade":
-      return (
-        <svg {...common}>
-          <path
-            d="M5 7H19"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M5 12H15"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M5 17H12"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <circle
-            cx="18"
-            cy="17"
-            r="3"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-        </svg>
-      );
-
-    case "shield":
-      return (
-        <svg {...common}>
-          <path
-            d="M12 3L19 6V11.5C19 16 16.2 19.3 12 21C7.8 19.3 5 16 5 11.5V6L12 3Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M9 12L11 14L15 9.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "news":
-      return (
-        <svg {...common}>
-          <path
-            d="M5 4H19V20H5C4.45 20 4 19.55 4 19V5C4 4.45 4.45 4 5 4Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M8 8H16"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M8 12H16"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M8 16H13"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-
-    case "support":
-      return (
-        <svg {...common}>
-          <path
-            d="M5 13V11C5 7.13 8.13 4 12 4C15.87 4 19 7.13 19 11V13"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M5 13H8V18H6.5C5.67 18 5 17.33 5 16.5V13Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M19 13H16V18H17.5C18.33 18 19 17.33 19 16.5V13Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M16 19C15 20 13.8 20.5 12 20.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-
-    case "arrow":
-      return (
-        <svg {...common}>
-          <path
-            d="M5 12H19"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M13 6L19 12L13 18"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "menu":
-      return (
-        <svg {...common}>
-          <path
-            d="M4 7H20"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-          <path
-            d="M4 12H20"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-          <path
-            d="M4 17H20"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-
-    case "spark":
-      return (
-        <svg {...common}>
-          <path
-            d="M12 3L13.5 9.5L20 11L13.5 12.5L12 19L10.5 12.5L4 11L10.5 9.5L12 3Z"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "user":
-      return (
-        <svg {...common}>
-          <circle
-            cx="12"
-            cy="8"
-            r="3.2"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M5 20C5.7 16.5 8 14.5 12 14.5C16 14.5 18.3 16.5 19 20"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-
-    case "activity":
-      return (
-        <svg {...common}>
-          <path
-            d="M3 12H7L9.5 6L14 18L16.5 12H21"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-
-    case "refresh":
-      return (
-        <svg {...common}>
-          <path
-            d="M20 11A8 8 0 0 0 6.4 5.2L4 7.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M4 4V7.5H7.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M4 13A8 8 0 0 0 17.6 18.8L20 16.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-          <path
-            d="M20 20V16.5H16.5"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-  }
-}
-
-function formatNumber(value: number) {
+function nf(value: number) {
   return new Intl.NumberFormat("fa-IR").format(value);
 }
 
-function formatMoney(value: number) {
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${new Intl.NumberFormat("fa-IR", {
+function money(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value)} $`;
+  }).format(value);
 }
 
-function formatDate(date: Date | null | undefined) {
-  if (!date) return "—";
+function icon(name: string) {
+  const icons: Record<string, React.ReactNode> = {
+    dashboard: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="3" width="7" height="7" rx="2" />
+        <rect x="14" y="3" width="7" height="7" rx="2" />
+        <rect x="3" y="14" width="7" height="7" rx="2" />
+        <rect x="14" y="14" width="7" height="7" rx="2" />
+      </svg>
+    ),
 
-  return new Intl.DateTimeFormat("fa-IR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
+    news: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 4h14v16H5z" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </svg>
+    ),
 
-function directionLabel(direction: string) {
-  const value = direction.toUpperCase();
+    bot: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <rect x="4" y="7" width="16" height="13" rx="3" />
+        <path d="M12 3v4M8 12h.01M16 12h.01M8 16h8" />
+      </svg>
+    ),
 
-  if (value === "BUY" || value === "LONG") return "خرید";
-  if (value === "SELL" || value === "SHORT") return "فروش";
+    signal: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 19V5M4 19h16" />
+        <path d="m7 15 4-5 3 3 5-7" />
+      </svg>
+    ),
 
-  return direction;
-}
+    chart: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 19V5M4 19h16" />
+        <path d="M7 15l3-4 3 2 4-6" />
+      </svg>
+    ),
 
-function directionClass(direction: string) {
-  const value = direction.toUpperCase();
+    broker: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M7 8V5h10v3" />
+        <rect x="4" y="8" width="16" height="11" rx="2" />
+        <path d="M8 12h8M8 15h5" />
+      </svg>
+    ),
 
-  if (value === "BUY" || value === "LONG") return "buy";
-  if (value === "SELL" || value === "SHORT") return "sell";
+    mt: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="8" />
+        <path d="M8 15l2-5 2 5 2-5 2 5" />
+      </svg>
+    ),
 
-  return "neutral";
-}
+    subscription: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 7h16v13H4z" />
+        <path d="M4 7l2-4h12l2 4" />
+        <path d="M9 12h6M9 15h4" />
+      </svg>
+    ),
 
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    WAITING: "در انتظار",
-    ACTIVE: "فعال",
-    OPEN: "باز",
-    CLOSED: "بسته",
-    COMPLETED: "تکمیل‌شده",
-    EXPIRED: "منقضی",
-    CANCELLED: "لغو شده",
-    CANCELED: "لغو شده",
+    vpn: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <rect x="5" y="10" width="14" height="10" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </svg>
+    ),
+
+    support: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 13a8 8 0 0 1 16 0v5H4z" />
+        <path d="M4 15H2v-2M20 15h2v-2M9 21h6" />
+      </svg>
+    ),
+
+    settings: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.8 1.8 0 0 0 .35 1.98l.05.05-1.42 1.42-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.08 1.65V20h-2v-.3a1.8 1.8 0 0 0-1.08-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05-1.42-1.42.05-.05A1.8 1.8 0 0 0 9.1 15a1.8 1.8 0 0 0-1.65-1.08H7v-2h.3A1.8 1.8 0 0 0 9.1 10a1.8 1.8 0 0 0-.35-1.98l-.05-.05 1.42-1.42.05.05a1.8 1.8 0 0 0 1.98.35A1.8 1.8 0 0 0 13.23 5.3V5h2v.3a1.8 1.8 0 0 0 1.08 1.65 1.8 1.8 0 0 0 1.98-.35l.05-.05 1.42 1.42-.05.05A1.8 1.8 0 0 0 19.4 10a1.8 1.8 0 0 0 1.65 1.08h.3v2h-.3A1.8 1.8 0 0 0 19.4 15z" />
+      </svg>
+    ),
+
+    profile: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 20c.8-4 3-6 7-6s6.2 2 7 6" />
+      </svg>
+    ),
+
+    logout: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M10 5H5v14h5" />
+        <path d="M14 8l4 4-4 4M18 12H9" />
+      </svg>
+    ),
+
+    live: (
+      <svg viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    ),
   };
 
-  return map[status.toUpperCase()] || status;
-}
-
-function buildChart(
-  values: number[],
-  width = 900,
-  height = 300,
-  padding = 26
-) {
-  if (values.length < 2) {
-    return {
-      line: "",
-      area: "",
-      min: 0,
-      max: 0,
-    };
-  }
-
-  const minValue = Math.min(...values, 0);
-  const maxValue = Math.max(...values, 0);
-
-  const range = maxValue - minValue || 1;
-
-  const points = values.map((value, index) => {
-    const x =
-      padding +
-      (index / Math.max(values.length - 1, 1)) *
-        (width - padding * 2);
-
-    const y =
-      height -
-      padding -
-      ((value - minValue) / range) *
-        (height - padding * 2);
-
-    return {
-      x,
-      y,
-    };
-  });
-
-  const line = points
-    .map((point, index) => {
-      return `${index === 0 ? "M" : "L"} ${point.x.toFixed(
-        2
-      )} ${point.y.toFixed(2)}`;
-    })
-    .join(" ");
-
-  const area =
-    `${line} ` +
-    `L ${points[points.length - 1].x.toFixed(2)} ${
-      height - padding
-    } ` +
-    `L ${points[0].x.toFixed(2)} ${height - padding} Z`;
-
-  return {
-    line,
-    area,
-    min: minValue,
-    max: maxValue,
-  };
+  return icons[name] ?? icons.dashboard;
 }
 
 export default async function DashboardPage() {
@@ -587,16 +149,48 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  const cookieStore = await cookies();
+
+  const savedLanguage =
+    cookieStore.get("ta_lang")?.value === "en"
+      ? "en"
+      : "fa";
+
+  const lang: Lang = savedLanguage;
+
+  async function setLanguage(formData: FormData) {
+    "use server";
+
+    const selected =
+      String(formData.get("language") || "fa") === "en"
+        ? "en"
+        : "fa";
+
+    const store = await cookies();
+
+    store.set("ta_lang", selected, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+
+    redirect("/dashboard");
+  }
+
   const user = await prisma.user.findUnique({
     where: {
       id: session.userId,
     },
+
     select: {
       id: true,
       name: true,
       email: true,
       role: true,
       plan: true,
+      createdAt: true,
     },
   });
 
@@ -605,16 +199,13 @@ export default async function DashboardPage() {
   }
 
   const [
-    botsCount,
-    activeBotsCount,
-    signalsCount,
-    tradesCount,
-    openTradesCount,
-    closedTradesCount,
-    winningTradesCount,
-    losingTradesCount,
-    recentSignals,
-    recentClosedTrades,
+    totalBots,
+    activeBots,
+    totalSignals,
+    activeSignals,
+    openTrades,
+    totalTrades,
+    closedTrades,
   ] = await Promise.all([
     prisma.tradingBot.count({
       where: {
@@ -635,9 +226,16 @@ export default async function DashboardPage() {
       },
     }),
 
-    prisma.trade.count({
+    prisma.tradingSignal.count({
       where: {
         userId: user.id,
+        status: {
+          in: [
+            "ACTIVE",
+            "TP1_HIT",
+            "TP2_HIT",
+          ] as any,
+        },
       },
     }),
 
@@ -651,153 +249,249 @@ export default async function DashboardPage() {
     prisma.trade.count({
       where: {
         userId: user.id,
-        closedAt: {
-          not: null,
-        },
-      },
-    }),
-
-    prisma.trade.count({
-      where: {
-        userId: user.id,
-        closedAt: {
-          not: null,
-        },
-        profitLoss: {
-          gt: 0,
-        },
-      },
-    }),
-
-    prisma.trade.count({
-      where: {
-        userId: user.id,
-        closedAt: {
-          not: null,
-        },
-        profitLoss: {
-          lt: 0,
-        },
-      },
-    }),
-
-    prisma.tradingSignal.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 8,
-      select: {
-        id: true,
-        symbol: true,
-        timeframe: true,
-        direction: true,
-        entry: true,
-        takeProfit: true,
-        stopLoss: true,
-        riskReward: true,
-        score: true,
-        confidence: true,
-        status: true,
-        source: true,
-        createdAt: true,
       },
     }),
 
     prisma.trade.findMany({
       where: {
         userId: user.id,
-        closedAt: {
-          not: null,
-        },
+        status: "CLOSED",
         profitLoss: {
           not: null,
         },
       },
-      orderBy: {
-        closedAt: "asc",
-      },
-      take: 60,
+
       select: {
-        id: true,
         profitLoss: true,
-        closedAt: true,
       },
     }),
   ]);
 
-  const totalProfitLoss = recentClosedTrades.reduce(
-    (sum, trade) => sum + Number(trade.profitLoss ?? 0),
+  const totalPnl = closedTrades.reduce(
+    (sum, trade) =>
+      sum + Number(trade.profitLoss || 0),
     0
   );
 
-  const chartValues: number[] = [];
-  let runningPnl = 0;
+  const initials =
+    user.name
+      ?.trim()
+      .split(/\s+/)
+      .map((part) => part.charAt(0))
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "U";
 
-  for (const trade of recentClosedTrades) {
-    runningPnl += Number(trade.profitLoss ?? 0);
-    chartValues.push(runningPnl);
-  }
+  const t =
+    lang === "en"
+      ? {
+          dashboard: "Dashboard",
+          welcome: "Trading AI Control Center",
+          welcomeText:
+            "Manage signals, trading bots, market tools and your account from one professional workspace.",
 
-  const chart = buildChart(chartValues);
+          active: "System Active",
+          profile: "Profile",
+          settings: "Settings",
+          logout: "Logout",
 
-  const winRate =
-    closedTradesCount > 0
-      ? (winningTradesCount / closedTradesCount) * 100
-      : 0;
+          mainMenu: "MAIN MENU",
 
-  const firstName =
-    user.name?.trim()?.split(" ")[0] || "کاربر";
+          news: "Market News",
+          newsText:
+            "Latest market announcements and important events",
 
-  const initial =
-    firstName.charAt(0).toUpperCase() || "U";
+          bots: "Trading Bots",
+          botsText:
+            "Configure and manage your trading bots",
 
-  const isAdmin = user.role === "ADMIN";
+          signals: "Trading Signals",
+          signalsText:
+            "Confirmed signals, entry, SL and TP levels",
+
+          performance: "Performance",
+          performanceText:
+            "Daily, weekly, monthly and yearly performance",
+
+          broker: "Broker Connection",
+          brokerText:
+            "Connect your trading account",
+
+          mt: "MetaTrader",
+          mtText:
+            "MT4 / MT5 connection and execution",
+
+          live: "Live Center",
+          liveText:
+            "Live bots, signals and market activity",
+
+          ai: "AI Analysis",
+          aiText:
+            "Multi-timeframe market analysis",
+
+          subscriptions: "Subscriptions",
+          subscriptionsText:
+            "Manage your plan and access",
+
+          vpn: "VPN & Private Channels",
+          vpnText:
+            "Subscription channels and private access",
+
+          support: "Support",
+          supportText:
+            "Open a private support ticket",
+
+          announcements: "Announcements",
+          announcementsText:
+            "Important messages from platform administration",
+
+          dailyReport: "Daily Trading Report",
+          dailyReportText:
+            "Transparent daily profit and loss report",
+
+          account: "Account",
+          plan: "Current Plan",
+          botsCount: "Bots",
+          signalsCount: "Signals",
+          openTrades: "Open Trades",
+          totalTrades: "Total Trades",
+          pnl: "Realized P/L",
+
+          noData:
+            "No trading data has been recorded yet.",
+
+          view: "Open",
+
+          language: "Language",
+          fa: "فارسی",
+          en: "English",
+
+          quickAccess: "QUICK ACCESS",
+
+          admin: "Administrator",
+          user: "User",
+
+          free: "Free",
+          professional: "Professional",
+        }
+      : {
+          dashboard: "داشبورد",
+          welcome: "مرکز کنترل Trading AI",
+          welcomeText:
+            "سیگنال‌ها، ربات‌های معاملاتی، ابزارهای بازار و حساب کاربری خود را از یک محیط حرفه‌ای مدیریت کنید.",
+
+          active: "سیستم فعال است",
+          profile: "پروفایل",
+          settings: "تنظیمات",
+          logout: "خروج",
+
+          mainMenu: "منوی اصلی",
+
+          news: "اخبار بازار",
+          newsText:
+            "آخرین اخبار، اطلاعیه‌ها و رویدادهای مهم بازار",
+
+          bots: "ربات‌های معامله‌گر",
+          botsText:
+            "تنظیم و مدیریت ربات‌های معاملاتی",
+
+          signals: "سیگنال‌های معاملاتی",
+          signalsText:
+            "سیگنال‌های تأییدشده، ورود، حد ضرر و حد سود",
+
+          performance: "کارنامه و عملکرد",
+          performanceText:
+            "عملکرد روزانه، هفتگی، ماهانه و سالانه",
+
+          broker: "اتصال به بروکر",
+          brokerText:
+            "اتصال حساب معاملاتی به پلتفرم",
+
+          mt: "متاتریدر",
+          mtText:
+            "اتصال MT4 / MT5 و اجرای معاملات",
+
+          live: "مرکز زنده",
+          liveText:
+            "نمایش ربات‌ها، سیگنال‌ها و فعالیت زنده",
+
+          ai: "تحلیل هوشمند AI",
+          aiText:
+            "تحلیل چندتایم‌فریمی بازار",
+
+          subscriptions: "اشتراک‌ها",
+          subscriptionsText:
+            "مدیریت پلن و سطح دسترسی",
+
+          vpn: "VPN و کانال‌های خصوصی",
+          vpnText:
+            "مدیریت کانال‌ها و دسترسی خصوصی",
+
+          support: "پشتیبانی",
+          supportText:
+            "ثبت تیکت خصوصی برای پشتیبانی",
+
+          announcements: "اطلاعیه‌ها",
+          announcementsText:
+            "پیام‌ها و اطلاعیه‌های مهم مدیریت سایت",
+
+          dailyReport: "کارنامه روزانه معاملات",
+          dailyReportText:
+            "گزارش شفاف سود و زیان واقعی روز",
+
+          account: "حساب کاربری",
+          plan: "پلن فعلی",
+          botsCount: "ربات‌ها",
+          signalsCount: "سیگنال‌ها",
+          openTrades: "معاملات باز",
+          totalTrades: "کل معاملات",
+          pnl: "سود/زیان ثبت‌شده",
+
+          noData:
+            "هنوز اطلاعات معاملاتی ثبت نشده است.",
+
+          view: "ورود",
+
+          language: "زبان",
+          fa: "فارسی",
+          en: "English",
+
+          quickAccess: "دسترسی سریع",
+
+          admin: "مدیر",
+          user: "کاربر",
+
+          free: "رایگان",
+          professional: "حرفه‌ای",
+        };
+
+  const planLabel =
+    lang === "en"
+      ? enPlan[user.plan] || user.plan
+      : faPlan[user.plan] || user.plan;
 
   return (
-    <main dir="rtl" className="trading-shell">
+    <main
+      dir={lang === "fa" ? "rtl" : "ltr"}
+      className="dashboard-page"
+    >
       <style>{`
-        :root {
-          --gold: #d6ad55;
-          --gold-2: #f2d27c;
-          --gold-3: #8b6827;
-
-          --black: #030303;
-          --black-2: #080808;
-
-          --panel: rgba(15,15,15,.88);
-          --panel-2: rgba(10,10,10,.94);
-
-          --border: rgba(214,173,85,.19);
-          --border-soft: rgba(255,255,255,.075);
-
-          --text: #f5f1e7;
-          --muted: #969188;
-          --muted-2: #6f6a61;
-
-          --green: #48d597;
-          --red: #ff6868;
-          --blue: #72a9ff;
-        }
-
         * {
           box-sizing: border-box;
         }
 
-        html {
-          background: #030303;
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          background: #05070b;
         }
 
         body {
-          margin: 0;
-          background: #030303;
-          color: var(--text);
+          color: #f8fafc;
           font-family:
             Tahoma,
             Arial,
-            "Segoe UI",
             sans-serif;
         }
 
@@ -806,1838 +500,1835 @@ export default async function DashboardPage() {
           text-decoration: none;
         }
 
-        .trading-shell {
+        .dashboard-page {
           min-height: 100vh;
-          width: 100%;
+          padding: 20px;
           background:
             radial-gradient(
-              circle at 82% 0%,
-              rgba(214,173,85,.11),
-              transparent 28rem
+              circle at 85% 0%,
+              rgba(212, 175, 55, 0.10),
+              transparent 28%
             ),
             radial-gradient(
-              circle at 8% 32%,
-              rgba(214,173,85,.045),
-              transparent 24rem
+              circle at 10% 20%,
+              rgba(255, 255, 255, 0.025),
+              transparent 30%
             ),
-            #030303;
-          overflow-x: hidden;
+            #05070b;
         }
 
-        .page {
-          width: min(1440px, calc(100% - 36px));
+        .dashboard-shell {
+          width: min(1550px, 100%);
           margin: 0 auto;
-          padding: 18px 0 45px;
+
+          display: grid;
+          grid-template-columns: 250px minmax(0, 1fr);
+
+          gap: 18px;
+
+          direction: ltr;
         }
 
-        .topbar {
-          min-height: 74px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-          padding: 11px 16px;
-          border: 1px solid var(--border);
-          border-radius: 22px;
-          background: rgba(10,10,10,.84);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          box-shadow:
-            0 22px 80px rgba(0,0,0,.48),
-            inset 0 1px 0 rgba(255,255,255,.035);
+        .sidebar,
+        .main {
+          direction: rtl;
+        }
+
+        .sidebar {
           position: sticky;
-          top: 12px;
-          z-index: 50;
+          top: 20px;
+
+          height: calc(100vh - 40px);
+          overflow: auto;
+
+          padding: 18px;
+
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 25px;
+
+          background:
+            linear-gradient(
+              180deg,
+              rgba(20,20,22,.94),
+              rgba(9,10,13,.92)
+            );
+
+          box-shadow:
+            0 25px 80px rgba(0,0,0,.45),
+            inset 0 1px 0 rgba(255,255,255,.035);
+
+          backdrop-filter: blur(22px);
         }
 
         .brand {
           display: flex;
           align-items: center;
           gap: 12px;
-          min-width: 220px;
+
+          padding: 6px 4px 20px;
+
+          border-bottom:
+            1px solid
+            rgba(255,255,255,.07);
         }
 
-        .brand-mark {
-          width: 46px;
-          height: 46px;
-          border-radius: 14px;
+        .logo {
+          width: 48px;
+          height: 48px;
+
           display: grid;
           place-items: center;
-          color: #080808;
-          background:
-            linear-gradient(
-              145deg,
-              #f5d986,
-              #c39234
-            );
-          box-shadow:
-            0 0 28px rgba(214,173,85,.23),
-            inset 0 1px 0 rgba(255,255,255,.62);
-          font-weight: 950;
-          font-size: 16px;
-        }
 
-        .brand-name {
-          font-size: 16px;
-          font-weight: 950;
-          letter-spacing: .6px;
-        }
+          border-radius: 16px;
 
-        .brand-sub {
-          color: var(--muted);
-          font-size: 9px;
-          margin-top: 4px;
-          letter-spacing: .4px;
-        }
+          color: #fff;
 
-        .nav {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          flex: 1;
-        }
+          font-size: 15px;
+          font-weight: 900;
 
-        .nav-link {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 11px 12px;
-          border-radius: 12px;
-          color: #aaa69d;
-          font-size: 12px;
-          white-space: nowrap;
-          transition: .2s ease;
-        }
-
-        .nav-link:hover,
-        .nav-link.active {
-          color: var(--gold-2);
-          background: rgba(214,173,85,.085);
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .icon-button {
-          width: 42px;
-          height: 42px;
-          display: grid;
-          place-items: center;
-          border-radius: 13px;
-          color: #cec8b9;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.08);
-        }
-
-        .icon-button:hover {
-          color: var(--gold-2);
-          border-color: var(--border);
-        }
-
-        .profile {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          padding: 5px 7px 5px 5px;
-          border: 1px solid rgba(214,173,85,.16);
-          border-radius: 15px;
-          background: rgba(255,255,255,.025);
-        }
-
-        .avatar {
-          width: 35px;
-          height: 35px;
-          display: grid;
-          place-items: center;
-          border-radius: 11px;
-          color: #080808;
-          font-weight: 950;
-          background:
-            linear-gradient(
-              145deg,
-              #f4d780,
-              #a97925
-            );
-        }
-
-        .profile-text {
-          display: flex;
-          flex-direction: column;
-          min-width: 80px;
-        }
-
-        .profile-name {
-          font-size: 11px;
-          font-weight: 850;
-        }
-
-        .profile-plan {
-          color: var(--muted);
-          font-size: 9px;
-          margin-top: 2px;
-        }
-
-        .admin-badge {
-          display: inline-flex;
-          align-items: center;
-          margin-right: 6px;
-          padding: 3px 6px;
-          border-radius: 6px;
-          color: var(--gold-2);
-          background: rgba(214,173,85,.08);
-          border: 1px solid rgba(214,173,85,.15);
-          font-size: 8px;
-        }
-
-        .mobile-nav {
-          display: none;
-        }
-
-        .hero {
-          margin-top: 18px;
-          display: grid;
-          grid-template-columns: 1.42fr .78fr;
-          gap: 16px;
-        }
-
-        .hero-main,
-        .hero-side,
-        .glass-card {
-          border: 1px solid var(--border);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(23,23,23,.92),
-              rgba(7,7,7,.94)
-            );
-          box-shadow:
-            0 22px 70px rgba(0,0,0,.43),
-            inset 0 1px 0 rgba(255,255,255,.035);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-        }
-
-        .hero-main {
-          min-height: 300px;
-          border-radius: 25px;
-          padding: 34px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .hero-main:after {
-          content: "";
-          position: absolute;
-          width: 380px;
-          height: 380px;
-          border-radius: 50%;
-          background: rgba(214,173,85,.07);
-          filter: blur(45px);
-          left: -150px;
-          bottom: -190px;
-          pointer-events: none;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: var(--gold-2);
-          font-size: 12px;
-          font-weight: 850;
-          margin-bottom: 14px;
-        }
-
-        .eyebrow-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: var(--gold);
-          box-shadow: 0 0 14px rgba(214,173,85,.75);
-        }
-
-        .hero-title {
-          font-size: clamp(28px, 4vw, 48px);
-          line-height: 1.28;
-          margin: 0;
-          max-width: 760px;
-          font-weight: 950;
-          letter-spacing: -.8px;
-        }
-
-        .hero-title span {
-          color: var(--gold-2);
-        }
-
-        .hero-description {
-          max-width: 700px;
-          margin: 16px 0 0;
-          color: #aaa69e;
-          line-height: 2;
-          font-size: 13px;
-        }
-
-        .hero-buttons {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-top: 24px;
-        }
-
-        .primary-button,
-        .secondary-button {
-          min-height: 45px;
-          padding: 0 18px;
-          border-radius: 13px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          font-size: 12px;
-          font-weight: 850;
-          transition: .2s ease;
-        }
-
-        .primary-button {
-          color: #090909;
           background:
             linear-gradient(
               135deg,
-              #f1d37d,
-              #b98127
+              #f5d76e,
+              #a67c00
             );
-          box-shadow: 0 12px 30px rgba(214,173,85,.16);
+
+          box-shadow:
+            0 0 30px
+            rgba(212,175,55,.20);
         }
 
-        .primary-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 16px 38px rgba(214,173,85,.25);
+        .brand strong {
+          display: block;
+          font-size: 14px;
         }
 
-        .secondary-button {
-          color: #ded8c9;
-          border: 1px solid rgba(214,173,85,.20);
-          background: rgba(255,255,255,.025);
+        .brand small {
+          display: block;
+          margin-top: 5px;
+
+          color: #777;
+          font-size: 9px;
+
+          letter-spacing: 1px;
         }
 
-        .secondary-button:hover {
-          color: var(--gold-2);
-          border-color: rgba(214,173,85,.42);
+        .menu-title {
+          margin: 23px 7px 10px;
+
+          color: #666;
+
+          font-size: 9px;
+          font-weight: 800;
+
+          letter-spacing: 1.2px;
         }
 
-        .hero-side {
-          border-radius: 25px;
-          padding: 22px;
+        .menu {
+          display: grid;
+          gap: 6px;
         }
 
-        .section-head {
+        .menu a {
+          min-height: 45px;
+
+          display: flex;
+          align-items: center;
+          gap: 11px;
+
+          padding: 0 11px;
+
+          border-radius: 13px;
+
+          color: #8f949d;
+
+          font-size: 11px;
+          font-weight: 700;
+
+          transition:
+            .2s ease;
+        }
+
+        .menu a:hover,
+        .menu a.active {
+          color: #f6df83;
+
+          background:
+            rgba(212,175,55,.08);
+
+          border:
+            1px solid
+            rgba(212,175,55,.13);
+
+          transform: translateX(-2px);
+        }
+
+        .menu-icon {
+          width: 31px;
+          height: 31px;
+
+          display: grid;
+          place-items: center;
+
+          flex: none;
+
+          border-radius: 10px;
+
+          color: #d4af37;
+
+          background:
+            rgba(255,255,255,.035);
+        }
+
+        .menu-icon svg {
+          width: 17px;
+          height: 17px;
+
+          stroke: currentColor;
+          stroke-width: 1.7;
+
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+
+        .sidebar-bottom {
+          margin-top: 22px;
+
+          display: grid;
+          gap: 8px;
+        }
+
+        .mini-link {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+
+          padding: 11px;
+
+          border-radius: 13px;
+
+          color: #8b9098;
+
+          font-size: 10px;
+
+          background:
+            rgba(255,255,255,.025);
+
+          border:
+            1px solid
+            rgba(255,255,255,.06);
+        }
+
+        .mini-link:hover {
+          color: #f4dc7b;
+          border-color:
+            rgba(212,175,55,.18);
+        }
+
+        .main {
+          min-width: 0;
+        }
+
+        .topbar {
+          min-height: 76px;
+
           display: flex;
           align-items: center;
           justify-content: space-between;
+
           gap: 15px;
-          margin-bottom: 15px;
+
+          padding: 15px 18px;
+
+          border-radius: 22px;
+
+          border:
+            1px solid
+            rgba(255,255,255,.08);
+
+          background:
+            rgba(15,16,19,.82);
+
+          backdrop-filter:
+            blur(20px);
+
+          box-shadow:
+            0 20px 60px
+            rgba(0,0,0,.32);
         }
 
-        .section-title {
-          margin: 0;
-          font-size: 16px;
-          font-weight: 950;
+        .top-title small {
+          display: block;
+
+          color: #666;
+
+          font-size: 9px;
+
+          letter-spacing: 1.1px;
         }
 
-        .section-caption {
-          margin: 5px 0 0;
-          color: var(--muted);
-          font-size: 10px;
-          line-height: 1.7;
+        .top-title strong {
+          display: block;
+
+          margin-top: 6px;
+
+          font-size: 18px;
         }
 
-        .system-status {
-          display: inline-flex;
+        .top-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .top-action {
+          width: 42px;
+          height: 42px;
+
+          display: grid;
+          place-items: center;
+
+          border-radius: 13px;
+
+          color: #a5a8ad;
+
+          background:
+            rgba(255,255,255,.035);
+
+          border:
+            1px solid
+            rgba(255,255,255,.07);
+
+          transition: .2s;
+        }
+
+        .top-action:hover {
+          color: #f5d76e;
+
+          border-color:
+            rgba(212,175,55,.24);
+
+          background:
+            rgba(212,175,55,.06);
+        }
+
+        .top-action svg {
+          width: 18px;
+          height: 18px;
+
+          stroke: currentColor;
+          stroke-width: 1.7;
+
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+
+        .avatar {
+          width: 43px;
+          height: 43px;
+
+          display: grid;
+          place-items: center;
+
+          border-radius: 14px;
+
+          color: #090909;
+
+          font-size: 12px;
+          font-weight: 900;
+
+          background:
+            linear-gradient(
+              135deg,
+              #f8e59a,
+              #b78b16
+            );
+
+          box-shadow:
+            0 0 25px
+            rgba(212,175,55,.14);
+        }
+
+        .status-pill {
+          display: flex;
           align-items: center;
           gap: 7px;
-          color: #8fe6bd;
-          font-size: 10px;
-          white-space: nowrap;
+
+          padding: 8px 11px;
+
+          border-radius: 11px;
+
+          color: #78e2a2;
+
+          font-size: 9px;
+
+          background:
+            rgba(34,197,94,.055);
+
+          border:
+            1px solid
+            rgba(34,197,94,.12);
         }
 
         .status-dot {
           width: 7px;
           height: 7px;
+
           border-radius: 50%;
-          background: var(--green);
-          box-shadow: 0 0 12px rgba(72,213,151,.65);
+
+          background: #4ade80;
+
+          box-shadow:
+            0 0 12px
+            rgba(74,222,128,.75);
         }
 
-        .mini-stats {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
+        .welcome {
           margin-top: 18px;
+
+          min-height: 205px;
+
+          position: relative;
+          overflow: hidden;
+
+          padding: 30px;
+
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+
+          gap: 25px;
+
+          border-radius: 27px;
+
+          border:
+            1px solid
+            rgba(212,175,55,.15);
+
+          background:
+            radial-gradient(
+              circle at 85% 20%,
+              rgba(212,175,55,.13),
+              transparent 25%
+            ),
+            linear-gradient(
+              135deg,
+              rgba(35,31,19,.95),
+              rgba(13,14,17,.96)
+            );
+
+          box-shadow:
+            0 25px 80px
+            rgba(0,0,0,.38);
         }
 
-        .mini-stat {
-          min-height: 100px;
-          border: 1px solid rgba(255,255,255,.07);
-          background: rgba(255,255,255,.025);
-          border-radius: 16px;
-          padding: 14px;
+        .welcome:after {
+          content: "";
+
+          position: absolute;
+
+          width: 280px;
+          height: 280px;
+
+          right: -130px;
+          bottom: -170px;
+
+          border-radius: 50%;
+
+          border:
+            1px solid
+            rgba(212,175,55,.10);
         }
 
-        .mini-stat-label {
-          color: #98938a;
-          font-size: 10px;
+        .eyebrow {
+          color: #b7962e;
+
+          font-size: 9px;
+          font-weight: 900;
+
+          letter-spacing: 1.5px;
         }
 
-        .mini-stat-value {
-          margin-top: 12px;
-          font-size: 24px;
-          font-weight: 950;
-          color: #f2eee5;
+        .welcome h1 {
+          margin: 9px 0 8px;
+
+          font-size: clamp(
+            24px,
+            3vw,
+            37px
+          );
+
+          line-height: 1.3;
         }
 
-        .mini-stat-note {
-          margin-top: 4px;
-          color: #706c64;
+        .welcome p {
+          max-width: 650px;
+
+          margin: 0;
+
+          color: #8c9097;
+
+          font-size: 11px;
+          line-height: 2;
+        }
+
+        .welcome-badge {
+          position: relative;
+          z-index: 2;
+
+          min-width: 180px;
+
+          padding: 18px;
+
+          border-radius: 20px;
+
+          background:
+            rgba(255,255,255,.035);
+
+          border:
+            1px solid
+            rgba(255,255,255,.08);
+
+          text-align: center;
+        }
+
+        .welcome-badge strong {
+          display: block;
+
+          color: #f2d66e;
+
+          font-size: 22px;
+        }
+
+        .welcome-badge span {
+          display: block;
+
+          margin-top: 5px;
+
+          color: #777;
+
           font-size: 9px;
         }
 
         .stats {
-          margin-top: 16px;
+          margin-top: 14px;
+
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 13px;
+
+          grid-template-columns:
+            repeat(5, minmax(0,1fr));
+
+          gap: 12px;
         }
 
-        .stat-card {
-          min-height: 148px;
+        .stat {
+          min-width: 0;
+
           padding: 18px;
-          border-radius: 20px;
-          position: relative;
-          overflow: hidden;
+
+          border-radius: 19px;
+
+          background:
+            rgba(16,17,20,.84);
+
+          border:
+            1px solid
+            rgba(255,255,255,.07);
+
+          box-shadow:
+            0 18px 50px
+            rgba(0,0,0,.25);
+
+          transition: .2s;
+        }
+
+        .stat:hover {
+          transform: translateY(-3px);
+
+          border-color:
+            rgba(212,175,55,.16);
         }
 
         .stat-icon {
-          width: 42px;
-          height: 42px;
-          border-radius: 13px;
+          width: 37px;
+          height: 37px;
+
           display: grid;
           place-items: center;
-          color: var(--gold-2);
-          border: 1px solid rgba(214,173,85,.17);
-          background: rgba(214,173,85,.07);
-        }
 
-        .stat-label {
-          margin-top: 17px;
-          color: #9b978d;
-          font-size: 11px;
-        }
+          border-radius: 11px;
 
-        .stat-value {
-          margin-top: 5px;
-          font-size: 28px;
-          font-weight: 950;
-        }
+          color: #d4af37;
 
-        .stat-description {
-          color: #69655d;
-          font-size: 9px;
-          margin-top: 4px;
-        }
-
-        .workspace {
-          margin-top: 16px;
-          display: grid;
-          grid-template-columns: 1.38fr .62fr;
-          gap: 16px;
-        }
-
-        .card {
-          border-radius: 22px;
-          padding: 20px;
-        }
-
-        .chart-box {
-          height: 300px;
-          position: relative;
-          overflow: hidden;
-          border: 1px solid rgba(214,173,85,.11);
-          border-radius: 17px;
           background:
-            linear-gradient(
-              rgba(214,173,85,.035) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(214,173,85,.035) 1px,
-              transparent 1px
-            ),
-            rgba(0,0,0,.24);
-          background-size: 45px 45px;
+            rgba(212,175,55,.07);
         }
 
-        .chart-svg {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
+        .stat-icon svg {
+          width: 17px;
+          height: 17px;
+
+          stroke: currentColor;
+          stroke-width: 1.7;
+
+          stroke-linecap: round;
+          stroke-linejoin: round;
         }
 
-        .chart-empty {
-          position: absolute;
-          inset: 0;
+        .stat small {
+          display: block;
+
+          margin-top: 15px;
+
+          color: #70747b;
+
+          font-size: 9px;
+        }
+
+        .stat strong {
+          display: block;
+
+          margin-top: 7px;
+
+          font-size: 21px;
+        }
+
+        .stat .positive {
+          color: #58d58b;
+        }
+
+        .stat .negative {
+          color: #ef7777;
+        }
+
+        .section-title {
+          margin: 25px 3px 12px;
+
           display: flex;
           align-items: center;
-          justify-content: center;
-          text-align: center;
-          padding: 20px;
+          justify-content: space-between;
+
+          gap: 10px;
         }
 
-        .chart-empty-inner {
-          max-width: 420px;
-          padding: 20px 25px;
-          border-radius: 18px;
-          background: rgba(5,5,5,.72);
-          border: 1px solid rgba(214,173,85,.13);
-          backdrop-filter: blur(12px);
+        .section-title h2 {
+          margin: 0;
+
+          font-size: 14px;
         }
 
-        .chart-empty-icon {
-          width: 48px;
-          height: 48px;
-          margin: 0 auto 12px;
+        .section-title span {
+          color: #666;
+
+          font-size: 9px;
+        }
+
+        .feature-grid {
+          display: grid;
+
+          grid-template-columns:
+            repeat(4, minmax(0,1fr));
+
+          gap: 12px;
+        }
+
+        .feature {
+          min-height: 155px;
+
+          padding: 19px;
+
+          position: relative;
+          overflow: hidden;
+
+          border-radius: 20px;
+
+          background:
+            linear-gradient(
+              145deg,
+              rgba(24,25,28,.88),
+              rgba(11,12,15,.92)
+            );
+
+          border:
+            1px solid
+            rgba(255,255,255,.075);
+
+          transition:
+            .22s ease;
+
+          box-shadow:
+            0 20px 55px
+            rgba(0,0,0,.23);
+        }
+
+        .feature:hover {
+          transform:
+            translateY(-4px);
+
+          border-color:
+            rgba(212,175,55,.25);
+
+          box-shadow:
+            0 25px 70px
+            rgba(0,0,0,.38),
+            0 0 35px
+            rgba(212,175,55,.045);
+        }
+
+        .feature-icon {
+          width: 44px;
+          height: 44px;
+
           display: grid;
           place-items: center;
-          border-radius: 15px;
-          color: var(--gold-2);
-          background: rgba(214,173,85,.07);
-          border: 1px solid rgba(214,173,85,.13);
+
+          border-radius: 14px;
+
+          color: #e1c35e;
+
+          background:
+            linear-gradient(
+              135deg,
+              rgba(212,175,55,.13),
+              rgba(255,255,255,.025)
+            );
+
+          border:
+            1px solid
+            rgba(212,175,55,.13);
         }
 
-        .chart-empty strong {
-          display: block;
-          color: var(--gold-2);
-          font-size: 15px;
+        .feature-icon svg {
+          width: 20px;
+          height: 20px;
+
+          stroke: currentColor;
+          stroke-width: 1.7;
+
+          stroke-linecap: round;
+          stroke-linejoin: round;
         }
 
-        .chart-empty span {
-          display: block;
-          margin-top: 8px;
-          color: #77736b;
-          font-size: 11px;
+        .feature h3 {
+          margin: 15px 0 7px;
+
+          font-size: 12px;
+        }
+
+        .feature p {
+          min-height: 37px;
+
+          margin: 0;
+
+          color: #72767e;
+
+          font-size: 9px;
           line-height: 1.9;
         }
 
-        .chart-summary {
+        .feature-footer {
+          margin-top: 12px;
+
           display: flex;
           align-items: center;
-          gap: 24px;
-          flex-wrap: wrap;
-          margin-bottom: 15px;
+          justify-content: space-between;
+
+          color: #b89a35;
+
+          font-size: 9px;
+          font-weight: 800;
         }
 
-        .chart-summary-item {
+        .feature-arrow {
+          font-size: 15px;
+        }
+
+        .bottom-grid {
+          margin-top: 14px;
+
+          display: grid;
+
+          grid-template-columns:
+            1.35fr
+            .65fr;
+
+          gap: 14px;
+        }
+
+        .glass-panel {
+          min-width: 0;
+
+          padding: 20px;
+
+          border-radius: 21px;
+
+          background:
+            rgba(15,16,19,.82);
+
+          border:
+            1px solid
+            rgba(255,255,255,.075);
+
+          box-shadow:
+            0 20px 60px
+            rgba(0,0,0,.28);
+        }
+
+        .panel-header {
           display: flex;
-          flex-direction: column;
-          gap: 5px;
+          align-items: center;
+          justify-content: space-between;
+
+          gap: 10px;
+
+          margin-bottom: 17px;
         }
 
-        .chart-summary-label {
-          color: var(--muted);
+        .panel-header h3 {
+          margin: 0;
+
+          font-size: 12px;
+        }
+
+        .panel-header span {
+          color: #686b71;
+
           font-size: 9px;
         }
 
-        .chart-summary-value {
-          font-size: 17px;
-          font-weight: 950;
-        }
-
-        .positive {
-          color: var(--green);
-        }
-
-        .negative {
-          color: var(--red);
-        }
-
-        .quick-list {
+        .live-list {
           display: grid;
           gap: 9px;
         }
 
-        .quick-item {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          min-height: 64px;
-          padding: 10px 12px;
-          border-radius: 15px;
-          border: 1px solid rgba(255,255,255,.065);
-          background: rgba(255,255,255,.018);
-          transition: .2s ease;
-        }
-
-        .quick-item:hover {
-          border-color: rgba(214,173,85,.25);
-          background: rgba(214,173,85,.035);
-        }
-
-        .quick-icon {
-          width: 38px;
-          height: 38px;
-          flex: 0 0 38px;
+        .live-row {
           display: grid;
-          place-items: center;
-          border-radius: 11px;
-          color: var(--gold-2);
-          background: rgba(214,173,85,.07);
-          border: 1px solid rgba(214,173,85,.12);
-        }
 
-        .quick-text {
-          flex: 1;
-        }
+          grid-template-columns:
+            40px
+            1fr
+            auto;
 
-        .quick-title {
-          font-size: 11px;
-          font-weight: 850;
-        }
-
-        .quick-sub {
-          color: #716d65;
-          font-size: 9px;
-          margin-top: 4px;
-        }
-
-        .quick-arrow {
-          color: #666158;
-        }
-
-        .recent {
-          margin-top: 16px;
-        }
-
-        .recent-card {
-          border-radius: 22px;
-          padding: 20px;
-        }
-
-        .table-wrap {
-          width: 100%;
-          overflow-x: auto;
-          border-radius: 16px;
-          border: 1px solid rgba(255,255,255,.055);
-        }
-
-        .signal-table {
-          width: 100%;
-          min-width: 760px;
-          border-collapse: collapse;
-        }
-
-        .signal-table th {
-          text-align: right;
-          color: #77736a;
-          font-size: 10px;
-          font-weight: 700;
-          padding: 13px 14px;
-          background: rgba(255,255,255,.018);
-          border-bottom: 1px solid rgba(255,255,255,.055);
-        }
-
-        .signal-table td {
-          padding: 14px;
-          font-size: 11px;
-          color: #ddd8ce;
-          border-bottom: 1px solid rgba(255,255,255,.045);
-          white-space: nowrap;
-        }
-
-        .signal-table tr:last-child td {
-          border-bottom: 0;
-        }
-
-        .signal-table tbody tr:hover {
-          background: rgba(214,173,85,.025);
-        }
-
-        .symbol {
-          font-weight: 950;
-          color: #f1eadc;
-        }
-
-        .direction {
-          display: inline-flex;
           align-items: center;
-          justify-content: center;
-          min-width: 54px;
-          padding: 6px 9px;
-          border-radius: 8px;
-          font-size: 10px;
-          font-weight: 900;
-        }
 
-        .direction.buy {
-          color: var(--green);
-          background: rgba(72,213,151,.08);
-          border: 1px solid rgba(72,213,151,.16);
-        }
+          gap: 10px;
 
-        .direction.sell {
-          color: var(--red);
-          background: rgba(255,104,104,.08);
-          border: 1px solid rgba(255,104,104,.16);
-        }
+          padding: 10px;
 
-        .direction.neutral {
-          color: var(--gold-2);
-          background: rgba(214,173,85,.08);
-          border: 1px solid rgba(214,173,85,.15);
-        }
-
-        .status-pill {
-          display: inline-flex;
-          align-items: center;
-          padding: 6px 9px;
-          border-radius: 8px;
-          color: #c9c3b7;
-          background: rgba(255,255,255,.035);
-          border: 1px solid rgba(255,255,255,.07);
-          font-size: 9px;
-        }
-
-        .score {
-          color: var(--gold-2);
-          font-weight: 900;
-        }
-
-        .bottom-grid {
-          margin-top: 16px;
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 13px;
-        }
-
-        .feature-card {
-          min-height: 145px;
-          border-radius: 20px;
-          padding: 19px;
-          transition: .2s ease;
-        }
-
-        .feature-card:hover {
-          transform: translateY(-3px);
-          border-color: rgba(214,173,85,.36);
-        }
-
-        .feature-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .feature-icon {
-          width: 42px;
-          height: 42px;
-          display: grid;
-          place-items: center;
           border-radius: 13px;
-          color: var(--gold-2);
-          border: 1px solid rgba(214,173,85,.16);
-          background: rgba(214,173,85,.065);
+
+          background:
+            rgba(255,255,255,.025);
+
+          border:
+            1px solid
+            rgba(255,255,255,.045);
         }
 
-        .feature-arrow {
-          color: #5f5a51;
+        .live-icon {
+          width: 36px;
+          height: 36px;
+
+          display: grid;
+          place-items: center;
+
+          border-radius: 11px;
+
+          color: #d4af37;
+
+          background:
+            rgba(212,175,55,.07);
         }
 
-        .feature-title {
-          margin: 18px 0 0;
-          font-size: 13px;
-          font-weight: 900;
-        }
+        .live-row strong {
+          display: block;
 
-        .feature-description {
-          margin: 7px 0 0;
-          color: #77736b;
-          line-height: 1.8;
           font-size: 10px;
         }
 
-        .footer {
-          margin-top: 22px;
-          padding: 18px 5px 0;
-          border-top: 1px solid rgba(255,255,255,.055);
+        .live-row small {
+          display: block;
+
+          margin-top: 4px;
+
+          color: #666;
+
+          font-size: 8px;
+        }
+
+        .live-value {
+          color: #58d58b;
+
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .notice {
+          min-height: 100%;
+
           display: flex;
+          flex-direction: column;
           justify-content: space-between;
-          align-items: center;
-          gap: 15px;
-          color: #59564f;
+        }
+
+        .notice-box {
+          padding: 17px;
+
+          border-radius: 16px;
+
+          background:
+            linear-gradient(
+              135deg,
+              rgba(212,175,55,.08),
+              rgba(255,255,255,.025)
+            );
+
+          border:
+            1px solid
+            rgba(212,175,55,.12);
+        }
+
+        .notice-box strong {
+          display: block;
+
+          color: #f2d66e;
+
+          font-size: 11px;
+        }
+
+        .notice-box p {
+          margin: 9px 0 0;
+
+          color: #777;
+
+          font-size: 9px;
+          line-height: 2;
+        }
+
+        .language-box {
+          margin-top: 15px;
+
+          padding: 13px;
+
+          border-radius: 15px;
+
+          background:
+            rgba(255,255,255,.025);
+
+          border:
+            1px solid
+            rgba(255,255,255,.055);
+        }
+
+        .language-box label {
+          display: block;
+
+          margin-bottom: 9px;
+
+          color: #777;
+
           font-size: 9px;
         }
 
-        .footer-status {
-          display: flex;
-          align-items: center;
+        .language-buttons {
+          display: grid;
+
+          grid-template-columns:
+            1fr 1fr;
+
           gap: 7px;
         }
 
-        .gold {
-          color: var(--gold-2);
+        .language-buttons button {
+          min-height: 37px;
+
+          border: 0;
+
+          border-radius: 10px;
+
+          cursor: pointer;
+
+          color: #999;
+
+          background:
+            rgba(255,255,255,.04);
+
+          border:
+            1px solid
+            rgba(255,255,255,.05);
+
+          font-family: inherit;
+
+          font-size: 9px;
         }
 
-        .empty-small {
-          padding: 28px 15px;
-          text-align: center;
-          color: #77736b;
-          font-size: 11px;
+        .language-buttons button.active {
+          color: #101010;
+
+          background:
+            linear-gradient(
+              135deg,
+              #f5df83,
+              #b38b20
+            );
+
+          border-color:
+            transparent;
         }
 
-        @media (max-width: 1150px) {
-          .nav-link {
-            padding: 10px 8px;
-            font-size: 10px;
-          }
+        .account-bar {
+          margin-top: 14px;
 
-          .brand {
-            min-width: 175px;
-          }
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
 
-          .hero {
-            grid-template-columns: 1fr;
+          gap: 15px;
+
+          padding: 15px 18px;
+
+          border-radius: 18px;
+
+          background:
+            rgba(255,255,255,.025);
+
+          border:
+            1px solid
+            rgba(255,255,255,.06);
+        }
+
+        .account-user {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .account-user .mini-avatar {
+          width: 38px;
+          height: 38px;
+
+          display: grid;
+          place-items: center;
+
+          border-radius: 12px;
+
+          color: #0b0b0b;
+
+          background:
+            linear-gradient(
+              135deg,
+              #f5df83,
+              #a77d13
+            );
+
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .account-user strong {
+          display: block;
+
+          font-size: 10px;
+        }
+
+        .account-user small {
+          display: block;
+
+          margin-top: 4px;
+
+          color: #666;
+
+          font-size: 8px;
+        }
+
+        .account-links {
+          display: flex;
+          gap: 7px;
+        }
+
+        .account-links a {
+          padding: 9px 11px;
+
+          border-radius: 10px;
+
+          color: #888;
+
+          font-size: 8px;
+
+          background:
+            rgba(255,255,255,.035);
+
+          border:
+            1px solid
+            rgba(255,255,255,.05);
+        }
+
+        .account-links a:hover {
+          color: #f2d66e;
+
+          border-color:
+            rgba(212,175,55,.18);
+        }
+
+        @media (max-width: 1200px) {
+          .feature-grid {
+            grid-template-columns:
+              repeat(3, minmax(0,1fr));
           }
 
           .stats {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .workspace {
-            grid-template-columns: 1fr;
+            grid-template-columns:
+              repeat(3, minmax(0,1fr));
           }
         }
 
-        @media (max-width: 780px) {
-          .page {
-            width: calc(100% - 14px);
-            padding-top: 8px;
-          }
-
-          .topbar {
-            position: relative;
-            top: 0;
-            padding: 10px;
-            border-radius: 18px;
-          }
-
-          .nav {
-            display: none;
-          }
-
-          .header-actions .icon-button {
-            display: none;
-          }
-
-          .profile-text {
-            display: none;
-          }
-
-          .profile {
-            padding: 4px;
-            border: 0;
-            background: transparent;
-          }
-
-          .mobile-nav {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-            margin-top: 8px;
-            padding: 7px;
-            border: 1px solid var(--border);
-            border-radius: 17px;
-            background: rgba(10,10,10,.84);
-          }
-
-          .mobile-nav a {
-            min-height: 52px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            border-radius: 11px;
-            color: #858179;
-            font-size: 9px;
-          }
-
-          .mobile-nav a:first-child {
-            color: var(--gold-2);
-            background: rgba(214,173,85,.08);
-          }
-
-          .hero {
-            margin-top: 9px;
-          }
-
-          .hero-main {
-            min-height: auto;
-            padding: 23px 18px;
-            border-radius: 20px;
-          }
-
-          .hero-title {
-            font-size: 27px;
-          }
-
-          .hero-description {
-            font-size: 12px;
-          }
-
-          .hero-buttons {
-            display: grid;
+        @media (max-width: 950px) {
+          .dashboard-shell {
             grid-template-columns: 1fr;
           }
 
-          .primary-button,
-          .secondary-button {
-            width: 100%;
+          .sidebar {
+            display: none;
           }
 
-          .hero-side {
-            padding: 17px;
-            border-radius: 20px;
-          }
-
-          .stats {
-            grid-template-columns: 1fr 1fr;
-            gap: 9px;
-          }
-
-          .stat-card {
-            min-height: 135px;
-            padding: 14px;
-            border-radius: 17px;
-          }
-
-          .stat-label {
-            font-size: 10px;
-          }
-
-          .stat-value {
-            font-size: 23px;
-          }
-
-          .workspace {
-            margin-top: 10px;
-          }
-
-          .card,
-          .recent-card {
-            padding: 15px;
-            border-radius: 19px;
-          }
-
-          .chart-box {
-            height: 235px;
+          .feature-grid {
+            grid-template-columns:
+              repeat(2, minmax(0,1fr));
           }
 
           .bottom-grid {
-            margin-top: 10px;
             grid-template-columns: 1fr;
-          }
-
-          .footer {
-            flex-direction: column;
-            align-items: flex-start;
           }
         }
 
-        @media (max-width: 430px) {
-          .brand-name {
-            font-size: 13px;
+        @media (max-width: 620px) {
+          .dashboard-page {
+            padding: 10px;
           }
 
-          .brand-sub {
-            font-size: 8px;
+          .topbar {
+            border-radius: 18px;
           }
 
-          .brand-mark {
-            width: 40px;
-            height: 40px;
+          .status-pill {
+            display: none;
           }
 
-          .mini-stats {
-            grid-template-columns: 1fr 1fr;
+          .welcome {
+            padding: 22px;
+
+            flex-direction: column;
+
+            align-items: flex-start;
           }
 
-          .mini-stat {
-            min-height: 92px;
-          }
-
-          .mini-stat-value {
-            font-size: 20px;
-          }
-
-          .hero-title {
-            font-size: 24px;
+          .welcome-badge {
+            width: 100%;
           }
 
           .stats {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns:
+              repeat(2, minmax(0,1fr));
           }
 
-          .stat-value {
-            font-size: 20px;
+          .feature-grid {
+            grid-template-columns: 1fr;
           }
 
-          .chart-summary {
-            gap: 15px;
+          .account-bar {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .account-links {
+            width: 100%;
+          }
+
+          .account-links a {
+            flex: 1;
+            text-align: center;
           }
         }
       `}</style>
 
-      <div className="page">
-        <header className="topbar">
-          <Link href="/dashboard" className="brand">
-            <div className="brand-mark">AI</div>
+      <div className="dashboard-shell">
+        <aside className="sidebar">
+          <Link
+            href="/dashboard"
+            className="brand"
+          >
+            <div className="logo">
+              TA
+            </div>
 
             <div>
-              <div className="brand-name">TRADING AI</div>
-              <div className="brand-sub">
+              <strong>
+                Trading AI
+              </strong>
+
+              <small>
                 SMART TRADING PLATFORM
-              </div>
+              </small>
             </div>
           </Link>
 
-          <nav className="nav">
+          <div className="menu-title">
+            {t.mainMenu}
+          </div>
+
+          <nav className="menu">
             <Link
-              className="nav-link active"
               href="/dashboard"
+              className="active"
             >
-              <Icon name="dashboard" size={17} />
-              داشبورد
+              <span className="menu-icon">
+                {icon("dashboard")}
+              </span>
+
+              {t.dashboard}
             </Link>
 
-            <Link className="nav-link" href="/signals">
-              <Icon name="signals" size={17} />
-              سیگنال‌ها
+            <Link href="/news">
+              <span className="menu-icon">
+                {icon("news")}
+              </span>
+
+              {t.news}
             </Link>
 
-            <Link className="nav-link" href="/bots">
-              <Icon name="bots" size={17} />
-              ربات‌ها
+            <Link href="/bots">
+              <span className="menu-icon">
+                {icon("bot")}
+              </span>
+
+              {t.bots}
             </Link>
 
-            <Link className="nav-link" href="/market">
-              <Icon name="market" size={17} />
-              بازار
+            <Link href="/signals">
+              <span className="menu-icon">
+                {icon("signal")}
+              </span>
+
+              {t.signals}
             </Link>
 
-            <Link className="nav-link" href="/payments">
-              <Icon name="wallet" size={17} />
-              کیف پول
+            <Link href="/performance">
+              <span className="menu-icon">
+                {icon("chart")}
+              </span>
+
+              {t.performance}
             </Link>
 
-            <Link className="nav-link" href="/settings">
-              <Icon name="settings" size={17} />
-              تنظیمات
+            <Link href="/broker">
+              <span className="menu-icon">
+                {icon("broker")}
+              </span>
+
+              {t.broker}
+            </Link>
+
+            <Link href="/metatrader">
+              <span className="menu-icon">
+                {icon("mt")}
+              </span>
+
+              {t.mt}
+            </Link>
+
+            <Link href="/ai-analysis">
+              <span className="menu-icon">
+                {icon("bot")}
+              </span>
+
+              {t.ai}
+            </Link>
+
+            <Link href="/live">
+              <span className="menu-icon">
+                {icon("live")}
+              </span>
+
+              {t.live}
+            </Link>
+
+            <Link href="/subscriptions">
+              <span className="menu-icon">
+                {icon("subscription")}
+              </span>
+
+              {t.subscriptions}
+            </Link>
+
+            <Link href="/vpn">
+              <span className="menu-icon">
+                {icon("vpn")}
+              </span>
+
+              {t.vpn}
+            </Link>
+
+            <Link href="/support">
+              <span className="menu-icon">
+                {icon("support")}
+              </span>
+
+              {t.support}
             </Link>
           </nav>
 
-          <div className="header-actions">
+          <div className="sidebar-bottom">
             <Link
-              href="/notifications"
-              className="icon-button"
-              aria-label="اعلان‌ها"
+              href="/profile"
+              className="mini-link"
             >
-              <Icon name="bell" size={18} />
-            </Link>
-
-            <Link href="/profile" className="profile">
-              <div className="avatar">{initial}</div>
-
-              <div className="profile-text">
-                <span className="profile-name">
-                  {firstName}
-
-                  {isAdmin && (
-                    <span className="admin-badge">
-                      ADMIN
-                    </span>
-                  )}
-                </span>
-
-                <span className="profile-plan">
-                  پلن {user.plan || "FREE"}
-                </span>
-              </div>
-            </Link>
-          </div>
-        </header>
-
-        <nav className="mobile-nav">
-          <Link href="/dashboard">
-            <Icon name="dashboard" size={18} />
-            داشبورد
-          </Link>
-
-          <Link href="/signals">
-            <Icon name="signals" size={18} />
-            سیگنال‌ها
-          </Link>
-
-          <Link href="/bots">
-            <Icon name="bots" size={18} />
-            ربات‌ها
-          </Link>
-
-          <Link href="/market">
-            <Icon name="market" size={18} />
-            بازار
-          </Link>
-        </nav>
-
-        <section className="hero">
-          <div className="hero-main">
-            <div className="eyebrow">
-              <span className="eyebrow-dot" />
-              پنل هوشمند معاملات
-            </div>
-
-            <h1 className="hero-title">
-              سلام {firstName}،
-              <br />
-              <span>
-                داشبورد معاملاتی شما آماده است.
+              <span className="menu-icon">
+                {icon("profile")}
               </span>
-            </h1>
 
-            <p className="hero-description">
-              این مرکز کنترل Trading AI است؛
-              سیگنال‌ها، ربات‌های معاملاتی، معاملات،
-              عملکرد واقعی و وضعیت سیستم را از یک
-              محیط حرفه‌ای مدیریت کنید.
-            </p>
+              {t.profile}
+            </Link>
 
-            <div className="hero-buttons">
-              <Link
-                href="/ai-analysis"
-                className="primary-button"
-              >
-                <Icon name="spark" size={17} />
-                شروع تحلیل هوشمند
-              </Link>
+            <Link
+              href="/settings"
+              className="mini-link"
+            >
+              <span className="menu-icon">
+                {icon("settings")}
+              </span>
 
-              <Link
-                href="/signals"
-                className="secondary-button"
-              >
-                مشاهده سیگنال‌ها
-                <Icon name="arrow" size={16} />
-              </Link>
+              {t.settings}
+            </Link>
 
-              <Link
-                href="/bots"
-                className="secondary-button"
-              >
-                مدیریت ربات‌ها
-              </Link>
-            </div>
+            <Link
+              href="/logout"
+              className="mini-link"
+            >
+              <span className="menu-icon">
+                {icon("logout")}
+              </span>
+
+              {t.logout}
+            </Link>
           </div>
+        </aside>
 
-          <aside className="hero-side">
-            <div className="section-head">
-              <div>
-                <h2 className="section-title">
-                  وضعیت سیستم
-                </h2>
+        <section className="main">
+          <header className="topbar">
+            <div className="top-title">
+              <small>
+                TRADING AI / CONTROL CENTER
+              </small>
 
-                <p className="section-caption">
-                  آمار واقعی ثبت‌شده در حساب
-                </p>
-              </div>
+              <strong>
+                {t.dashboard}
+              </strong>
+            </div>
 
-              <span className="system-status">
+            <div className="top-actions">
+              <div className="status-pill">
                 <span className="status-dot" />
-                آنلاین
-              </span>
-            </div>
-
-            <div className="mini-stats">
-              <div className="mini-stat">
-                <div className="mini-stat-label">
-                  ربات‌ها
-                </div>
-
-                <div className="mini-stat-value">
-                  {formatNumber(botsCount)}
-                </div>
-
-                <div className="mini-stat-note">
-                  {formatNumber(activeBotsCount)} ربات فعال
-                </div>
-              </div>
-
-              <div className="mini-stat">
-                <div className="mini-stat-label">
-                  سیگنال‌ها
-                </div>
-
-                <div className="mini-stat-value">
-                  {formatNumber(signalsCount)}
-                </div>
-
-                <div className="mini-stat-note">
-                  ثبت‌شده در دیتابیس
-                </div>
-              </div>
-
-              <div className="mini-stat">
-                <div className="mini-stat-label">
-                  معاملات
-                </div>
-
-                <div className="mini-stat-value">
-                  {formatNumber(tradesCount)}
-                </div>
-
-                <div className="mini-stat-note">
-                  {formatNumber(openTradesCount)} معامله باز
-                </div>
-              </div>
-
-              <div className="mini-stat">
-                <div className="mini-stat-label">
-                  نرخ برد
-                </div>
-
-                <div className="mini-stat-value">
-                  {new Intl.NumberFormat("fa-IR", {
-                    maximumFractionDigits: 1,
-                  }).format(winRate)}
-                  ٪
-                </div>
-
-                <div className="mini-stat-note">
-                  از معاملات بسته‌شده
-                </div>
-              </div>
-            </div>
-          </aside>
-        </section>
-
-        <section className="stats">
-          <div className="glass-card stat-card">
-            <div className="stat-icon">
-              <Icon name="signals" size={20} />
-            </div>
-
-            <div className="stat-label">
-              کل سیگنال‌های حساب
-            </div>
-
-            <div className="stat-value">
-              {formatNumber(signalsCount)}
-            </div>
-
-            <div className="stat-description">
-              رکورد واقعی TradingSignal
-            </div>
-          </div>
-
-          <div className="glass-card stat-card">
-            <div className="stat-icon">
-              <Icon name="bots" size={20} />
-            </div>
-
-            <div className="stat-label">
-              ربات‌های فعال
-            </div>
-
-            <div className="stat-value">
-              {formatNumber(activeBotsCount)}
-            </div>
-
-            <div className="stat-description">
-              از {formatNumber(botsCount)} ربات ثبت‌شده
-            </div>
-          </div>
-
-          <div className="glass-card stat-card">
-            <div className="stat-icon">
-              <Icon name="trade" size={20} />
-            </div>
-
-            <div className="stat-label">
-              معاملات بسته‌شده
-            </div>
-
-            <div className="stat-value">
-              {formatNumber(closedTradesCount)}
-            </div>
-
-            <div className="stat-description">
-              {formatNumber(winningTradesCount)} مثبت ·{" "}
-              {formatNumber(losingTradesCount)} منفی
-            </div>
-          </div>
-
-          <div className="glass-card stat-card">
-            <div className="stat-icon">
-              <Icon name="chart" size={20} />
-            </div>
-
-            <div className="stat-label">
-              P/L ثبت‌شده
-            </div>
-
-            <div
-              className={`stat-value ${
-                totalProfitLoss > 0
-                  ? "positive"
-                  : totalProfitLoss < 0
-                  ? "negative"
-                  : ""
-              }`}
-            >
-              {formatMoney(totalProfitLoss)}
-            </div>
-
-            <div className="stat-description">
-              بر اساس معاملات دارای P/L
-            </div>
-          </div>
-        </section>
-
-        <section className="workspace">
-          <div className="glass-card card">
-            <div className="section-head">
-              <div>
-                <h2 className="section-title">
-                  عملکرد واقعی حساب
-                </h2>
-
-                <p className="section-caption">
-                  نمودار تجمعی P/L معاملات بسته‌شده
-                </p>
+                {t.active}
               </div>
 
               <Link
-                href="/trades"
-                className="secondary-button"
-                style={{ minHeight: 36 }}
+                href="/settings"
+                className="top-action"
+                aria-label={t.settings}
               >
-                مشاهده معاملات
-              </Link>
-            </div>
-
-            <div className="chart-summary">
-              <div className="chart-summary-item">
-                <span className="chart-summary-label">
-                  P/L
-                </span>
-
-                <span
-                  className={`chart-summary-value ${
-                    totalProfitLoss > 0
-                      ? "positive"
-                      : totalProfitLoss < 0
-                      ? "negative"
-                      : ""
-                  }`}
-                >
-                  {formatMoney(totalProfitLoss)}
-                </span>
-              </div>
-
-              <div className="chart-summary-item">
-                <span className="chart-summary-label">
-                  معاملات بسته
-                </span>
-
-                <span className="chart-summary-value">
-                  {formatNumber(closedTradesCount)}
-                </span>
-              </div>
-
-              <div className="chart-summary-item">
-                <span className="chart-summary-label">
-                  برد
-                </span>
-
-                <span className="chart-summary-value positive">
-                  {formatNumber(winningTradesCount)}
-                </span>
-              </div>
-
-              <div className="chart-summary-item">
-                <span className="chart-summary-label">
-                  باخت
-                </span>
-
-                <span className="chart-summary-value negative">
-                  {formatNumber(losingTradesCount)}
-                </span>
-              </div>
-            </div>
-
-            <div className="chart-box">
-              {chartValues.length >= 2 ? (
-                <svg
-                  className="chart-svg"
-                  viewBox="0 0 900 300"
-                  preserveAspectRatio="none"
-                >
-                  <defs>
-                    <linearGradient
-                      id="realGoldArea"
-                      x1="0"
-                      x2="0"
-                      y1="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor="#d6ad55"
-                        stopOpacity=".25"
-                      />
-
-                      <stop
-                        offset="100%"
-                        stopColor="#d6ad55"
-                        stopOpacity="0"
-                      />
-                    </linearGradient>
-                  </defs>
-
-                  <path
-                    d={chart.area}
-                    fill="url(#realGoldArea)"
-                  />
-
-                  <path
-                    d={chart.line}
-                    fill="none"
-                    stroke="#d6ad55"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              ) : (
-                <div className="chart-empty">
-                  <div className="chart-empty-inner">
-                    <div className="chart-empty-icon">
-                      <Icon name="chart" size={23} />
-                    </div>
-
-                    <strong>
-                      هنوز داده کافی برای نمودار وجود ندارد
-                    </strong>
-
-                    <span>
-                      این نمودار فقط از P/L واقعی معاملات
-                      بسته‌شده ساخته می‌شود. هیچ داده یا خط
-                      ساختگی در این قسمت نمایش داده نمی‌شود.
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="glass-card card">
-            <div className="section-head">
-              <div>
-                <h2 className="section-title">
-                  دسترسی سریع
-                </h2>
-
-                <p className="section-caption">
-                  ابزارهای اصلی پلتفرم
-                </p>
-              </div>
-            </div>
-
-            <div className="quick-list">
-              <Link
-                href="/signals"
-                className="quick-item"
-              >
-                <div className="quick-icon">
-                  <Icon name="signals" size={18} />
-                </div>
-
-                <div className="quick-text">
-                  <div className="quick-title">
-                    سیگنال‌های معاملاتی
-                  </div>
-
-                  <div className="quick-sub">
-                    مشاهده و مدیریت سیگنال‌ها
-                  </div>
-                </div>
-
-                <span className="quick-arrow">
-                  <Icon name="arrow" size={16} />
-                </span>
+                {icon("settings")}
               </Link>
 
               <Link
-                href="/bots"
-                className="quick-item"
+                href="/profile"
+                className="avatar"
+                aria-label={t.profile}
               >
-                <div className="quick-icon">
-                  <Icon name="bots" size={18} />
-                </div>
-
-                <div className="quick-text">
-                  <div className="quick-title">
-                    ربات‌های معاملاتی
-                  </div>
-
-                  <div className="quick-sub">
-                    مدیریت استراتژی و ربات‌ها
-                  </div>
-                </div>
-
-                <span className="quick-arrow">
-                  <Icon name="arrow" size={16} />
-                </span>
-              </Link>
-
-              <Link
-                href="/market"
-                className="quick-item"
-              >
-                <div className="quick-icon">
-                  <Icon name="market" size={18} />
-                </div>
-
-                <div className="quick-text">
-                  <div className="quick-title">
-                    بازار
-                  </div>
-
-                  <div className="quick-sub">
-                    داده بازار و تحلیل تکنیکال
-                  </div>
-                </div>
-
-                <span className="quick-arrow">
-                  <Icon name="arrow" size={16} />
-                </span>
-              </Link>
-
-              <Link
-                href="/news"
-                className="quick-item"
-              >
-                <div className="quick-icon">
-                  <Icon name="news" size={18} />
-                </div>
-
-                <div className="quick-text">
-                  <div className="quick-title">
-                    اخبار اقتصادی
-                  </div>
-
-                  <div className="quick-sub">
-                    اخبار و رویدادهای بازار
-                  </div>
-                </div>
-
-                <span className="quick-arrow">
-                  <Icon name="arrow" size={16} />
-                </span>
+                {initials}
               </Link>
             </div>
-          </div>
-        </section>
+          </header>
 
-        <section className="recent glass-card recent-card">
-          <div className="section-head">
+          <section className="welcome">
             <div>
-              <h2 className="section-title">
-                آخرین سیگنال‌ها
-              </h2>
+              <div className="eyebrow">
+                {t.welcome}
+              </div>
 
-              <p className="section-caption">
-                آخرین رکوردهای واقعی TradingSignal
+              <h1>
+                {lang === "en"
+                  ? `Welcome, ${user.name}`
+                  : `سلام ${user.name} 👋`}
+              </h1>
+
+              <p>
+                {t.welcomeText}
               </p>
             </div>
 
-            <Link
+            <div className="welcome-badge">
+              <strong>
+                {planLabel}
+              </strong>
+
+              <span>
+                {t.plan}
+              </span>
+            </div>
+          </section>
+
+          <section className="stats">
+            <div className="stat">
+              <div className="stat-icon">
+                {icon("bot")}
+              </div>
+
+              <small>
+                {t.botsCount}
+              </small>
+
+              <strong>
+                {nf(totalBots)}
+              </strong>
+            </div>
+
+            <div className="stat">
+              <div className="stat-icon">
+                {icon("live")}
+              </div>
+
+              <small>
+                {lang === "en"
+                  ? "Active Bots"
+                  : "ربات فعال"}
+              </small>
+
+              <strong>
+                {nf(activeBots)}
+              </strong>
+            </div>
+
+            <div className="stat">
+              <div className="stat-icon">
+                {icon("signal")}
+              </div>
+
+              <small>
+                {t.signalsCount}
+              </small>
+
+              <strong>
+                {nf(totalSignals)}
+              </strong>
+            </div>
+
+            <div className="stat">
+              <div className="stat-icon">
+                {icon("chart")}
+              </div>
+
+              <small>
+                {t.openTrades}
+              </small>
+
+              <strong>
+                {nf(openTrades)}
+              </strong>
+            </div>
+
+            <div className="stat">
+              <div className="stat-icon">
+                {icon("broker")}
+              </div>
+
+              <small>
+                {t.pnl}
+              </small>
+
+              <strong
+                className={
+                  totalPnl > 0
+                    ? "positive"
+                    : totalPnl < 0
+                    ? "negative"
+                    : ""
+                }
+              >
+                {totalPnl > 0
+                  ? "+"
+                  : ""}
+                ${money(totalPnl)}
+              </strong>
+            </div>
+          </section>
+
+          <div className="section-title">
+            <h2>
+              {t.quickAccess}
+            </h2>
+
+            <span>
+              Trading AI Platform
+            </span>
+          </div>
+
+          <section className="feature-grid">
+            <FeatureCard
+              href="/news"
+              iconName="news"
+              title={t.news}
+              text={t.newsText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/bots"
+              iconName="bot"
+              title={t.bots}
+              text={t.botsText}
+              view={t.view}
+            />
+
+            <FeatureCard
               href="/signals"
-              className="secondary-button"
-              style={{ minHeight: 38 }}
-            >
-              همه سیگنال‌ها
-            </Link>
+              iconName="signal"
+              title={t.signals}
+              text={t.signalsText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/performance"
+              iconName="chart"
+              title={t.performance}
+              text={t.performanceText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/broker"
+              iconName="broker"
+              title={t.broker}
+              text={t.brokerText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/metatrader"
+              iconName="mt"
+              title={t.mt}
+              text={t.mtText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/live"
+              iconName="live"
+              title={t.live}
+              text={t.liveText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/ai-analysis"
+              iconName="bot"
+              title={t.ai}
+              text={t.aiText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/subscriptions"
+              iconName="subscription"
+              title={t.subscriptions}
+              text={t.subscriptionsText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/vpn"
+              iconName="vpn"
+              title={t.vpn}
+              text={t.vpnText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/support"
+              iconName="support"
+              title={t.support}
+              text={t.supportText}
+              view={t.view}
+            />
+
+            <FeatureCard
+              href="/announcements"
+              iconName="news"
+              title={t.announcements}
+              text={t.announcementsText}
+              view={t.view}
+            />
+          </section>
+
+          <section className="bottom-grid">
+            <div className="glass-panel">
+              <div className="panel-header">
+                <h3>
+                  {t.live}
+                </h3>
+
+                <span>
+                  {activeSignals > 0
+                    ? `${nf(activeSignals)} ${
+                        lang === "en"
+                          ? "active"
+                          : "فعال"
+                      }`
+                    : lang === "en"
+                    ? "No active signal"
+                    : "سیگنال فعالی نیست"}
+                </span>
+              </div>
+
+              <div className="live-list">
+                <div className="live-row">
+                  <div className="live-icon">
+                    {icon("bot")}
+                  </div>
+
+                  <div>
+                    <strong>
+                      {t.bots}
+                    </strong>
+
+                    <small>
+                      {lang === "en"
+                        ? `${activeBots} active bots`
+                        : `${nf(activeBots)} ربات فعال`}
+                    </small>
+                  </div>
+
+                  <span className="live-value">
+                    {activeBots > 0
+                      ? "ACTIVE"
+                      : "—"}
+                  </span>
+                </div>
+
+                <div className="live-row">
+                  <div className="live-icon">
+                    {icon("signal")}
+                  </div>
+
+                  <div>
+                    <strong>
+                      {t.signals}
+                    </strong>
+
+                    <small>
+                      {lang === "en"
+                        ? `${activeSignals} active signals`
+                        : `${nf(activeSignals)} سیگنال فعال`}
+                    </small>
+                  </div>
+
+                  <span className="live-value">
+                    {activeSignals > 0
+                      ? "LIVE"
+                      : "—"}
+                  </span>
+                </div>
+
+                <div className="live-row">
+                  <div className="live-icon">
+                    {icon("chart")}
+                  </div>
+
+                  <div>
+                    <strong>
+                      {t.totalTrades}
+                    </strong>
+
+                    <small>
+                      {lang === "en"
+                        ? `${totalTrades} recorded trades`
+                        : `${nf(totalTrades)} معامله ثبت‌شده`}
+                    </small>
+                  </div>
+
+                  <span className="live-value">
+                    {nf(totalTrades)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel notice">
+              <div>
+                <div className="panel-header">
+                  <h3>
+                    {t.announcements}
+                  </h3>
+
+                  <span>
+                    Trading AI
+                  </span>
+                </div>
+
+                <div className="notice-box">
+                  <strong>
+                    {lang === "en"
+                      ? "Platform Announcement Center"
+                      : "مرکز اطلاعیه‌های سایت"}
+                  </strong>
+
+                  <p>
+                    {lang === "en"
+                      ? "Official announcements from the administration will appear here. No fake news or placeholder information is displayed."
+                      : "اطلاعیه‌های رسمی مدیریت سایت در این بخش نمایش داده می‌شوند. هیچ خبر یا اطلاعات ساختگی نمایش داده نمی‌شود."}
+                  </p>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                    }}
+                  >
+                    <Link
+                      href="/announcements"
+                      className="mini-link"
+                      style={{
+                        justifyContent:
+                          "center",
+                      }}
+                    >
+                      {t.view}
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="language-box">
+                  <label>
+                    {t.language}
+                  </label>
+
+                  <form
+                    action={
+                      setLanguage
+                    }
+                  >
+                    <div className="language-buttons">
+                      <button
+                        type="submit"
+                        name="language"
+                        value="fa"
+                        className={
+                          lang === "fa"
+                            ? "active"
+                            : ""
+                        }
+                      >
+                        {t.fa}
+                      </button>
+
+                      <button
+                        type="submit"
+                        name="language"
+                        value="en"
+                        className={
+                          lang === "en"
+                            ? "active"
+                            : ""
+                        }
+                      >
+                        {t.en}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div className="account-bar">
+            <div className="account-user">
+              <div className="mini-avatar">
+                {initials}
+              </div>
+
+              <div>
+                <strong>
+                  {user.name}
+                </strong>
+
+                <small>
+                  {user.email}
+                </small>
+              </div>
+            </div>
+
+            <div className="account-links">
+              <Link href="/profile">
+                {t.profile}
+              </Link>
+
+              <Link href="/settings">
+                {t.settings}
+              </Link>
+
+              <Link href="/support">
+                {t.support}
+              </Link>
+
+              <Link href="/logout">
+                {t.logout}
+              </Link>
+            </div>
           </div>
-
-          {recentSignals.length === 0 ? (
-            <div className="empty-small">
-              هنوز هیچ سیگنالی برای این حساب ثبت نشده است.
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="signal-table">
-                <thead>
-                  <tr>
-                    <th>نماد</th>
-                    <th>جهت</th>
-                    <th>تایم‌فریم</th>
-                    <th>ورود</th>
-                    <th>حد سود</th>
-                    <th>حد ضرر</th>
-                    <th>امتیاز</th>
-                    <th>وضعیت</th>
-                    <th>زمان</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {recentSignals.map((signal) => (
-                    <tr key={signal.id}>
-                      <td>
-                        <span className="symbol">
-                          {signal.symbol}
-                        </span>
-                      </td>
-
-                      <td>
-                        <span
-                          className={`direction ${directionClass(
-                            signal.direction
-                          )}`}
-                        >
-                          {directionLabel(
-                            signal.direction
-                          )}
-                        </span>
-                      </td>
-
-                      <td>
-                        {signal.timeframe || "—"}
-                      </td>
-
-                      <td>
-                        {signal.entry !== null &&
-                        signal.entry !== undefined
-                          ? String(signal.entry)
-                          : "—"}
-                      </td>
-
-                      <td>
-                        {signal.takeProfit !== null &&
-                        signal.takeProfit !== undefined
-                          ? String(signal.takeProfit)
-                          : "—"}
-                      </td>
-
-                      <td>
-                        {signal.stopLoss !== null &&
-                        signal.stopLoss !== undefined
-                          ? String(signal.stopLoss)
-                          : "—"}
-                      </td>
-
-                      <td>
-                        <span className="score">
-                          {signal.score !== null &&
-                          signal.score !== undefined
-                            ? `${signal.score}%`
-                            : "—"}
-                        </span>
-                      </td>
-
-                      <td>
-                        <span className="status-pill">
-                          {statusLabel(signal.status)}
-                        </span>
-                      </td>
-
-                      <td>
-                        {formatDate(signal.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </section>
-
-        <section className="bottom-grid">
-          <Link
-            href="/ai-analysis"
-            className="glass-card feature-card"
-          >
-            <div className="feature-top">
-              <div className="feature-icon">
-                <Icon name="spark" size={21} />
-              </div>
-
-              <span className="feature-arrow">
-                <Icon name="arrow" size={17} />
-              </span>
-            </div>
-
-            <h3 className="feature-title">
-              تحلیل هوش مصنوعی
-            </h3>
-
-            <p className="feature-description">
-              بررسی ساختار بازار، روند، نقاط مهم و
-              داده‌های تحلیلی.
-            </p>
-          </Link>
-
-          <Link
-            href="/bots"
-            className="glass-card feature-card"
-          >
-            <div className="feature-top">
-              <div className="feature-icon">
-                <Icon name="bots" size={21} />
-              </div>
-
-              <span className="feature-arrow">
-                <Icon name="arrow" size={17} />
-              </span>
-            </div>
-
-            <h3 className="feature-title">
-              مدیریت ربات‌ها
-            </h3>
-
-            <p className="feature-description">
-              تنظیم ریسک، حد ضرر، حد سود، فیلتر خبر
-              و شرایط اجرای ربات.
-            </p>
-          </Link>
-
-          <Link
-            href="/signals"
-            className="glass-card feature-card"
-          >
-            <div className="feature-top">
-              <div className="feature-icon">
-                <Icon name="shield" size={21} />
-              </div>
-
-              <span className="feature-arrow">
-                <Icon name="arrow" size={17} />
-              </span>
-            </div>
-
-            <h3 className="feature-title">
-              مرکز سیگنال‌ها
-            </h3>
-
-            <p className="feature-description">
-              سیگنال‌های واقعی ثبت‌شده توسط سیستم و
-              وضعیت پردازش آن‌ها.
-            </p>
-          </Link>
-
-          <Link
-            href="/economic"
-            className="glass-card feature-card"
-          >
-            <div className="feature-top">
-              <div className="feature-icon">
-                <Icon name="news" size={21} />
-              </div>
-
-              <span className="feature-arrow">
-                <Icon name="arrow" size={17} />
-              </span>
-            </div>
-
-            <h3 className="feature-title">
-              تقویم اقتصادی
-            </h3>
-
-            <p className="feature-description">
-              رویدادهای اقتصادی مهم و ابزارهای فیلتر
-              خبر برای معاملات.
-            </p>
-          </Link>
-
-          <Link
-            href="/broker"
-            className="glass-card feature-card"
-          >
-            <div className="feature-top">
-              <div className="feature-icon">
-                <Icon name="wallet" size={21} />
-              </div>
-
-              <span className="feature-arrow">
-                <Icon name="arrow" size={17} />
-              </span>
-            </div>
-
-            <h3 className="feature-title">
-              اتصال بروکر
-            </h3>
-
-            <p className="feature-description">
-              مدیریت اتصال حساب معاملاتی و سرویس‌های
-              اجرای سفارش.
-            </p>
-          </Link>
-
-          <Link
-            href="/support"
-            className="glass-card feature-card"
-          >
-            <div className="feature-top">
-              <div className="feature-icon">
-                <Icon name="support" size={21} />
-              </div>
-
-              <span className="feature-arrow">
-                <Icon name="arrow" size={17} />
-              </span>
-            </div>
-
-            <h3 className="feature-title">
-              پشتیبانی
-            </h3>
-
-            <p className="feature-description">
-              ایجاد و پیگیری تیکت‌های پشتیبانی حساب
-              کاربری.
-            </p>
-          </Link>
-        </section>
-
-        <footer className="footer">
-          <div>
-            © {new Date().getFullYear()} Trading AI —
-            Smart Trading Platform
-          </div>
-
-          <div className="footer-status">
-            <span className="status-dot" />
-            سیستم احراز هویت فعال
-          </div>
-
-          <div>
-            <span className="gold">SECURE</span>
-            {" · "}
-            Session Protected
-          </div>
-        </footer>
       </div>
     </main>
+  );
+}
+
+function FeatureCard({
+  href,
+  iconName,
+  title,
+  text,
+  view,
+}: {
+  href: string;
+  iconName: string;
+  title: string;
+  text: string;
+  view: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="feature"
+    >
+      <div className="feature-icon">
+        {icon(iconName)}
+      </div>
+
+      <h3>
+        {title}
+      </h3>
+
+      <p>
+        {text}
+      </p>
+
+      <div className="feature-footer">
+        <span>
+          {view}
+        </span>
+
+        <span className="feature-arrow">
+          ←
+        </span>
+      </div>
+    </Link>
   );
 }
