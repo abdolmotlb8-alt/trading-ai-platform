@@ -2,229 +2,169 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+type ExecutionMode = "MANUAL" | "AUTO_APPROVAL";
+
 type Bot = {
   id: string;
   name: string;
-  type: string;
-  category: string;
-  description?: string | null;
+  type?: string;
+  category?: string;
+  symbol?: string;
+  timeframe?: string;
+  marketType?: string;
 
-  symbol?: string | null;
-  timeframe?: string | null;
-  marketType?: string | null;
+  isActive?: boolean;
 
-  isActive: boolean;
+  lotSize?: number;
+  riskPercent?: number;
 
-  lotMode: string;
-  lotSize: number;
-  riskPercent: number;
+  takeProfit?: number;
+  stopLoss?: number;
+  riskReward?: number;
 
-  takeProfit?: number | null;
-  stopLoss?: number | null;
-  riskReward?: number | null;
+  trailingStop?: boolean;
+  trailingStopDistance?: number;
 
-  trailingStop: boolean;
-  trailingStopDistance?: number | null;
+  breakEven?: boolean;
+  breakEvenTrigger?: number;
 
-  breakEven: boolean;
-  breakEvenTrigger?: number | null;
+  dailyProfitStop?: number;
+  dailyLossLimit?: number;
+  maxDailyStopLosses?: number;
+  maxOpenTrades?: number;
 
-  dailyProfitStop?: number | null;
-  dailyLossLimit?: number | null;
-  maxDailyStopLosses: number;
-  maxOpenTrades: number;
+  buyEnabled?: boolean;
+  sellEnabled?: boolean;
 
-  buyEnabled: boolean;
-  sellEnabled: boolean;
+  maxSpread?: number;
+  cooldownMinutes?: number;
 
-  maxSpread?: number | null;
-  cooldownMinutes: number;
+  sessionFilter?: boolean;
+  newsFilter?: boolean;
 
-  sessionFilter: boolean;
-  newsFilter: boolean;
+  signalThreshold?: number;
+  minConfirmations?: number;
 
-  signalThreshold: number;
-  minConfirmations: number;
+  telegramEnabled?: boolean;
 
-  telegramEnabled: boolean;
-
-  analysisConfig?: Record<string, unknown> | null;
+  analysisConfig?: Config;
 
   createdAt?: string;
   updatedAt?: string;
 };
 
 type Config = {
-  executionMode: "MANUAL" | "AUTO_APPROVAL";
+  executionMode: ExecutionMode;
+
   autoStopAfterWins: number;
   autoStopAfterLosses: number;
+
   requireConfirmation: boolean;
+
+  multiTimeframe: boolean;
+  supportResistance: boolean;
+  breakoutFilter: boolean;
+  pullbackFilter: boolean;
+  trendFilter: boolean;
+  momentumFilter: boolean;
+  volumeFilter: boolean;
+  candlePatternFilter: boolean;
+  volatilityFilter: boolean;
+
+  minSignalScore: number;
+  minConfirmations: number;
+
+  preventDuplicateSignals: boolean;
+  signalCooldownMinutes: number;
+
+  stopAfterActiveSignal: boolean;
+
+  useTP1: boolean;
+  useTP2: boolean;
+  useTP3: boolean;
+
+  riskMode: "PERCENT" | "FIXED_LOT" | "FIXED_MONEY";
+
+  fixedRiskMoney: number;
+
+  allowCounterTrend: boolean;
+
+  maxSignalsPerDay: number;
 };
 
-const defaultConfig: Config = {
+const DEFAULT_CONFIG: Config = {
   executionMode: "MANUAL",
+
   autoStopAfterWins: 0,
   autoStopAfterLosses: 0,
+
   requireConfirmation: true,
+
+  multiTimeframe: true,
+  supportResistance: true,
+  breakoutFilter: true,
+  pullbackFilter: true,
+  trendFilter: true,
+  momentumFilter: true,
+  volumeFilter: true,
+  candlePatternFilter: true,
+  volatilityFilter: true,
+
+  minSignalScore: 80,
+  minConfirmations: 5,
+
+  preventDuplicateSignals: true,
+  signalCooldownMinutes: 5,
+
+  stopAfterActiveSignal: true,
+
+  useTP1: true,
+  useTP2: true,
+  useTP3: true,
+
+  riskMode: "PERCENT",
+
+  fixedRiskMoney: 10,
+
+  allowCounterTrend: false,
+
+  maxSignalsPerDay: 10,
 };
 
-const timeframes = [
-  { value: "1m", label: "۱ دقیقه" },
-  { value: "5m", label: "۵ دقیقه" },
-  { value: "15m", label: "۱۵ دقیقه" },
-  { value: "30m", label: "۳۰ دقیقه" },
-  { value: "1h", label: "۱ ساعت" },
-  { value: "4h", label: "۴ ساعت" },
-  { value: "1d", label: "روزانه" },
+const SYMBOLS = [
+  "XAUUSD",
+  "EURUSD",
+  "GBPUSD",
+  "USDJPY",
+  "BTCUSDT",
+  "ETHUSDT",
 ];
 
-const symbols = [
-  { value: "XAUUSD", label: "XAUUSD • Gold" },
-  { value: "EURUSD", label: "EURUSD • Euro / Dollar" },
-  { value: "GBPUSD", label: "GBPUSD • Pound / Dollar" },
-  { value: "USDJPY", label: "USDJPY • Dollar / Yen" },
-  { value: "BTCUSDT", label: "BTCUSDT • Bitcoin" },
-  { value: "ETHUSDT", label: "ETHUSDT • Ethereum" },
+const TIMEFRAMES = [
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "4h",
+  "1d",
 ];
 
-const marketTypes = [
-  { value: "FOREX", label: "Forex" },
-  { value: "CRYPTO", label: "Crypto" },
-];
+const MARKET_TYPES = ["FOREX", "CRYPTO"];
 
-function money(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-
-  return `$${Number(value).toFixed(2)}`;
+function normalizeBot(bot: Bot): Bot {
+  return {
+    ...bot,
+    analysisConfig: {
+      ...DEFAULT_CONFIG,
+      ...(bot.analysisConfig || {}),
+    },
+  };
 }
 
 function numberValue(value: unknown, fallback = 0) {
   const n = Number(value);
-
   return Number.isFinite(n) ? n : fallback;
-}
-
-function getConfig(bot: Bot): Config {
-  const raw = bot.analysisConfig;
-
-  if (!raw || typeof raw !== "object") {
-    return defaultConfig;
-  }
-
-  return {
-    executionMode:
-      raw.executionMode === "AUTO_APPROVAL"
-        ? "AUTO_APPROVAL"
-        : "MANUAL",
-
-    autoStopAfterWins: numberValue(
-      raw.autoStopAfterWins,
-      0
-    ),
-
-    autoStopAfterLosses: numberValue(
-      raw.autoStopAfterLosses,
-      0
-    ),
-
-    requireConfirmation:
-      raw.requireConfirmation !== false,
-  };
-}
-
-function Icon({
-  children,
-  tone = "cyan",
-}: {
-  children: React.ReactNode;
-  tone?: "cyan" | "green" | "red" | "purple" | "amber";
-}) {
-  return (
-    <span className={`icon-box icon-${tone}`}>
-      {children}
-    </span>
-  );
-}
-
-function Section({
-  icon,
-  title,
-  description,
-  children,
-  tone = "cyan",
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-  tone?: "cyan" | "green" | "red" | "purple" | "amber";
-}) {
-  return (
-    <section className="section-card">
-      <div className="section-header">
-        <Icon tone={tone}>{icon}</Icon>
-
-        <div>
-          <h2>{title}</h2>
-          <p>{description}</p>
-        </div>
-      </div>
-
-      <div className="section-body">{children}</div>
-    </section>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="field">
-      <div className="field-label">
-        <span>{label}</span>
-        {hint && <small>{hint}</small>}
-      </div>
-
-      {children}
-    </label>
-  );
-}
-
-function Toggle({
-  checked,
-  onChange,
-  title,
-  description,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  title: string;
-  description: string;
-}) {
-  return (
-    <button
-      type="button"
-      className={`toggle-row ${checked ? "toggle-active" : ""}`}
-      onClick={() => onChange(!checked)}
-    >
-      <span className={`switch ${checked ? "switch-on" : ""}`}>
-        <span />
-      </span>
-
-      <span className="toggle-copy">
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-    </button>
-  );
 }
 
 export default function BotsPage() {
@@ -233,21 +173,46 @@ export default function BotsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [message, setMessage] = useState("");
+
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const selectedBot = useMemo(
-    () => bots.find((bot) => bot.id === selectedId) ?? null,
-    [bots, selectedId]
-  );
+  const [search, setSearch] = useState("");
 
-  const config = useMemo(
-    () => (selectedBot ? getConfig(selectedBot) : defaultConfig),
-    [selectedBot]
-  );
+  const [showCreate, setShowCreate] = useState(false);
 
-  async function loadBots(selectFirst = true) {
+  const [newBot, setNewBot] = useState({
+    name: "AI Analyst",
+    symbol: "XAUUSD",
+    timeframe: "15m",
+    marketType: "FOREX",
+  });
+
+  const selectedBot = useMemo(() => {
+    return bots.find((bot) => bot.id === selectedId) || null;
+  }, [bots, selectedId]);
+
+  const filteredBots = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    if (!q) return bots;
+
+    return bots.filter((bot) =>
+      [
+        bot.name,
+        bot.symbol,
+        bot.timeframe,
+        bot.marketType,
+        bot.type,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value).toLowerCase().includes(q)
+        )
+    );
+  }, [bots, search]);
+
+  async function loadBots() {
     try {
       setLoading(true);
       setError("");
@@ -260,34 +225,29 @@ export default function BotsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.error || "خطا در دریافت ربات‌ها");
+        throw new Error(
+          data?.error || "خطا در دریافت ربات‌ها"
+        );
       }
 
-      const loadedBots: Bot[] = Array.isArray(data)
+      const receivedBots: Bot[] = Array.isArray(data)
         ? data
         : Array.isArray(data?.bots)
           ? data.bots
           : [];
 
-      setBots(loadedBots);
+      const normalized = receivedBots.map(normalizeBot);
 
-      if (selectFirst) {
-        setSelectedId((current) => {
-          if (
-            current &&
-            loadedBots.some((bot) => bot.id === current)
-          ) {
-            return current;
-          }
+      setBots(normalized);
 
-          return loadedBots[0]?.id ?? null;
-        });
+      if (normalized.length > 0) {
+        setSelectedId((current) => current || normalized[0].id);
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "خطا در دریافت اطلاعات ربات"
+          : "خطا در دریافت اطلاعات ربات‌ها"
       );
     } finally {
       setLoading(false);
@@ -301,15 +261,15 @@ export default function BotsPage() {
   function updateSelected(
     patch: Partial<Bot>
   ) {
-    if (!selectedId) return;
+    if (!selectedBot) return;
 
     setBots((current) =>
       current.map((bot) =>
-        bot.id === selectedId
-          ? {
+        bot.id === selectedBot.id
+          ? normalizeBot({
               ...bot,
               ...patch,
-            }
+            })
           : bot
       )
     );
@@ -320,13 +280,16 @@ export default function BotsPage() {
   ) {
     if (!selectedBot) return;
 
-    const nextConfig: Config = {
-      ...config,
-      ...patch,
+    const currentConfig = {
+      ...DEFAULT_CONFIG,
+      ...(selectedBot.analysisConfig || {}),
     };
 
     updateSelected({
-      analysisConfig: nextConfig,
+      analysisConfig: {
+        ...currentConfig,
+        ...patch,
+      },
     });
   }
 
@@ -335,132 +298,17 @@ export default function BotsPage() {
 
     try {
       setSaving(true);
-      setMessage("");
       setError("");
+      setSuccess("");
+
+      const payload = normalizeBot(selectedBot);
 
       const response = await fetch("/api/bots", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          id: selectedBot.id,
-
-          name: selectedBot.name,
-          type: selectedBot.type,
-          category: selectedBot.category,
-
-          symbol: selectedBot.symbol,
-          timeframe: selectedBot.timeframe,
-          marketType: selectedBot.marketType,
-
-          isActive: selectedBot.isActive,
-
-          lotMode: selectedBot.lotMode,
-          lotSize: numberValue(selectedBot.lotSize, 0.01),
-          riskPercent: numberValue(
-            selectedBot.riskPercent,
-            1
-          ),
-
-          takeProfit:
-            selectedBot.takeProfit === null
-              ? null
-              : numberValue(selectedBot.takeProfit, 0),
-
-          stopLoss:
-            selectedBot.stopLoss === null
-              ? null
-              : numberValue(selectedBot.stopLoss, 0),
-
-          riskReward:
-            selectedBot.riskReward === null
-              ? null
-              : numberValue(selectedBot.riskReward, 0),
-
-          trailingStop: selectedBot.trailingStop,
-
-          trailingStopDistance:
-            selectedBot.trailingStopDistance === null
-              ? null
-              : numberValue(
-                  selectedBot.trailingStopDistance,
-                  0
-                ),
-
-          breakEven: selectedBot.breakEven,
-
-          breakEvenTrigger:
-            selectedBot.breakEvenTrigger === null
-              ? null
-              : numberValue(
-                  selectedBot.breakEvenTrigger,
-                  0
-                ),
-
-          dailyProfitStop:
-            selectedBot.dailyProfitStop === null
-              ? null
-              : numberValue(
-                  selectedBot.dailyProfitStop,
-                  0
-                ),
-
-          dailyLossLimit:
-            selectedBot.dailyLossLimit === null
-              ? null
-              : numberValue(
-                  selectedBot.dailyLossLimit,
-                  0
-                ),
-
-          maxDailyStopLosses:
-            numberValue(
-              selectedBot.maxDailyStopLosses,
-              3
-            ),
-
-          maxOpenTrades:
-            numberValue(
-              selectedBot.maxOpenTrades,
-              1
-            ),
-
-          buyEnabled: selectedBot.buyEnabled,
-          sellEnabled: selectedBot.sellEnabled,
-
-          maxSpread:
-            selectedBot.maxSpread === null
-              ? null
-              : numberValue(selectedBot.maxSpread, 0),
-
-          cooldownMinutes:
-            numberValue(
-              selectedBot.cooldownMinutes,
-              5
-            ),
-
-          sessionFilter: selectedBot.sessionFilter,
-          newsFilter: selectedBot.newsFilter,
-
-          signalThreshold:
-            numberValue(
-              selectedBot.signalThreshold,
-              80
-            ),
-
-          minConfirmations:
-            numberValue(
-              selectedBot.minConfirmations,
-              5
-            ),
-
-          telegramEnabled:
-            selectedBot.telegramEnabled,
-
-          analysisConfig:
-            selectedBot.analysisConfig ?? {},
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -471,8 +319,9 @@ export default function BotsPage() {
         );
       }
 
-      const updatedBot: Bot =
-        data?.bot || data;
+      const updatedBot = normalizeBot(
+        data?.bot || data
+      );
 
       setBots((current) =>
         current.map((bot) =>
@@ -482,7 +331,7 @@ export default function BotsPage() {
         )
       );
 
-      setMessage("تنظیمات ربات با موفقیت ذخیره شد.");
+      setSuccess("تنظیمات ربات با موفقیت ذخیره شد.");
     } catch (err) {
       setError(
         err instanceof Error
@@ -494,58 +343,48 @@ export default function BotsPage() {
     }
   }
 
-  async function toggleBot() {
-    if (!selectedBot) return;
-
-    const nextActive = !selectedBot.isActive;
-
-    updateSelected({
-      isActive: nextActive,
-    });
-
+  async function toggleBot(bot: Bot) {
     try {
-      setSaving(true);
       setError("");
-      setMessage("");
+      setSuccess("");
+
+      const updated = {
+        ...normalizeBot(bot),
+        isActive: !bot.isActive,
+      };
 
       const response = await fetch("/api/bots", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          id: selectedBot.id,
-          isActive: nextActive,
-        }),
+        body: JSON.stringify(updated),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        updateSelected({
-          isActive: !nextActive,
-        });
-
         throw new Error(
           data?.error || "تغییر وضعیت ربات انجام نشد"
         );
       }
 
-      const updatedBot: Bot =
-        data?.bot || data;
+      const result = normalizeBot(data?.bot || data);
 
       setBots((current) =>
-        current.map((bot) =>
-          bot.id === updatedBot.id
-            ? updatedBot
-            : bot
+        current.map((item) =>
+          item.id === result.id ? result : item
         )
       );
 
-      setMessage(
-        nextActive
-          ? "ربات روشن شد و وضعیت آن در دیتابیس ثبت شد."
-          : "ربات خاموش شد و وضعیت آن در دیتابیس ثبت شد."
+      if (result.id === selectedId) {
+        setSelectedId(result.id);
+      }
+
+      setSuccess(
+        result.isActive
+          ? "ربات فعال شد."
+          : "ربات متوقف شد."
       );
     } catch (err) {
       setError(
@@ -553,66 +392,70 @@ export default function BotsPage() {
           ? err.message
           : "خطا در تغییر وضعیت ربات"
       );
-    } finally {
-      setSaving(false);
     }
   }
 
   async function createBot() {
     try {
-      setCreating(true);
+      setSaving(true);
       setError("");
-      setMessage("");
+      setSuccess("");
+
+      const config = {
+        ...DEFAULT_CONFIG,
+      };
+
+      const payload = {
+        name: newBot.name.trim() || "AI Analyst",
+        type: "ANALYST",
+        category: "AI",
+        symbol: newBot.symbol,
+        timeframe: newBot.timeframe,
+        marketType: newBot.marketType,
+
+        isActive: false,
+
+        lotSize: 0.01,
+        riskPercent: 1,
+
+        takeProfit: 3,
+        stopLoss: 1,
+        riskReward: 3,
+
+        trailingStop: true,
+        trailingStopDistance: 1,
+
+        breakEven: true,
+        breakEvenTrigger: 1,
+
+        dailyProfitStop: 20,
+        dailyLossLimit: 12,
+        maxDailyStopLosses: 3,
+        maxOpenTrades: 1,
+
+        buyEnabled: true,
+        sellEnabled: true,
+
+        maxSpread: 30,
+        cooldownMinutes: 5,
+
+        sessionFilter: true,
+        newsFilter: true,
+
+        signalThreshold: 80,
+        minConfirmations: 5,
+
+        telegramEnabled: true,
+
+        analysisConfig: config,
+      };
 
       const response = await fetch("/api/bots", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          name: `Trading AI Bot ${bots.length + 1}`,
-          type: "TRADING",
-          category: "TRADING",
-          symbol: "XAUUSD",
-          timeframe: "15m",
-          marketType: "FOREX",
-
-          lotMode: "FIXED",
-          lotSize: 0.01,
-          riskPercent: 1,
-
-          takeProfit: 10,
-          stopLoss: 2,
-          riskReward: 5,
-
-          trailingStop: false,
-          breakEven: false,
-
-          dailyProfitStop: 20,
-          dailyLossLimit: 12,
-          maxDailyStopLosses: 3,
-          maxOpenTrades: 1,
-
-          buyEnabled: true,
-          sellEnabled: true,
-
-          maxSpread: null,
-          cooldownMinutes: 5,
-
-          sessionFilter: true,
-          newsFilter: true,
-
-          signalThreshold: 80,
-          minConfirmations: 5,
-
-          telegramEnabled: false,
-
-          analysisConfig: {
-            ...defaultConfig,
-          },
-
-          isActive: false,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -623,19 +466,19 @@ export default function BotsPage() {
         );
       }
 
-      const newBot: Bot =
-        data?.bot || data;
+      const created = normalizeBot(
+        data?.bot || data
+      );
 
       setBots((current) => [
-        newBot,
+        created,
         ...current,
       ]);
 
-      setSelectedId(newBot.id);
+      setSelectedId(created.id);
+      setShowCreate(false);
 
-      setMessage(
-        "ربات جدید ساخته شد. ابتدا تنظیمات آن را بررسی و ذخیره کنید."
-      );
+      setSuccess("ربات جدید ساخته شد.");
     } catch (err) {
       setError(
         err instanceof Error
@@ -643,2143 +486,2063 @@ export default function BotsPage() {
           : "خطا در ساخت ربات"
       );
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   }
 
-  function calculateRR(
-    tp: number | null | undefined,
-    sl: number | null | undefined
-  ) {
-    const takeProfit = numberValue(tp);
-    const stopLoss = numberValue(sl);
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...(selectedBot?.analysisConfig || {}),
+  };
 
-    if (takeProfit <= 0 || stopLoss <= 0) {
-      return 0;
-    }
-
-    return takeProfit / stopLoss;
-  }
-
-  function updateTakeProfit(value: number) {
-    if (!selectedBot) return;
-
-    const rr = calculateRR(
-      value,
-      selectedBot.stopLoss
-    );
-
-    updateSelected({
-      takeProfit: value,
-      riskReward:
-        rr > 0
-          ? Number(rr.toFixed(2))
-          : null,
-    });
-  }
-
-  function updateStopLoss(value: number) {
-    if (!selectedBot) return;
-
-    const rr = calculateRR(
-      selectedBot.takeProfit,
-      value
-    );
-
-    updateSelected({
-      stopLoss: value,
-      riskReward:
-        rr > 0
-          ? Number(rr.toFixed(2))
-          : null,
-    });
-  }
-
-  if (loading) {
-    return (
-      <main className="page">
-        <div className="loading-card">
-          <div className="loading-orb">🤖</div>
-          <h1>در حال بارگذاری ربات‌ها...</h1>
-          <p>
-            اطلاعات واقعی ربات‌ها از دیتابیس دریافت می‌شود.
-          </p>
-        </div>
-
-        <style jsx>{styles}</style>
-      </main>
-    );
-  }
+  const activeCount = bots.filter(
+    (bot) => bot.isActive
+  ).length;
 
   return (
-    <main className="page" dir="rtl">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
+    <main dir="rtl" className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
 
-      <div className="container">
-        <header className="topbar">
-          <div className="brand-area">
-            <div className="brand-icon">🤖</div>
+        .page {
+          min-height: 100vh;
+          padding: 28px;
+          color: #f8fafc;
+          background:
+            radial-gradient(circle at top right, rgba(245, 183, 55, .12), transparent 30%),
+            radial-gradient(circle at bottom left, rgba(0, 212, 255, .08), transparent 30%),
+            #05070b;
+          font-family:
+            Tahoma,
+            Arial,
+            sans-serif;
+        }
+
+        .shell {
+          max-width: 1500px;
+          margin: 0 auto;
+        }
+
+        .header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 22px;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+
+        .logo {
+          width: 56px;
+          height: 56px;
+          border-radius: 18px;
+          display: grid;
+          place-items: center;
+          font-size: 27px;
+          background:
+            linear-gradient(145deg, rgba(255, 205, 92, .30), rgba(124, 78, 5, .14));
+          border: 1px solid rgba(255, 204, 92, .32);
+          box-shadow:
+            0 0 30px rgba(245, 183, 55, .12),
+            inset 0 1px rgba(255,255,255,.08);
+        }
+
+        h1 {
+          margin: 0;
+          font-size: 26px;
+          font-weight: 900;
+          letter-spacing: -.5px;
+        }
+
+        .subtitle {
+          margin-top: 7px;
+          color: #8d98a8;
+          font-size: 14px;
+          line-height: 1.7;
+        }
+
+        .headerActions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        button,
+        input,
+        select {
+          font: inherit;
+        }
+
+        button {
+          cursor: pointer;
+        }
+
+        .btn {
+          border: 1px solid rgba(255,255,255,.09);
+          color: #f8fafc;
+          background: rgba(255,255,255,.045);
+          border-radius: 13px;
+          min-height: 45px;
+          padding: 0 17px;
+          transition: .2s ease;
+        }
+
+        .btn:hover {
+          transform: translateY(-1px);
+          border-color: rgba(255,205,92,.32);
+          background: rgba(255,255,255,.07);
+        }
+
+        .btnGold {
+          color: #111;
+          font-weight: 900;
+          border: 0;
+          background: linear-gradient(135deg, #f7d46d, #d99a24);
+          box-shadow: 0 10px 30px rgba(221,158,39,.14);
+        }
+
+        .btnDanger {
+          color: #ffb4b4;
+          border-color: rgba(255,80,80,.20);
+        }
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 14px;
+          margin-bottom: 18px;
+        }
+
+        .stat {
+          min-height: 105px;
+          padding: 18px;
+          border-radius: 19px;
+          border: 1px solid rgba(255,255,255,.07);
+          background: rgba(255,255,255,.035);
+          backdrop-filter: blur(20px);
+        }
+
+        .statLabel {
+          color: #8c97a7;
+          font-size: 13px;
+          margin-bottom: 11px;
+        }
+
+        .statValue {
+          font-size: 25px;
+          font-weight: 900;
+        }
+
+        .gold {
+          color: #f4c85b;
+        }
+
+        .green {
+          color: #5ee6a1;
+        }
+
+        .layout {
+          display: grid;
+          grid-template-columns: 330px minmax(0, 1fr);
+          gap: 18px;
+          align-items: start;
+        }
+
+        .panel {
+          border-radius: 22px;
+          border: 1px solid rgba(255,255,255,.075);
+          background: rgba(10,14,21,.84);
+          box-shadow:
+            0 20px 60px rgba(0,0,0,.20),
+            inset 0 1px rgba(255,255,255,.025);
+          overflow: hidden;
+        }
+
+        .panelHead {
+          padding: 19px;
+          border-bottom: 1px solid rgba(255,255,255,.065);
+        }
+
+        .panelTitle {
+          font-size: 16px;
+          font-weight: 900;
+        }
+
+        .panelHint {
+          color: #758093;
+          font-size: 12px;
+          margin-top: 6px;
+          line-height: 1.6;
+        }
+
+        .search {
+          width: 100%;
+          height: 44px;
+          margin-top: 15px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,.08);
+          background: #080c12;
+          color: #fff;
+          padding: 0 13px;
+          outline: none;
+        }
+
+        .search:focus,
+        .input:focus,
+        .select:focus {
+          border-color: rgba(244,200,91,.55);
+          box-shadow: 0 0 0 3px rgba(244,200,91,.06);
+        }
+
+        .botList {
+          padding: 10px;
+          max-height: 690px;
+          overflow-y: auto;
+        }
+
+        .botItem {
+          width: 100%;
+          text-align: right;
+          border: 1px solid transparent;
+          border-radius: 16px;
+          padding: 15px;
+          margin-bottom: 8px;
+          color: #fff;
+          background: transparent;
+        }
+
+        .botItem:hover {
+          background: rgba(255,255,255,.035);
+        }
+
+        .botItem.selected {
+          background:
+            linear-gradient(135deg, rgba(244,200,91,.12), rgba(255,255,255,.025));
+          border-color: rgba(244,200,91,.24);
+        }
+
+        .botTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .botName {
+          font-size: 15px;
+          font-weight: 900;
+        }
+
+        .status {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 5px 9px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .statusOn {
+          color: #75efb1;
+          background: rgba(45,205,128,.09);
+          border: 1px solid rgba(45,205,128,.18);
+        }
+
+        .statusOff {
+          color: #8993a2;
+          background: rgba(255,255,255,.035);
+          border: 1px solid rgba(255,255,255,.06);
+        }
+
+        .botMeta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 10px;
+        }
+
+        .tag {
+          padding: 5px 8px;
+          border-radius: 8px;
+          color: #aeb8c7;
+          background: rgba(255,255,255,.04);
+          font-size: 11px;
+        }
+
+        .editor {
+          padding: 22px;
+        }
+
+        .editorHeader {
+          display: flex;
+          justify-content: space-between;
+          gap: 15px;
+          align-items: flex-start;
+          margin-bottom: 20px;
+        }
+
+        .editorTitle {
+          font-size: 22px;
+          font-weight: 900;
+        }
+
+        .editorDescription {
+          color: #7f8a9b;
+          font-size: 13px;
+          margin-top: 7px;
+          line-height: 1.7;
+        }
+
+        .editorActions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .section {
+          margin-top: 17px;
+          padding: 18px;
+          border: 1px solid rgba(255,255,255,.065);
+          border-radius: 18px;
+          background: rgba(255,255,255,.022);
+        }
+
+        .sectionTitle {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          font-size: 15px;
+          font-weight: 900;
+          margin-bottom: 16px;
+        }
+
+        .sectionIcon {
+          width: 32px;
+          height: 32px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: rgba(244,200,91,.09);
+          border: 1px solid rgba(244,200,91,.15);
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 13px;
+        }
+
+        .field {
+          min-width: 0;
+        }
+
+        .label {
+          display: block;
+          color: #aab4c3;
+          font-size: 12px;
+          margin-bottom: 7px;
+        }
+
+        .input,
+        .select {
+          width: 100%;
+          height: 44px;
+          color: #fff;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 11px;
+          background: #080c12;
+          padding: 0 12px;
+          outline: none;
+        }
+
+        .toggleGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0,1fr));
+          gap: 9px;
+        }
+
+        .toggle {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          min-height: 52px;
+          padding: 11px 13px;
+          border: 1px solid rgba(255,255,255,.065);
+          border-radius: 12px;
+          background: rgba(255,255,255,.025);
+        }
+
+        .toggleText {
+          color: #c8d0dc;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .switch {
+          width: 44px;
+          height: 24px;
+          border: 0;
+          padding: 3px;
+          border-radius: 999px;
+          background: #242a33;
+          flex: 0 0 auto;
+        }
+
+        .switch span {
+          display: block;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #9098a4;
+          transition: .2s ease;
+        }
+
+        .switch.on {
+          background: #b98b2f;
+        }
+
+        .switch.on span {
+          transform: translateX(-20px);
+          background: #fff4c9;
+        }
+
+        .range {
+          width: 100%;
+          accent-color: #e4b84c;
+        }
+
+        .rangeValue {
+          margin-top: 8px;
+          color: #f4c85b;
+          font-size: 13px;
+          font-weight: 900;
+        }
+
+        .notice {
+          padding: 14px 15px;
+          border-radius: 13px;
+          margin-bottom: 15px;
+          line-height: 1.7;
+          font-size: 13px;
+        }
+
+        .noticeError {
+          color: #ffc1c1;
+          background: rgba(255,65,65,.08);
+          border: 1px solid rgba(255,65,65,.16);
+        }
+
+        .noticeSuccess {
+          color: #a9f7cb;
+          background: rgba(53,211,131,.08);
+          border: 1px solid rgba(53,211,131,.15);
+        }
+
+        .empty {
+          min-height: 500px;
+          display: grid;
+          place-items: center;
+          text-align: center;
+          padding: 40px;
+        }
+
+        .emptyIcon {
+          font-size: 44px;
+          margin-bottom: 15px;
+        }
+
+        .emptyTitle {
+          font-size: 20px;
+          font-weight: 900;
+        }
+
+        .emptyText {
+          color: #788496;
+          font-size: 13px;
+          margin-top: 8px;
+          line-height: 1.8;
+        }
+
+        .modalBack {
+          position: fixed;
+          inset: 0;
+          z-index: 50;
+          display: grid;
+          place-items: center;
+          padding: 20px;
+          background: rgba(0,0,0,.70);
+          backdrop-filter: blur(12px);
+        }
+
+        .modal {
+          width: min(520px, 100%);
+          padding: 22px;
+          border-radius: 22px;
+          border: 1px solid rgba(255,255,255,.09);
+          background: #0b1017;
+          box-shadow: 0 30px 100px rgba(0,0,0,.55);
+        }
+
+        .modalTitle {
+          font-size: 19px;
+          font-weight: 900;
+          margin-bottom: 17px;
+        }
+
+        .modalActions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 18px;
+        }
+
+        .footerInfo {
+          margin-top: 16px;
+          color: #687486;
+          font-size: 11px;
+          line-height: 1.8;
+        }
+
+        @media (max-width: 1100px) {
+          .layout {
+            grid-template-columns: 1fr;
+          }
+
+          .botList {
+            max-height: 330px;
+          }
+
+          .stats {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 750px) {
+          .page {
+            padding: 15px;
+          }
+
+          .header {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .headerActions,
+          .headerActions .btn {
+            width: 100%;
+          }
+
+          .stats {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .toggleGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .editor {
+            padding: 14px;
+          }
+
+          .editorHeader {
+            flex-direction: column;
+          }
+
+          .editorActions,
+          .editorActions .btn {
+            width: 100%;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .stats {
+            grid-template-columns: 1fr;
+          }
+
+          h1 {
+            font-size: 21px;
+          }
+        }
+      `}</style>
+
+      <div className="shell">
+
+        <header className="header">
+          <div className="brand">
+            <div className="logo">◈</div>
 
             <div>
-              <div className="eyebrow">
-                TRADING AI • BOT CENTER
+              <h1>مدیریت ربات‌های Trading AI</h1>
+
+              <div className="subtitle">
+                کنترل کامل تحلیل، فیلتر سیگنال، مدیریت ریسک،
+                اجرای معامله و ارسال هشدار
               </div>
-
-              <h1>مرکز کنترل ربات‌ها</h1>
-
-              <p>
-                مدیریت واقعی تنظیمات، ریسک و وضعیت اجرای ربات
-              </p>
             </div>
           </div>
 
-          <div className="top-actions">
+          <div className="headerActions">
             <button
-              type="button"
-              className="secondary-button"
-              onClick={() => loadBots(false)}
+              className="btn"
+              onClick={loadBots}
               disabled={loading}
             >
               ↻ بروزرسانی
             </button>
 
             <button
-              type="button"
-              className="primary-button"
-              onClick={createBot}
-              disabled={creating}
+              className="btn btnGold"
+              onClick={() => setShowCreate(true)}
             >
-              ＋ {creating ? "در حال ساخت..." : "ربات جدید"}
+              + ساخت ربات جدید
             </button>
           </div>
         </header>
 
-        {message && (
-          <div className="notice success-notice">
-            <span>✓</span>
-            {message}
+        <section className="stats">
+          <div className="stat">
+            <div className="statLabel">
+              تعداد کل ربات‌ها
+            </div>
+
+            <div className="statValue">
+              {bots.length}
+            </div>
           </div>
-        )}
+
+          <div className="stat">
+            <div className="statLabel">
+              ربات‌های فعال
+            </div>
+
+            <div className="statValue green">
+              {activeCount}
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="statLabel">
+              حداقل امتیاز سیگنال
+            </div>
+
+            <div className="statValue gold">
+              {selectedBot?.signalThreshold ?? config.minSignalScore}%
+            </div>
+          </div>
+
+          <div className="stat">
+            <div className="statLabel">
+              حداقل تأییدیه
+            </div>
+
+            <div className="statValue">
+              {selectedBot?.minConfirmations ??
+                config.minConfirmations}
+            </div>
+          </div>
+        </section>
 
         {error && (
-          <div className="notice error-notice">
-            <span>!</span>
-            {error}
+          <div className="notice noticeError">
+            ❌ {error}
           </div>
         )}
 
-        {bots.length === 0 ? (
-          <div className="empty-card">
-            <div className="empty-icon">🤖</div>
-
-            <h2>هنوز رباتی ساخته نشده است</h2>
-
-            <p>
-              اولین ربات خود را بسازید و تنظیمات واقعی آن را
-              ذخیره کنید.
-            </p>
-
-            <button
-              type="button"
-              className="primary-button large"
-              onClick={createBot}
-              disabled={creating}
-            >
-              ＋ ساخت اولین ربات
-            </button>
+        {success && (
+          <div className="notice noticeSuccess">
+            ✓ {success}
           </div>
-        ) : (
-          <>
-            <section className="bot-selector">
-              <div className="selector-title">
-                <div>
-                  <span className="eyebrow">
-                    YOUR BOTS
-                  </span>
-                  <h2>ربات‌های شما</h2>
-                </div>
+        )}
 
-                <span className="bot-count">
-                  {bots.length} ربات
-                </span>
+        <div className="layout">
+
+          <aside className="panel">
+
+            <div className="panelHead">
+              <div className="panelTitle">
+                ربات‌های شما
               </div>
 
-              <div className="bot-list">
-                {bots.map((bot) => (
+              <div className="panelHint">
+                ربات را انتخاب کنید تا تمام تنظیمات آن
+                در پنل سمت مقابل نمایش داده شود.
+              </div>
+
+              <input
+                className="search"
+                value={search}
+                onChange={(e) =>
+                  setSearch(e.target.value)
+                }
+                placeholder="جستجوی ربات، نماد..."
+              />
+            </div>
+
+            <div className="botList">
+
+              {loading && (
+                <div className="empty">
+                  <div>
+                    <div className="emptyIcon">◌</div>
+                    <div className="emptyTitle">
+                      در حال دریافت ربات‌ها
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!loading &&
+                filteredBots.length === 0 && (
+                  <div className="empty">
+                    <div>
+                      <div className="emptyIcon">🤖</div>
+
+                      <div className="emptyTitle">
+                        رباتی پیدا نشد
+                      </div>
+
+                      <div className="emptyText">
+                        از دکمه ساخت ربات جدید استفاده کنید.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {!loading &&
+                filteredBots.map((bot) => (
                   <button
-                    type="button"
                     key={bot.id}
-                    className={`bot-tab ${
-                      bot.id === selectedId
-                        ? "bot-tab-active"
+                    className={`botItem ${
+                      selectedId === bot.id
+                        ? "selected"
                         : ""
                     }`}
                     onClick={() =>
                       setSelectedId(bot.id)
                     }
                   >
-                    <span className="bot-tab-icon">
-                      🤖
-                    </span>
+                    <div className="botTop">
+                      <div className="botName">
+                        {bot.name}
+                      </div>
 
-                    <span className="bot-tab-content">
-                      <strong>{bot.name}</strong>
-
-                      <small>
-                        {bot.symbol || "—"} •{" "}
-                        {bot.timeframe || "—"}
-                      </small>
-                    </span>
-
-                    <span
-                      className={`status-dot ${
-                        bot.isActive
-                          ? "status-on"
-                          : "status-off"
-                      }`}
-                    />
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {selectedBot && (
-              <>
-                <section className="hero-card">
-                  <div className="hero-main">
-                    <div className="hero-icon">
-                      🤖
+                      <span
+                        className={`status ${
+                          bot.isActive
+                            ? "statusOn"
+                            : "statusOff"
+                        }`}
+                      >
+                        ●{" "}
+                        {bot.isActive
+                          ? "فعال"
+                          : "متوقف"}
+                      </span>
                     </div>
 
-                    <div>
-                      <span className="eyebrow">
-                        ACTIVE BOT CONTROL
+                    <div className="botMeta">
+                      <span className="tag">
+                        {bot.symbol || "—"}
                       </span>
 
-                      <h2>
-                        {selectedBot.name}
-                      </h2>
+                      <span className="tag">
+                        {bot.timeframe || "—"}
+                      </span>
 
-                      <p>
-                        {selectedBot.symbol || "—"}{" "}
-                        •{" "}
-                        {selectedBot.timeframe || "—"}{" "}
-                        •{" "}
-                        {selectedBot.marketType ||
-                          "—"}
-                      </p>
+                      <span className="tag">
+                        {bot.marketType || "—"}
+                      </span>
+
+                      <span className="tag">
+                        امتیاز{" "}
+                        {bot.signalThreshold ??
+                          config.minSignalScore}
+                        %
+                      </span>
                     </div>
+                  </button>
+                ))}
+            </div>
+          </aside>
+
+          <section className="panel">
+
+            {!selectedBot ? (
+              <div className="empty">
+                <div>
+                  <div className="emptyIcon">
+                    ⚙️
+                  </div>
+
+                  <div className="emptyTitle">
+                    یک ربات انتخاب کنید
+                  </div>
+
+                  <div className="emptyText">
+                    تنظیمات ربات انتخاب‌شده در اینجا
+                    نمایش داده می‌شود.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="editor">
+
+                <div className="editorHeader">
+
+                  <div>
+                    <div className="editorTitle">
+                      {selectedBot.name}
+                    </div>
+
+                    <div className="editorDescription">
+                      تنظیمات کامل این ربات را کنترل کنید.
+                      هیچ سیگنال یا معامله‌ای در این صفحه
+                      به‌صورت ساختگی تولید نمی‌شود.
+                    </div>
+                  </div>
+
+                  <div className="editorActions">
+
+                    <button
+                      className={`btn ${
+                        selectedBot.isActive
+                          ? "btnDanger"
+                          : "btnGold"
+                      }`}
+                      onClick={() =>
+                        toggleBot(selectedBot)
+                      }
+                    >
+                      {selectedBot.isActive
+                        ? "■ توقف ربات"
+                        : "▶ فعال‌سازی ربات"}
+                    </button>
+
+                    <button
+                      className="btn btnGold"
+                      onClick={saveBot}
+                      disabled={saving}
+                    >
+                      {saving
+                        ? "در حال ذخیره..."
+                        : "✓ ذخیره تنظیمات"}
+                    </button>
+
+                  </div>
+                </div>
+
+                <section className="section">
+                  <div className="sectionTitle">
+                    <div className="sectionIcon">
+                      🤖
+                    </div>
+
+                    مشخصات اصلی ربات
+                  </div>
+
+                  <div className="grid">
+
+                    <div className="field">
+                      <label className="label">
+                        نام ربات
+                      </label>
+
+                      <input
+                        className="input"
+                        value={selectedBot.name || ""}
+                        onChange={(e) =>
+                          updateSelected({
+                            name: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        نماد
+                      </label>
+
+                      <select
+                        className="select"
+                        value={
+                          selectedBot.symbol ||
+                          "XAUUSD"
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            symbol: e.target.value,
+                          })
+                        }
+                      >
+                        {SYMBOLS.map((symbol) => (
+                          <option
+                            key={symbol}
+                            value={symbol}
+                          >
+                            {symbol}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        تایم‌فریم
+                      </label>
+
+                      <select
+                        className="select"
+                        value={
+                          selectedBot.timeframe ||
+                          "15m"
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            timeframe:
+                              e.target.value,
+                          })
+                        }
+                      >
+                        {TIMEFRAMES.map((tf) => (
+                          <option
+                            key={tf}
+                            value={tf}
+                          >
+                            {tf}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        نوع بازار
+                      </label>
+
+                      <select
+                        className="select"
+                        value={
+                          selectedBot.marketType ||
+                          "FOREX"
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            marketType:
+                              e.target.value,
+                          })
+                        }
+                      >
+                        {MARKET_TYPES.map((market) => (
+                          <option
+                            key={market}
+                            value={market}
+                          >
+                            {market}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حالت اجرا
+                      </label>
+
+                      <select
+                        className="select"
+                        value={config.executionMode}
+                        onChange={(e) =>
+                          updateConfig({
+                            executionMode:
+                              e.target.value as ExecutionMode,
+                          })
+                        }
+                      >
+                        <option value="MANUAL">
+                          دستی
+                        </option>
+
+                        <option value="AUTO_APPROVAL">
+                          اجرای خودکار پس از تأیید
+                        </option>
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        ارسال Telegram
+                      </label>
+
+                      <button
+                        className={`switch ${
+                          selectedBot.telegramEnabled
+                            ? "on"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          updateSelected({
+                            telegramEnabled:
+                              !selectedBot.telegramEnabled,
+                          })
+                        }
+                        aria-label="Telegram"
+                      >
+                        <span />
+                      </button>
+                    </div>
+
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="sectionTitle">
+                    <div className="sectionIcon">
+                      🧠
+                    </div>
+
+                    موتور تحلیل و فیلتر سیگنال
+                  </div>
+
+                  <div className="toggleGrid">
+
+                    <Toggle
+                      text="تحلیل چند تایم‌فریمی"
+                      value={config.multiTimeframe}
+                      onChange={(value) =>
+                        updateConfig({
+                          multiTimeframe: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="حمایت و مقاومت"
+                      value={config.supportResistance}
+                      onChange={(value) =>
+                        updateConfig({
+                          supportResistance: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="شکست معتبر"
+                      value={config.breakoutFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          breakoutFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="تأیید پولبک"
+                      value={config.pullbackFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          pullbackFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="فیلتر روند"
+                      value={config.trendFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          trendFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="مومنتوم"
+                      value={config.momentumFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          momentumFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="حجم / تأیید جریان"
+                      value={config.volumeFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          volumeFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="الگوهای کندلی"
+                      value={config.candlePatternFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          candlePatternFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="فیلتر نوسان"
+                      value={config.volatilityFilter}
+                      onChange={(value) =>
+                        updateConfig({
+                          volatilityFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="اجازه معامله خلاف روند"
+                      value={config.allowCounterTrend}
+                      onChange={(value) =>
+                        updateConfig({
+                          allowCounterTrend: value,
+                        })
+                      }
+                    />
+
                   </div>
 
                   <div
-                    className={`live-status ${
-                      selectedBot.isActive
-                        ? "live-on"
-                        : "live-off"
-                    }`}
+                    style={{
+                      marginTop: 15,
+                    }}
+                    className="grid"
                   >
-                    <span />
-                    {selectedBot.isActive
-                      ? "ربات روشن است"
-                      : "ربات خاموش است"}
+
+                    <div className="field">
+                      <label className="label">
+                        حداقل امتیاز سیگنال
+                      </label>
+
+                      <input
+                        className="range"
+                        type="range"
+                        min="50"
+                        max="100"
+                        step="1"
+                        value={
+                          selectedBot.signalThreshold ??
+                          config.minSignalScore
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            signalThreshold:
+                              Number(e.target.value),
+                          })
+                        }
+                      />
+
+                      <div className="rangeValue">
+                        {selectedBot.signalThreshold ??
+                          config.minSignalScore}
+                        %
+                      </div>
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حداقل تعداد تأییدیه
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="1"
+                        max="12"
+                        value={
+                          selectedBot.minConfirmations ??
+                          config.minConfirmations
+                        }
+                        onChange={(e) => {
+                          const value =
+                            numberValue(
+                              e.target.value,
+                              5
+                            );
+
+                          updateSelected({
+                            minConfirmations: value,
+                          });
+
+                          updateConfig({
+                            minConfirmations: value,
+                          });
+                        }}
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حداکثر سیگنال روزانه
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={config.maxSignalsPerDay}
+                        onChange={(e) =>
+                          updateConfig({
+                            maxSignalsPerDay:
+                              numberValue(
+                                e.target.value,
+                                10
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
                   </div>
-
-                  <button
-                    type="button"
-                    className={`power-button ${
-                      selectedBot.isActive
-                        ? "power-off"
-                        : "power-on"
-                    }`}
-                    onClick={toggleBot}
-                    disabled={saving}
-                  >
-                    <span>
-                      {selectedBot.isActive
-                        ? "■"
-                        : "▶"}
-                    </span>
-
-                    {selectedBot.isActive
-                      ? "خاموش کردن ربات"
-                      : "روشن کردن ربات"}
-                  </button>
-
-                  <p className="power-warning">
-                    {selectedBot.isActive
-                      ? "ربات در وضعیت فعال ثبت شده است. اجرای معامله واقعی فقط پس از اتصال Broker/MT5 انجام خواهد شد."
-                      : "ربات فعلاً معامله‌ای اجرا نمی‌کند. ابتدا تنظیمات را بررسی و سپس در صورت نیاز روشن کنید."}
-                  </p>
                 </section>
 
-                <div className="summary-grid">
-                  <div className="summary-card">
-                    <span>بازار</span>
-                    <strong>
-                      {selectedBot.symbol ||
-                        "—"}
-                    </strong>
+                <section className="section">
+                  <div className="sectionTitle">
+                    <div className="sectionIcon">
+                      🛡️
+                    </div>
+
+                    جلوگیری از سیگنال‌های تکراری
                   </div>
 
-                  <div className="summary-card">
-                    <span>تایم‌فریم</span>
-                    <strong>
-                      {selectedBot.timeframe ||
-                        "—"}
-                    </strong>
-                  </div>
+                  <div className="toggleGrid">
 
-                  <div className="summary-card profit">
-                    <span>حد سود</span>
-                    <strong>
-                      {money(
-                        selectedBot.takeProfit
-                      )}
-                    </strong>
-                  </div>
-
-                  <div className="summary-card loss">
-                    <span>حد ضرر</span>
-                    <strong>
-                      {money(
-                        selectedBot.stopLoss
-                      )}
-                    </strong>
-                  </div>
-
-                  <div className="summary-card rr">
-                    <span>ریسک به ریوارد</span>
-                    <strong>
-                      1:
-                      {numberValue(
-                        selectedBot.riskReward
-                      ).toFixed(2)}
-                    </strong>
-                  </div>
-                </div>
-
-                <div className="settings-grid">
-                  <Section
-                    icon="⚙"
-                    title="مشخصات اصلی"
-                    description="اطلاعات پایه‌ای ربات را کنترل کنید."
-                  >
-                    <div className="form-grid">
-                      <Field label="نام ربات">
-                        <input
-                          value={selectedBot.name}
-                          onChange={(event) =>
-                            updateSelected({
-                              name: event.target
-                                .value,
-                            })
-                          }
-                          placeholder="نام ربات"
-                        />
-                      </Field>
-
-                      <Field label="نوع بازار">
-                        <select
-                          value={
-                            selectedBot.marketType ||
-                            "FOREX"
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              marketType:
-                                event.target
-                                  .value,
-                            })
-                          }
-                        >
-                          {marketTypes.map(
-                            (item) => (
-                              <option
-                                key={item.value}
-                                value={
-                                  item.value
-                                }
-                              >
-                                {item.label}
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </Field>
-
-                      <Field
-                        label="نماد معاملاتی"
-                        hint="Symbol"
-                      >
-                        <select
-                          value={
-                            selectedBot.symbol ||
-                            "XAUUSD"
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              symbol:
-                                event.target
-                                  .value,
-                            })
-                          }
-                        >
-                          {symbols.map(
-                            (item) => (
-                              <option
-                                key={item.value}
-                                value={
-                                  item.value
-                                }
-                              >
-                                {item.label}
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </Field>
-
-                      <Field label="تایم‌فریم">
-                        <select
-                          value={
-                            selectedBot.timeframe ||
-                            "15m"
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              timeframe:
-                                event.target
-                                  .value,
-                            })
-                          }
-                        >
-                          {timeframes.map(
-                            (item) => (
-                              <option
-                                key={item.value}
-                                value={
-                                  item.value
-                                }
-                              >
-                                {item.label}
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </Field>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="💰"
-                    title="مدیریت حجم و ریسک"
-                    description="نحوه تعیین حجم معامله را مشخص کنید."
-                    tone="green"
-                  >
-                    <div className="mode-grid">
-                      <button
-                        type="button"
-                        className={`mode-card ${
-                          selectedBot.lotMode ===
-                          "FIXED"
-                            ? "mode-active"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          updateSelected({
-                            lotMode: "FIXED",
-                          })
-                        }
-                      >
-                        <strong>
-                          حجم ثابت
-                        </strong>
-                        <small>
-                          Lot Size ثابت
-                        </small>
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`mode-card ${
-                          selectedBot.lotMode ===
-                          "RISK_PERCENT"
-                            ? "mode-active"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          updateSelected({
-                            lotMode:
-                              "RISK_PERCENT",
-                          })
-                        }
-                      >
-                        <strong>
-                          ریسک درصدی
-                        </strong>
-                        <small>
-                          محاسبه بر اساس ریسک
-                        </small>
-                      </button>
-                    </div>
-
-                    <div className="form-grid">
-                      <Field
-                        label="حجم ثابت"
-                        hint="Lot"
-                      >
-                        <input
-                          type="number"
-                          min="0.001"
-                          step="0.001"
-                          value={
-                            selectedBot.lotSize
-                          }
-                          disabled={
-                            selectedBot.lotMode !==
-                            "FIXED"
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              lotSize:
-                                numberValue(
-                                  event.target
-                                    .value,
-                                  0.01
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field
-                        label="درصد ریسک"
-                        hint="%"
-                      >
-                        <input
-                          type="number"
-                          min="0.1"
-                          max="100"
-                          step="0.1"
-                          value={
-                            selectedBot.riskPercent
-                          }
-                          disabled={
-                            selectedBot.lotMode !==
-                            "RISK_PERCENT"
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              riskPercent:
-                                numberValue(
-                                  event.target
-                                    .value,
-                                  1
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="🎯"
-                    title="حد سود، حد ضرر و R:R"
-                    description="R:R به‌صورت خودکار از TP و SL محاسبه می‌شود."
-                    tone="green"
-                  >
-                    <div className="risk-grid">
-                      <div className="risk-input profit-input">
-                        <span>سود هدف</span>
-
-                        <div>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={
-                              selectedBot.takeProfit ??
-                              ""
-                            }
-                            onChange={(event) =>
-                              updateTakeProfit(
-                                numberValue(
-                                  event.target
-                                    .value
-                                )
-                              )
-                            }
-                          />
-
-                          <b>$</b>
-                        </div>
-                      </div>
-
-                      <div className="risk-input loss-input">
-                        <span>حد ضرر</span>
-
-                        <div>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={
-                              selectedBot.stopLoss ??
-                              ""
-                            }
-                            onChange={(event) =>
-                              updateStopLoss(
-                                numberValue(
-                                  event.target
-                                    .value
-                                )
-                              )
-                            }
-                          />
-
-                          <b>$</b>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rr-card">
-                      <div>
-                        <span>
-                          نسبت ریسک به ریوارد
-                        </span>
-
-                        <strong>
-                          1:
-                          {numberValue(
-                            selectedBot.riskReward
-                          ).toFixed(2)}
-                        </strong>
-                      </div>
-
-                      <p>
-                        مثال: سود $10 و ضرر $2
-                        به‌صورت خودکار برابر
-                        با R:R = 1:5 می‌شود.
-                      </p>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="🛡"
-                    title="مدیریت هوشمند معامله"
-                    description="مدیریت معامله پس از ورود."
-                    tone="purple"
-                  >
-                    <div className="toggle-grid">
-                      <Toggle
-                        checked={
-                          selectedBot.trailingStop
-                        }
-                        onChange={(value) =>
-                          updateSelected({
-                            trailingStop:
-                              value,
-                          })
-                        }
-                        title="Trailing Stop"
-                        description="جابجایی خودکار حد ضرر"
-                      />
-
-                      <Toggle
-                        checked={
-                          selectedBot.breakEven
-                        }
-                        onChange={(value) =>
-                          updateSelected({
-                            breakEven: value,
-                          })
-                        }
-                        title="Break Even"
-                        description="انتقال حد ضرر به نقطه ورود"
-                      />
-                    </div>
-
-                    <div className="form-grid">
-                      <Field label="فاصله Trailing Stop">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={
-                            selectedBot
-                              .trailingStopDistance ??
-                            ""
-                          }
-                          disabled={
-                            !selectedBot.trailingStop
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              trailingStopDistance:
-                                numberValue(
-                                  event.target
-                                    .value
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field label="تریگر Break Even">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={
-                            selectedBot
-                              .breakEvenTrigger ??
-                            ""
-                          }
-                          disabled={
-                            !selectedBot.breakEven
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              breakEvenTrigger:
-                                numberValue(
-                                  event.target
-                                    .value
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="📊"
-                    title="محدودیت‌های روزانه"
-                    description="برای کنترل ریسک روزانه ربات."
-                    tone="amber"
-                  >
-                    <div className="form-grid">
-                      <Field label="توقف بعد از سود">
-                        <div className="input-with-unit">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={
-                              selectedBot.dailyProfitStop ??
-                              ""
-                            }
-                            onChange={(event) =>
-                              updateSelected({
-                                dailyProfitStop:
-                                  numberValue(
-                                    event.target
-                                      .value
-                                  ),
-                              })
-                            }
-                          />
-                          <span>$</span>
-                        </div>
-                      </Field>
-
-                      <Field label="حد ضرر روزانه">
-                        <div className="input-with-unit">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={
-                              selectedBot.dailyLossLimit ??
-                              ""
-                            }
-                            onChange={(event) =>
-                              updateSelected({
-                                dailyLossLimit:
-                                  numberValue(
-                                    event.target
-                                      .value
-                                  ),
-                              })
-                            }
-                          />
-                          <span>$</span>
-                        </div>
-                      </Field>
-
-                      <Field label="حداکثر Stop Loss روزانه">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={
-                            selectedBot.maxDailyStopLosses
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              maxDailyStopLosses:
-                                numberValue(
-                                  event.target
-                                    .value,
-                                  3
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field label="حداکثر معاملات باز">
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={
-                            selectedBot.maxOpenTrades
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              maxOpenTrades:
-                                numberValue(
-                                  event.target
-                                    .value,
-                                  1
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="↕"
-                    title="جهت معاملات"
-                    description="تعیین کنید ربات اجازه چه معاملاتی دارد."
-                  >
-                    <div className="toggle-grid">
-                      <Toggle
-                        checked={
-                          selectedBot.buyEnabled
-                        }
-                        onChange={(value) =>
-                          updateSelected({
-                            buyEnabled: value,
-                          })
-                        }
-                        title="Buy"
-                        description="اجازه معاملات خرید"
-                      />
-
-                      <Toggle
-                        checked={
-                          selectedBot.sellEnabled
-                        }
-                        onChange={(value) =>
-                          updateSelected({
-                            sellEnabled: value,
-                          })
-                        }
-                        title="Sell"
-                        description="اجازه معاملات فروش"
-                      />
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="🧠"
-                    title="فیلترهای هوشمند"
-                    description="شرایطی که قبل از اجرای سیگنال بررسی می‌شوند."
-                    tone="purple"
-                  >
-                    <div className="toggle-grid">
-                      <Toggle
-                        checked={
-                          selectedBot.sessionFilter
-                        }
-                        onChange={(value) =>
-                          updateSelected({
-                            sessionFilter:
-                              value,
-                          })
-                        }
-                        title="Session Filter"
-                        description="فیلتر ساعات معاملاتی"
-                      />
-
-                      <Toggle
-                        checked={
-                          selectedBot.newsFilter
-                        }
-                        onChange={(value) =>
-                          updateSelected({
-                            newsFilter:
-                              value,
-                          })
-                        }
-                        title="News Filter"
-                        description="توقف در شرایط خبری"
-                      />
-                    </div>
-
-                    <div className="form-grid">
-                      <Field label="حداقل امتیاز سیگنال">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="1"
-                          value={
-                            selectedBot.signalThreshold
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              signalThreshold:
-                                numberValue(
-                                  event.target
-                                    .value,
-                                  80
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field label="حداقل تأییدها">
-                        <input
-                          type="number"
-                          min="1"
-                          max="20"
-                          step="1"
-                          value={
-                            selectedBot.minConfirmations
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              minConfirmations:
-                                numberValue(
-                                  event.target
-                                    .value,
-                                  5
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field label="حداکثر Spread">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={
-                            selectedBot.maxSpread ??
-                            ""
-                          }
-                          onChange={(event) =>
-                            updateSelected({
-                              maxSpread:
-                                event.target
-                                  .value === ""
-                                  ? null
-                                  : numberValue(
-                                      event.target
-                                        .value
-                                    ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field label="Cooldown">
-                        <div className="input-with-unit">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={
-                              selectedBot.cooldownMinutes
-                            }
-                            onChange={(event) =>
-                              updateSelected({
-                                cooldownMinutes:
-                                  numberValue(
-                                    event.target
-                                      .value,
-                                    5
-                                  ),
-                              })
-                            }
-                          />
-                          <span>دقیقه</span>
-                        </div>
-                      </Field>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="⚡"
-                    title="حالت اجرای ربات"
-                    description="نحوه اجازه دادن به اجرای قوانین ربات."
-                    tone="cyan"
-                  >
-                    <div className="mode-grid">
-                      <button
-                        type="button"
-                        className={`mode-card ${
-                          config.executionMode ===
-                          "MANUAL"
-                            ? "mode-active"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          updateConfig({
-                            executionMode:
-                              "MANUAL",
-                          })
-                        }
-                      >
-                        <strong>
-                          🖐 دستی
-                        </strong>
-
-                        <small>
-                          اجرای معامله فقط با تأیید کاربر
-                        </small>
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`mode-card ${
-                          config.executionMode ===
-                          "AUTO_APPROVAL"
-                            ? "mode-active"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          updateConfig({
-                            executionMode:
-                              "AUTO_APPROVAL",
-                          })
-                        }
-                      >
-                        <strong>
-                          ⚡ خودکار با تأیید
-                        </strong>
-
-                        <small>
-                          ربات طبق قوانین ذخیره‌شده آماده اجرای خودکار است
-                        </small>
-                      </button>
-                    </div>
-
-                    <div className="toggle-grid">
-                      <Toggle
-                        checked={
-                          config.requireConfirmation
-                        }
-                        onChange={(value) =>
-                          updateConfig({
-                            requireConfirmation:
-                              value,
-                          })
-                        }
-                        title="تأیید کاربر"
-                        description="قبل از اجرای معامله نیاز به تأیید داشته باشد"
-                      />
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="⛔"
-                    title="خاموشی خودکار"
-                    description="پس از رسیدن به تعداد مشخصی برد یا باخت، ربات خاموش شود."
-                    tone="red"
-                  >
-                    <div className="form-grid">
-                      <Field label="خاموش شدن بعد از برد">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={
-                            config.autoStopAfterWins
-                          }
-                          onChange={(event) =>
-                            updateConfig({
-                              autoStopAfterWins:
-                                numberValue(
-                                  event.target
-                                    .value
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-
-                      <Field label="خاموش شدن بعد از باخت">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={
-                            config.autoStopAfterLosses
-                          }
-                          onChange={(event) =>
-                            updateConfig({
-                              autoStopAfterLosses:
-                                numberValue(
-                                  event.target
-                                    .value
-                                ),
-                            })
-                          }
-                        />
-                      </Field>
-                    </div>
-
-                    <div className="rule-info">
-                      <span>۰ = غیرفعال</span>
-                      <span>
-                        این قوانین در{" "}
-                        <b>analysisConfig</b>{" "}
-                        ذخیره می‌شوند.
-                      </span>
-                    </div>
-                  </Section>
-
-                  <Section
-                    icon="📡"
-                    title="تلگرام"
-                    description="فعال‌سازی ثبت و ارسال سیگنال‌های ربات."
-                    tone="cyan"
-                  >
                     <Toggle
-                      checked={
-                        selectedBot.telegramEnabled
-                      }
+                      text="تا پایان سیگنال فعال، سیگنال جدید صادر نشود"
+                      value={config.stopAfterActiveSignal}
                       onChange={(value) =>
-                        updateSelected({
-                          telegramEnabled:
+                        updateConfig({
+                          stopAfterActiveSignal:
                             value,
                         })
                       }
-                      title="ارسال به Telegram"
-                      description="فعال‌سازی ارسال سیگنال پس از اتصال Telegram"
                     />
-                  </Section>
-                </div>
 
-                <div className="save-area">
-                  <div>
-                    <strong>
-                      تغییرات ذخیره نشده
-                    </strong>
+                    <Toggle
+                      text="جلوگیری از سیگنال تکراری"
+                      value={config.preventDuplicateSignals}
+                      onChange={(value) =>
+                        updateConfig({
+                          preventDuplicateSignals:
+                            value,
+                        })
+                      }
+                    />
 
-                    <span>
-                      بعد از تغییر تنظیمات، برای ثبت آن‌ها در دیتابیس روی ذخیره بزنید.
-                    </span>
                   </div>
 
-                  <button
-                    type="button"
-                    className="save-button"
-                    onClick={saveBot}
-                    disabled={saving}
+                  <div
+                    className="grid"
+                    style={{
+                      marginTop: 13,
+                    }}
                   >
-                    {saving
-                      ? "در حال ذخیره..."
-                      : "💾 ذخیره و بروزرسانی ربات"}
-                  </button>
+                    <div className="field">
+                      <label className="label">
+                        فاصله حداقل بین سیگنال‌ها
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="1440"
+                        value={
+                          config.signalCooldownMinutes
+                        }
+                        onChange={(e) =>
+                          updateConfig({
+                            signalCooldownMinutes:
+                              numberValue(
+                                e.target.value,
+                                5
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        TP1
+                      </label>
+
+                      <Toggle
+                        text="فعال"
+                        value={config.useTP1}
+                        onChange={(value) =>
+                          updateConfig({
+                            useTP1: value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        TP2 / TP3
+                      </label>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                        }}
+                      >
+                        <Toggle
+                          text="TP2"
+                          value={config.useTP2}
+                          onChange={(value) =>
+                            updateConfig({
+                              useTP2: value,
+                            })
+                          }
+                        />
+
+                        <Toggle
+                          text="TP3"
+                          value={config.useTP3}
+                          onChange={(value) =>
+                            updateConfig({
+                              useTP3: value,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="sectionTitle">
+                    <div className="sectionIcon">
+                      💰
+                    </div>
+
+                    مدیریت سرمایه و معامله
+                  </div>
+
+                  <div className="grid">
+
+                    <div className="field">
+                      <label className="label">
+                        روش مدیریت ریسک
+                      </label>
+
+                      <select
+                        className="select"
+                        value={config.riskMode}
+                        onChange={(e) =>
+                          updateConfig({
+                            riskMode:
+                              e.target.value as Config["riskMode"],
+                          })
+                        }
+                      >
+                        <option value="PERCENT">
+                          درصد سرمایه
+                        </option>
+
+                        <option value="FIXED_LOT">
+                          لات ثابت
+                        </option>
+
+                        <option value="FIXED_MONEY">
+                          مبلغ ثابت
+                        </option>
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        ریسک درصدی
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="20"
+                        step="0.1"
+                        value={
+                          selectedBot.riskPercent ?? 1
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            riskPercent:
+                              numberValue(
+                                e.target.value,
+                                1
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        لات
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={
+                          selectedBot.lotSize ?? 0.01
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            lotSize:
+                              numberValue(
+                                e.target.value,
+                                0.01
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        مبلغ ریسک ثابت
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          config.fixedRiskMoney
+                        }
+                        onChange={(e) =>
+                          updateConfig({
+                            fixedRiskMoney:
+                              numberValue(
+                                e.target.value,
+                                10
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        Stop Loss
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          selectedBot.stopLoss ?? 1
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            stopLoss:
+                              numberValue(
+                                e.target.value,
+                                1
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        Risk / Reward
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={
+                          selectedBot.riskReward ?? 3
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            riskReward:
+                              numberValue(
+                                e.target.value,
+                                3
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        TP اصلی
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          selectedBot.takeProfit ?? 3
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            takeProfit:
+                              numberValue(
+                                e.target.value,
+                                3
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حداکثر معاملات باز
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={
+                          selectedBot.maxOpenTrades ?? 1
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            maxOpenTrades:
+                              numberValue(
+                                e.target.value,
+                                1
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حداکثر اسپرد
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        value={
+                          selectedBot.maxSpread ?? 30
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            maxSpread:
+                              numberValue(
+                                e.target.value,
+                                30
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                  </div>
+
+                  <div
+                    className="toggleGrid"
+                    style={{
+                      marginTop: 14,
+                    }}
+                  >
+                    <Toggle
+                      text="اجازه BUY"
+                      value={
+                        selectedBot.buyEnabled !== false
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          buyEnabled: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="اجازه SELL"
+                      value={
+                        selectedBot.sellEnabled !== false
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          sellEnabled: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="Trailing Stop"
+                      value={
+                        selectedBot.trailingStop !== false
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          trailingStop: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="Break-even"
+                      value={
+                        selectedBot.breakEven !== false
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          breakEven: value,
+                        })
+                      }
+                    />
+
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="sectionTitle">
+                    <div className="sectionIcon">
+                      ⏱️
+                    </div>
+
+                    محدودیت‌های روزانه
+                  </div>
+
+                  <div className="grid">
+
+                    <div className="field">
+                      <label className="label">
+                        توقف بعد از سود روزانه
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          selectedBot.dailyProfitStop ??
+                          20
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            dailyProfitStop:
+                              numberValue(
+                                e.target.value,
+                                20
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حداکثر ضرر روزانه
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          selectedBot.dailyLossLimit ??
+                          12
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            dailyLossLimit:
+                              numberValue(
+                                e.target.value,
+                                12
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        حداکثر Stop Loss روزانه
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={
+                          selectedBot.maxDailyStopLosses ??
+                          3
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            maxDailyStopLosses:
+                              numberValue(
+                                e.target.value,
+                                3
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        توقف بعد از چند برد
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        value={
+                          config.autoStopAfterWins
+                        }
+                        onChange={(e) =>
+                          updateConfig({
+                            autoStopAfterWins:
+                              numberValue(
+                                e.target.value,
+                                0
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        توقف بعد از چند باخت
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        value={
+                          config.autoStopAfterLosses
+                        }
+                        onChange={(e) =>
+                          updateConfig({
+                            autoStopAfterLosses:
+                              numberValue(
+                                e.target.value,
+                                0
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label className="label">
+                        Cooldown
+                      </label>
+
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        value={
+                          selectedBot.cooldownMinutes ??
+                          config.signalCooldownMinutes
+                        }
+                        onChange={(e) =>
+                          updateSelected({
+                            cooldownMinutes:
+                              numberValue(
+                                e.target.value,
+                                5
+                              ),
+                          })
+                        }
+                      />
+                    </div>
+
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="sectionTitle">
+                    <div className="sectionIcon">
+                      📰
+                    </div>
+
+                    فیلترهای بازار
+                  </div>
+
+                  <div className="toggleGrid">
+
+                    <Toggle
+                      text="فیلتر Session"
+                      value={
+                        selectedBot.sessionFilter !== false
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          sessionFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="فیلتر اخبار"
+                      value={
+                        selectedBot.newsFilter !== false
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          newsFilter: value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="نیاز به تأیید نهایی"
+                      value={config.requireConfirmation}
+                      onChange={(value) =>
+                        updateConfig({
+                          requireConfirmation:
+                            value,
+                        })
+                      }
+                    />
+
+                    <Toggle
+                      text="فعال‌سازی ارسال Telegram"
+                      value={
+                        selectedBot.telegramEnabled === true
+                      }
+                      onChange={(value) =>
+                        updateSelected({
+                          telegramEnabled: value,
+                        })
+                      }
+                    />
+
+                  </div>
+                </section>
+
+                <div className="footerInfo">
+                  این پنل فقط تنظیمات واقعی ربات را ذخیره می‌کند.
+                  تولید سیگنال، محاسبه Entry/SL/TP، تشخیص نتیجه،
+                  ارسال Telegram و اجرای معامله باید در سرویس
+                  سمت سرور انجام شود تا اطلاعات جعلی از UI تولید نشود.
                 </div>
-              </>
+
+              </div>
             )}
-          </>
-        )}
+          </section>
+        </div>
       </div>
 
-      <style jsx>{styles}</style>
+      {showCreate && (
+        <div
+          className="modalBack"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowCreate(false);
+            }
+          }}
+        >
+          <div className="modal">
+
+            <div className="modalTitle">
+              ساخت ربات تحلیلگر جدید
+            </div>
+
+            <div className="grid">
+
+              <div
+                className="field"
+                style={{
+                  gridColumn: "1 / -1",
+                }}
+              >
+                <label className="label">
+                  نام ربات
+                </label>
+
+                <input
+                  className="input"
+                  value={newBot.name}
+                  onChange={(e) =>
+                    setNewBot({
+                      ...newBot,
+                      name: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">
+                  نماد
+                </label>
+
+                <select
+                  className="select"
+                  value={newBot.symbol}
+                  onChange={(e) =>
+                    setNewBot({
+                      ...newBot,
+                      symbol: e.target.value,
+                    })
+                  }
+                >
+                  {SYMBOLS.map((symbol) => (
+                    <option
+                      key={symbol}
+                      value={symbol}
+                    >
+                      {symbol}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label className="label">
+                  تایم‌فریم
+                </label>
+
+                <select
+                  className="select"
+                  value={newBot.timeframe}
+                  onChange={(e) =>
+                    setNewBot({
+                      ...newBot,
+                      timeframe: e.target.value,
+                    })
+                  }
+                >
+                  {TIMEFRAMES.map((tf) => (
+                    <option
+                      key={tf}
+                      value={tf}
+                    >
+                      {tf}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label className="label">
+                  بازار
+                </label>
+
+                <select
+                  className="select"
+                  value={newBot.marketType}
+                  onChange={(e) =>
+                    setNewBot({
+                      ...newBot,
+                      marketType: e.target.value,
+                    })
+                  }
+                >
+                  {MARKET_TYPES.map((market) => (
+                    <option
+                      key={market}
+                      value={market}
+                    >
+                      {market}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+            </div>
+
+            <div className="modalActions">
+
+              <button
+                className="btn"
+                onClick={() =>
+                  setShowCreate(false)
+                }
+              >
+                انصراف
+              </button>
+
+              <button
+                className="btn btnGold"
+                onClick={createBot}
+                disabled={saving}
+              >
+                {saving
+                  ? "در حال ساخت..."
+                  : "ساخت ربات"}
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
     </main>
   );
 }
 
-const styles = `
-  * {
-    box-sizing: border-box;
-  }
-
-  .page {
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at 85% 5%, rgba(14, 165, 233, .12), transparent 28%),
-      radial-gradient(circle at 10% 40%, rgba(37, 99, 235, .09), transparent 30%),
-      #050a14;
-    color: #e5edf7;
-    padding: 28px 14px 90px;
-    position: relative;
-    overflow-x: hidden;
-  }
-
-  .ambient {
-    position: fixed;
-    width: 280px;
-    height: 280px;
-    border-radius: 50%;
-    filter: blur(100px);
-    pointer-events: none;
-    opacity: .12;
-  }
-
-  .ambient-one {
-    background: #00d9ff;
-    top: 80px;
-    right: -150px;
-  }
-
-  .ambient-two {
-    background: #2563eb;
-    bottom: 50px;
-    left: -170px;
-  }
-
-  .container {
-    width: min(1180px, 100%);
-    margin: 0 auto;
-    position: relative;
-    z-index: 2;
-  }
-
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 22px;
-    margin-bottom: 24px;
-  }
-
-  .brand-area {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-  }
-
-  .brand-icon {
-    width: 58px;
-    height: 58px;
-    display: grid;
-    place-items: center;
-    border-radius: 18px;
-    background: linear-gradient(135deg, rgba(14, 165, 233, .18), rgba(37, 99, 235, .14));
-    border: 1px solid rgba(56, 189, 248, .22);
-    font-size: 27px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, .22);
-  }
-
-  .eyebrow {
-    color: #67e8f9;
-    font-size: 10px;
-    letter-spacing: 1.7px;
-    font-weight: 800;
-    display: block;
-    margin-bottom: 5px;
-  }
-
-  .topbar h1 {
-    margin: 0;
-    font-size: clamp(25px, 4vw, 38px);
-    line-height: 1.2;
-    color: #f8fbff;
-  }
-
-  .topbar p {
-    margin: 7px 0 0;
-    color: #7e91aa;
-    font-size: 13px;
-  }
-
-  .top-actions {
-    display: flex;
-    gap: 10px;
-  }
-
-  button {
-    font: inherit;
-  }
-
-  button:disabled {
-    opacity: .58;
-    cursor: not-allowed;
-  }
-
-  .primary-button,
-  .secondary-button,
-  .save-button {
-    border: 0;
-    cursor: pointer;
-    color: white;
-    border-radius: 14px;
-    padding: 13px 18px;
-    font-weight: 800;
-    transition: .2s ease;
-  }
-
-  .primary-button {
-    background: linear-gradient(135deg, #06b6d4, #2563eb);
-    box-shadow: 0 10px 30px rgba(37, 99, 235, .22);
-  }
-
-  .primary-button:hover,
-  .save-button:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.08);
-  }
-
-  .secondary-button {
-    color: #dcecff;
-    background: #0b1423;
-    border: 1px solid #1d3047;
-  }
-
-  .large {
-    padding: 15px 24px;
-  }
-
-  .notice {
-    border-radius: 14px;
-    padding: 13px 16px;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 13px;
-  }
-
-  .success-notice {
-    background: rgba(16, 185, 129, .09);
-    border: 1px solid rgba(16, 185, 129, .22);
-    color: #6ee7b7;
-  }
-
-  .error-notice {
-    background: rgba(244, 63, 94, .08);
-    border: 1px solid rgba(244, 63, 94, .22);
-    color: #fda4af;
-  }
-
-  .bot-selector,
-  .hero-card,
-  .section-card,
-  .save-area,
-  .empty-card,
-  .loading-card {
-    background: linear-gradient(145deg, rgba(10, 20, 35, .94), rgba(6, 13, 25, .96));
-    border: 1px solid #15253a;
-    box-shadow: 0 18px 55px rgba(0, 0, 0, .18);
-  }
-
-  .bot-selector {
-    border-radius: 22px;
-    padding: 18px;
-    margin-bottom: 16px;
-  }
-
-  .selector-title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 15px;
-    margin-bottom: 14px;
-  }
-
-  .selector-title h2 {
-    margin: 0;
-    font-size: 20px;
-  }
-
-  .bot-count {
-    color: #7dd3fc;
-    background: rgba(14, 165, 233, .08);
-    border: 1px solid rgba(14, 165, 233, .15);
-    padding: 7px 11px;
-    border-radius: 999px;
-    font-size: 12px;
-  }
-
-  .bot-list {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .bot-tab {
-    min-width: 0;
-    position: relative;
-    text-align: right;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 13px;
-    border-radius: 16px;
-    color: #aebdd0;
-    background: #08111e;
-    border: 1px solid #14263b;
-    cursor: pointer;
-    transition: .2s ease;
-  }
-
-  .bot-tab:hover {
-    border-color: #244966;
-  }
-
-  .bot-tab-active {
-    color: white;
-    border-color: #0891b2;
-    background: linear-gradient(135deg, rgba(8, 145, 178, .14), rgba(37, 99, 235, .10));
-    box-shadow: inset 0 0 30px rgba(14, 165, 233, .04);
-  }
-
-  .bot-tab-icon {
-    width: 37px;
-    height: 37px;
-    flex: 0 0 37px;
-    display: grid;
-    place-items: center;
-    border-radius: 11px;
-    background: #101c2c;
-  }
-
-  .bot-tab-content {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .bot-tab-content strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .bot-tab-content small {
-    color: #71839a;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: auto;
-  }
-
-  .status-on {
-    background: #34d399;
-    box-shadow: 0 0 12px rgba(52, 211, 153, .7);
-  }
-
-  .status-off {
-    background: #475569;
-  }
-
-  .hero-card {
-    border-radius: 24px;
-    padding: 22px;
-    margin-bottom: 16px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .hero-card::after {
-    content: "";
-    position: absolute;
-    width: 220px;
-    height: 220px;
-    border-radius: 50%;
-    background: rgba(14, 165, 233, .06);
-    left: -100px;
-    bottom: -150px;
-    pointer-events: none;
-  }
-
-  .hero-main {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .hero-icon {
-    width: 55px;
-    height: 55px;
-    border-radius: 17px;
-    display: grid;
-    place-items: center;
-    font-size: 26px;
-    background: linear-gradient(135deg, rgba(14, 165, 233, .16), rgba(37, 99, 235, .13));
-    border: 1px solid rgba(56, 189, 248, .2);
-  }
-
-  .hero-card h2 {
-    margin: 0;
-    font-size: 25px;
-  }
-
-  .hero-card p {
-    color: #71839a;
-    margin: 6px 0 0;
-  }
-
-  .live-status {
-    position: absolute;
-    top: 22px;
-    left: 22px;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 12px;
-    padding: 7px 10px;
-    border-radius: 999px;
-  }
-
-  .live-status span {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-  }
-
-  .live-on {
-    color: #6ee7b7;
-    background: rgba(16, 185, 129, .08);
-  }
-
-  .live-on span {
-    background: #34d399;
-    box-shadow: 0 0 10px #34d399;
-  }
-
-  .live-off {
-    color: #94a3b8;
-    background: rgba(100, 116, 139, .08);
-  }
-
-  .live-off span {
-    background: #64748b;
-  }
-
-  .power-button {
-    width: 100%;
-    border: 1px solid;
-    border-radius: 15px;
-    padding: 14px;
-    margin-top: 20px;
-    cursor: pointer;
-    font-weight: 900;
-    transition: .2s ease;
-  }
-
-  .power-button span {
-    margin-left: 7px;
-  }
-
-  .power-on {
-    background: rgba(16, 185, 129, .08);
-    border-color: rgba(16, 185, 129, .28);
-    color: #6ee7b7;
-  }
-
-  .power-off {
-    background: rgba(244, 63, 94, .07);
-    border-color: rgba(244, 63, 94, .25);
-    color: #fda4af;
-  }
-
-  .power-button:hover {
-    transform: translateY(-1px);
-  }
-
-  .power-warning {
-    text-align: center;
-    font-size: 11px !important;
-    color: #64748b !important;
-    margin-bottom: 0 !important;
-  }
-
-  .summary-grid {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-
-  .summary-card {
-    padding: 16px;
-    border-radius: 17px;
-    background: #07111e;
-    border: 1px solid #14253a;
-  }
-
-  .summary-card span {
-    display: block;
-    color: #63758b;
-    font-size: 11px;
-    margin-bottom: 8px;
-  }
-
-  .summary-card strong {
-    color: #dbeafe;
-    font-size: 18px;
-  }
-
-  .summary-card.profit strong {
-    color: #34d399;
-  }
-
-  .summary-card.loss strong {
-    color: #fb7185;
-  }
-
-  .summary-card.rr strong {
-    color: #a78bfa;
-  }
-
-  .settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-
-  .section-card {
-    border-radius: 22px;
-    overflow: hidden;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 13px;
-    padding: 19px 20px;
-    border-bottom: 1px solid #122236;
-  }
-
-  .section-header h2 {
-    margin: 0;
-    color: #f1f5f9;
-    font-size: 17px;
-  }
-
-  .section-header p {
-    margin: 5px 0 0;
-    color: #6f8299;
-    font-size: 11px;
-    line-height: 1.7;
-  }
-
-  .icon-box {
-    width: 42px;
-    height: 42px;
-    flex: 0 0 42px;
-    display: grid;
-    place-items: center;
-    border-radius: 13px;
-    font-size: 19px;
-  }
-
-  .icon-cyan {
-    background: rgba(14, 165, 233, .1);
-    color: #67e8f9;
-    border: 1px solid rgba(14, 165, 233, .17);
-  }
-
-  .icon-green {
-    background: rgba(16, 185, 129, .09);
-    color: #6ee7b7;
-    border: 1px solid rgba(16, 185, 129, .17);
-  }
-
-  .icon-red {
-    background: rgba(244, 63, 94, .08);
-    color: #fda4af;
-    border: 1px solid rgba(244, 63, 94, .17);
-  }
-
-  .icon-purple {
-    background: rgba(139, 92, 246, .09);
-    color: #c4b5fd;
-    border: 1px solid rgba(139, 92, 246, .17);
-  }
-
-  .icon-amber {
-    background: rgba(245, 158, 11, .09);
-    color: #fcd34d;
-    border: 1px solid rgba(245, 158, 11, .17);
-  }
-
-  .section-body {
-    padding: 19px;
-  }
-
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-  }
-
-  .field {
-    min-width: 0;
-  }
-
-  .field-label {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 7px;
-    color: #cbd5e1;
-    font-size: 12px;
-  }
-
-  .field-label small {
-    color: #52657d;
-    direction: ltr;
-  }
-
-  input,
-  select {
-    width: 100%;
-    height: 46px;
-    outline: none;
-    border-radius: 12px;
-    border: 1px solid #172b42;
-    background: #070f1b;
-    color: #e5edf7;
-    padding: 0 13px;
-    transition: .18s ease;
-    font-size: 13px;
-  }
-
-  input:focus,
-  select:focus {
-    border-color: #0891b2;
-    box-shadow: 0 0 0 3px rgba(8, 145, 178, .08);
-  }
-
-  input:disabled,
-  select:disabled {
-    opacity: .38;
-    cursor: not-allowed;
-  }
-
-  select {
-    cursor: pointer;
-  }
-
-  .mode-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-
-  .mode-card {
-    text-align: right;
-    padding: 14px;
-    border-radius: 14px;
-    border: 1px solid #172b42;
-    background: #07111e;
-    color: #dbeafe;
-    cursor: pointer;
-    transition: .2s ease;
-  }
-
-  .mode-card strong,
-  .mode-card small {
-    display: block;
-  }
-
-  .mode-card small {
-    margin-top: 5px;
-    color: #64748b;
-    font-size: 10px;
-  }
-
-  .mode-active {
-    border-color: #0891b2;
-    background: rgba(8, 145, 178, .1);
-    box-shadow: inset 0 0 25px rgba(8, 145, 178, .04);
-  }
-
-  .risk-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .risk-input {
-    border-radius: 16px;
-    padding: 14px;
-    border: 1px solid #172b42;
-    background: #07111e;
-  }
-
-  .risk-input > span {
-    display: block;
-    color: #64748b;
-    font-size: 11px;
-    margin-bottom: 8px;
-  }
-
-  .risk-input > div {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .risk-input input {
-    background: transparent;
-    border: 0;
-    padding: 0;
-    height: 35px;
-    font-size: 22px;
-    font-weight: 900;
-  }
-
-  .risk-input b {
-    font-size: 18px;
-  }
-
-  .profit-input {
-    border-color: rgba(16, 185, 129, .18);
-  }
-
-  .profit-input b {
-    color: #34d399;
-  }
-
-  .loss-input {
-    border-color: rgba(244, 63, 94, .18);
-  }
-
-  .loss-input b {
-    color: #fb7185;
-  }
-
-  .rr-card {
-    margin-top: 12px;
-    padding: 15px;
-    border-radius: 15px;
-    background: linear-gradient(135deg, rgba(139, 92, 246, .08), rgba(37, 99, 235, .06));
-    border: 1px solid rgba(139, 92, 246, .16);
-  }
-
-  .rr-card > div {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .rr-card span {
-    color: #8998ab;
-    font-size: 12px;
-  }
-
-  .rr-card strong {
-    color: #c4b5fd;
-    font-size: 20px;
-  }
-
-  .rr-card p {
-    margin: 8px 0 0;
-    color: #66788f;
-    font-size: 10px;
-    line-height: 1.7;
-  }
-
-  .toggle-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-
-  .toggle-row {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    text-align: right;
-    padding: 13px;
-    border-radius: 14px;
-    border: 1px solid #172b42;
-    background: #07111e;
-    color: #dbeafe;
-    cursor: pointer;
-  }
-
-  .toggle-active {
-    border-color: rgba(14, 165, 233, .3);
-    background: rgba(14, 165, 233, .06);
-  }
-
-  .switch {
-    width: 42px;
-    height: 23px;
-    flex: 0 0 42px;
-    border-radius: 999px;
-    padding: 3px;
-    background: #1e293b;
-    transition: .2s ease;
-  }
-
-  .switch span {
-    display: block;
-    width: 17px;
-    height: 17px;
-    border-radius: 50%;
-    background: #64748b;
-    transition: .2s ease;
-  }
-
-  .switch-on {
-    background: #0891b2;
-  }
-
-  .switch-on span {
-    transform: translateX(-19px);
-    background: white;
-  }
-
-  .toggle-copy {
-    min-width: 0;
-  }
-
-  .toggle-copy strong,
-  .toggle-copy small {
-    display: block;
-  }
-
-  .toggle-copy strong {
-    font-size: 12px;
-  }
-
-  .toggle-copy small {
-    color: #61738a;
-    margin-top: 3px;
-    font-size: 9px;
-  }
-
-  .input-with-unit {
-    position: relative;
-  }
-
-  .input-with-unit input {
-    padding-left: 65px;
-  }
-
-  .input-with-unit span {
-    position: absolute;
-    left: 13px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #64748b;
-    font-size: 10px;
-    pointer-events: none;
-  }
-
-  .rule-info {
-    margin-top: 13px;
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    color: #64748b;
-    font-size: 10px;
-  }
-
-  .rule-info b {
-    color: #94a3b8;
-    direction: ltr;
-    display: inline-block;
-  }
-
-  .save-area {
-    margin-top: 16px;
-    border-radius: 22px;
-    padding: 17px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    position: sticky;
-    bottom: 12px;
-    z-index: 10;
-    backdrop-filter: blur(18px);
-  }
-
-  .save-area strong,
-  .save-area span {
-    display: block;
-  }
-
-  .save-area strong {
-    color: #e2e8f0;
-    font-size: 13px;
-  }
-
-  .save-area span {
-    color: #60738a;
-    font-size: 10px;
-    margin-top: 4px;
-  }
-
-  .save-button {
-    min-width: 250px;
-    background: linear-gradient(135deg, #06b6d4, #2563eb);
-  }
-
-  .empty-card,
-  .loading-card {
-    border-radius: 24px;
-    padding: 60px 25px;
-    text-align: center;
-  }
-
-  .empty-icon,
-  .loading-orb {
-    width: 70px;
-    height: 70px;
-    margin: 0 auto 16px;
-    border-radius: 22px;
-    display: grid;
-    place-items: center;
-    background: rgba(14, 165, 233, .08);
-    border: 1px solid rgba(14, 165, 233, .17);
-    font-size: 30px;
-  }
-
-  .empty-card h2,
-  .loading-card h1 {
-    margin: 0;
-    font-size: 22px;
-  }
-
-  .empty-card p,
-  .loading-card p {
-    color: #6d8097;
-    font-size: 12px;
-    margin: 9px 0 20px;
-  }
-
-  @media (max-width: 900px) {
-    .settings-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .summary-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 680px) {
-    .page {
-      padding: 18px 10px 80px;
-    }
-
-    .topbar {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .top-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .top-actions button {
-      width: 100%;
-    }
-
-    .brand-icon {
-      width: 50px;
-      height: 50px;
-      flex-basis: 50px;
-    }
-
-    .topbar h1 {
-      font-size: 25px;
-    }
-
-    .bot-list {
-      grid-template-columns: 1fr;
-    }
-
-    .summary-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .summary-card:last-child {
-      grid-column: 1 / -1;
-    }
-
-    .form-grid,
-    .risk-grid,
-    .toggle-grid,
-    .mode-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .hero-card {
-      padding: 18px;
-    }
-
-    .live-status {
-      position: static;
-      display: inline-flex;
-      margin-top: 15px;
-    }
-
-    .section-header {
-      padding: 16px;
-    }
-
-    .section-body {
-      padding: 15px;
-    }
-
-    .save-area {
-      flex-direction: column;
-      align-items: stretch;
-      bottom: 7px;
-    }
-
-    .save-button {
-      min-width: 0;
-      width: 100%;
-    }
-
-    .rule-info {
-      flex-direction: column;
-    }
-  }
-
-  @media (max-width: 420px) {
-    .page {
-      padding-left: 8px;
-      padding-right: 8px;
-    }
-
-    .top-actions {
-      grid-template-columns: 1fr;
-    }
-
-    .summary-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .summary-card strong {
-      font-size: 16px;
-    }
-
-    .hero-card h2 {
-      font-size: 21px;
-    }
-  }
-`;
+function Toggle({
+  text,
+  value,
+  onChange,
+}: {
+  text: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="toggle">
+      <div className="toggleText">
+        {text}
+      </div>
+
+      <button
+        type="button"
+        className={`switch ${value ? "on" : ""}`}
+        onClick={() => onChange(!value)}
+        aria-label={text}
+      >
+        <span />
+      </button>
+    </div>
+  );
+}
