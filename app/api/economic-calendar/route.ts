@@ -1,144 +1,309 @@
-import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+
 import { getSession } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CALENDAR_API =
+const FINANCE_CALENDAR_URL =
   "https://www.financecalendar.com/wp-json/fc/v1/calendar";
 
-const SOURCE_URL = "https://www.financecalendar.com";
+const FINANCE_CALENDAR_HOME =
+  "https://www.financecalendar.com";
 
-const DEFAULT_DAYS = 14;
-const DEFAULT_ALERT_MINUTES = [120];
+type FinanceCalendarEvent = {
+  date?: string;
+  time_utc?: string;
+  time_et?: string;
+  all_day?: boolean;
 
-const DEFAULT_CURRENCIES = [
-  "USD",
-  "EUR",
-  "GBP",
-  "JPY",
-  "CHF",
-  "CAD",
-  "AUD",
-  "NZD",
-  "CNY",
-];
+  name?: string;
+  title?: string;
 
-type CalendarItem = Record<string, unknown>;
+  impact?: string;
+  category?: string;
 
-function text(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
+  consensus?: string | null;
+  prior?: string | null;
+  actual?: string | null;
 
-  const result = String(value).trim();
+  url?: string | null;
+};
 
-  return result.length ? result : null;
+type FinanceCalendarResponse =
+  | FinanceCalendarEvent[]
+  | {
+      events?: FinanceCalendarEvent[];
+      attribution?: {
+        source?: string;
+        terms?: string;
+        docs?: string;
+      };
+    };
+
+type NewsSettingsShape = {
+  highImpact: boolean;
+  mediumImpact: boolean;
+  lowImpact: boolean;
+  currencies: string[];
+  alertMinutes: number[];
+  telegramEnabled: boolean;
+  newsFilterEnabled: boolean;
+  marketRiskEnabled: boolean;
+};
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function number(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+function asString(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
   }
 
-  if (typeof value === "string") {
-    const parsed = Number(value);
+  const text = String(value).trim();
 
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return null;
+  return text.length > 0 ? text : null;
 }
 
-function importanceToNumber(value: unknown): number {
-  const raw = String(value ?? "").toLowerCase();
+function normalizeImpact(value: unknown): number {
+  const impact = String(value ?? "")
+    .trim()
+    .toLowerCase();
 
-  if (raw.includes("high")) return 3;
-  if (raw.includes("medium")) return 2;
-  if (raw.includes("low")) return 1;
+  if (
+    impact === "high" ||
+    impact === "3" ||
+    impact === "critical"
+  ) {
+    return 3;
+  }
+
+  if (
+    impact === "medium" ||
+    impact === "2" ||
+    impact === "moderate"
+  ) {
+    return 2;
+  }
+
+  if (
+    impact === "low" ||
+    impact === "1"
+  ) {
+    return 1;
+  }
 
   return 1;
 }
 
-function inferCurrency(item: CalendarItem): string | null {
-  const direct =
-    text(item.currency) ||
-    text(item.currency_code) ||
-    text(item.currencyCode);
+function inferCurrency(
+  title: string,
+  name: string,
+  country: string | null
+): string | null {
+  const text =
+    `${title} ${name} ${country ?? ""}`.toUpperCase();
 
-  if (direct) {
-    return direct.toUpperCase();
-  }
-
-  const title = `${text(item.name) ?? ""} ${
-    text(item.title) ?? ""
-  }`.toUpperCase();
-
-  const currencies = [
+  const currencyCodes = [
     "USD",
     "EUR",
     "GBP",
     "JPY",
-    "CHF",
-    "CAD",
     "AUD",
+    "CAD",
+    "CHF",
     "NZD",
     "CNY",
+    "CNH",
+    "SEK",
+    "NOK",
+    "SGD",
+    "HKD",
+    "MXN",
+    "BRL",
+    "ZAR",
   ];
 
-  for (const currency of currencies) {
-    if (title.includes(currency)) {
-      return currency;
+  for (const code of currencyCodes) {
+    if (text.includes(code)) {
+      return code;
     }
   }
 
-  const country = `${text(item.country) ?? ""}`.toUpperCase();
-
-  if (country.includes("UNITED STATES") || country === "US") {
+  if (
+    text.includes("UNITED STATES") ||
+    text.includes("US ") ||
+    text.includes("U.S.")
+  ) {
     return "USD";
   }
 
-  if (country.includes("UNITED KINGDOM") || country === "GB") {
+  if (
+    text.includes("EUROZONE") ||
+    text.includes("EURO AREA") ||
+    text.includes("EUROPE")
+  ) {
+    return "EUR";
+  }
+
+  if (
+    text.includes("UNITED KINGDOM") ||
+    text.includes("UK ")
+  ) {
     return "GBP";
   }
 
-  if (country.includes("JAPAN") || country === "JP") {
+  if (text.includes("JAPAN")) {
     return "JPY";
   }
 
-  if (country.includes("EURO")) {
-    return "EUR";
+  if (text.includes("AUSTRALIA")) {
+    return "AUD";
+  }
+
+  if (text.includes("CANADA")) {
+    return "CAD";
+  }
+
+  if (text.includes("SWITZERLAND")) {
+    return "CHF";
+  }
+
+  if (text.includes("NEW ZEALAND")) {
+    return "NZD";
+  }
+
+  if (text.includes("CHINA")) {
+    return "CNY";
   }
 
   return null;
 }
 
-function inferCountry(item: CalendarItem): string | null {
-  return (
-    text(item.country) ||
-    text(item.country_name) ||
-    text(item.region) ||
-    null
-  );
+function inferCountry(
+  title: string,
+  name: string
+): string | null {
+  const text =
+    `${title} ${name}`.toUpperCase();
+
+  if (
+    text.includes("UNITED STATES") ||
+    text.includes("US ") ||
+    text.includes("U.S.") ||
+    text.includes("FEDERAL RESERVE") ||
+    text.includes("FOMC") ||
+    text.includes("NFP") ||
+    text.includes("NONFARM") ||
+    text.includes("CPI")
+  ) {
+    return "United States";
+  }
+
+  if (
+    text.includes("UNITED KINGDOM") ||
+    text.includes("UK ") ||
+    text.includes("BOE") ||
+    text.includes("BANK OF ENGLAND")
+  ) {
+    return "United Kingdom";
+  }
+
+  if (
+    text.includes("EUROZONE") ||
+    text.includes("EURO AREA") ||
+    text.includes("ECB") ||
+    text.includes("EUROPEAN CENTRAL BANK")
+  ) {
+    return "Euro Area";
+  }
+
+  if (
+    text.includes("JAPAN") ||
+    text.includes("BOJ") ||
+    text.includes("BANK OF JAPAN")
+  ) {
+    return "Japan";
+  }
+
+  if (
+    text.includes("CANADA") ||
+    text.includes("BOC") ||
+    text.includes("BANK OF CANADA")
+  ) {
+    return "Canada";
+  }
+
+  if (
+    text.includes("AUSTRALIA") ||
+    text.includes("RBA") ||
+    text.includes("RESERVE BANK OF AUSTRALIA")
+  ) {
+    return "Australia";
+  }
+
+  if (
+    text.includes("NEW ZEALAND") ||
+    text.includes("RBNZ")
+  ) {
+    return "New Zealand";
+  }
+
+  if (
+    text.includes("SWITZERLAND") ||
+    text.includes("SNB")
+  ) {
+    return "Switzerland";
+  }
+
+  if (
+    text.includes("CHINA") ||
+    text.includes("PBOC")
+  ) {
+    return "China";
+  }
+
+  return null;
 }
 
-function parseEventTime(item: CalendarItem): Date | null {
-  const possibleValues = [
-    item.time_utc,
-    item.datetime,
-    item.datetime_utc,
-    item.timestamp,
-    item.date,
+function makeExternalId(
+  event: FinanceCalendarEvent,
+  eventTime: Date
+): string {
+  const raw = [
+    event.url ?? "",
+    eventTime.toISOString(),
+    event.title ?? "",
+    event.name ?? "",
+  ].join("|");
+
+  return createHash("sha256")
+    .update(raw)
+    .digest("hex");
+}
+
+function getEventTime(
+  event: FinanceCalendarEvent
+): Date | null {
+  const candidates = [
+    event.time_utc,
+    event.date,
   ];
 
-  for (const value of possibleValues) {
-    const raw = text(value);
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
 
-    if (!raw) continue;
-
-    const date = new Date(raw);
+    const date = new Date(candidate);
 
     if (!Number.isNaN(date.getTime())) {
       return date;
@@ -148,421 +313,425 @@ function parseEventTime(item: CalendarItem): Date | null {
   return null;
 }
 
-function externalIdFor(item: CalendarItem, eventTime: Date) {
-  const sourceId =
-    text(item.id) ||
-    text(item.event_id) ||
-    text(item.slug) ||
-    text(item.url) ||
-    text(item.title) ||
-    text(item.name) ||
-    "economic-event";
-
-  const raw = [
-    sourceId,
-    eventTime.toISOString(),
-    text(item.title),
-    text(item.name),
-  ].join("|");
-
-  return createHash("sha256").update(raw).digest("hex");
-}
-
-function safeJson(value: unknown) {
-  try {
-    return JSON.parse(JSON.stringify(value));
-  } catch {
-    return {};
-  }
-}
-
-function parseCurrencies(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return DEFAULT_CURRENCIES;
+function normalizeCalendarResponse(
+  data: FinanceCalendarResponse
+): FinanceCalendarEvent[] {
+  if (Array.isArray(data)) {
+    return data;
   }
 
-  const result = value
-    .filter((item) => typeof item === "string")
-    .map((item) => item.trim().toUpperCase())
-    .filter(Boolean);
-
-  return result.length ? result : DEFAULT_CURRENCIES;
-}
-
-function parseAlertMinutes(value: unknown): number[] {
-  if (!Array.isArray(value)) {
-    return DEFAULT_ALERT_MINUTES;
+  if (
+    data &&
+    typeof data === "object" &&
+    Array.isArray(data.events)
+  ) {
+    return data.events;
   }
 
-  const result = value
-    .map((item) => Number(item))
-    .filter(
-      (item) =>
-        Number.isFinite(item) &&
-        item >= 5 &&
-        item <= 1440
-    );
-
-  return result.length ? result : DEFAULT_ALERT_MINUTES;
+  return [];
 }
 
-async function getCurrentUserId() {
-  const session = await getSession();
-
-  if (!session?.userId) {
-    return null;
-  }
-
-  return session.userId;
-}
-
-async function getUserNewsSettings(userId: string) {
-  return prisma.newsSetting.upsert({
-    where: {
-      userId,
-    },
-    create: {
-      userId,
-      highImpact: true,
-      mediumImpact: true,
-      lowImpact: false,
-      currencies: DEFAULT_CURRENCIES,
-      alertMinutes: DEFAULT_ALERT_MINUTES,
-      telegramEnabled: true,
-      newsFilterEnabled: true,
-      marketRiskEnabled: true,
-    },
-    update: {},
-  });
-}
-
-async function fetchExternalCalendar(days: number) {
-  const now = new Date();
-
-  const end = new Date(
-    now.getTime() + days * 24 * 60 * 60 * 1000
+async function fetchFinanceCalendar(
+  days: number
+): Promise<FinanceCalendarEvent[]> {
+  const safeDays = Math.min(
+    Math.max(days, 1),
+    92
   );
 
-  const from = now.toISOString().slice(0, 10);
-  const to = end.toISOString().slice(0, 10);
+  const now = new Date();
 
-  const url = new URL(CALENDAR_API);
+  const from = now
+    .toISOString()
+    .slice(0, 10);
 
-  url.searchParams.set("from", from);
-  url.searchParams.set("to", to);
-  url.searchParams.set("limit", "500");
+  const end = new Date(now);
 
-  const response = await fetch(url.toString(), {
+  end.setUTCDate(
+    end.getUTCDate() + safeDays
+  );
+
+  const to = end
+    .toISOString()
+    .slice(0, 10);
+
+  const url =
+    `${FINANCE_CALENDAR_URL}` +
+    `?from=${encodeURIComponent(from)}` +
+    `&to=${encodeURIComponent(to)}` +
+    `&limit=500`;
+
+  const response = await fetch(url, {
     method: "GET",
     headers: {
       Accept: "application/json",
-      "User-Agent": "TradingAIPlatform/1.0",
+      "User-Agent":
+        "TradingAIPlatform/1.0",
     },
     cache: "no-store",
   });
 
   if (!response.ok) {
     throw new Error(
-      `Economic calendar provider returned ${response.status}`
+      `Finance Calendar HTTP ${response.status}`
     );
   }
 
-  const payload = await response.json();
+  const data =
+    (await response.json()) as FinanceCalendarResponse;
 
-  const events = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.events)
-      ? payload.events
-      : Array.isArray(payload?.data)
-        ? payload.data
-        : [];
-
-  return events as CalendarItem[];
+  return normalizeCalendarResponse(data);
 }
 
-async function syncCalendar(days: number) {
-  const externalEvents = await fetchExternalCalendar(days);
+async function syncCalendar(
+  days: number
+): Promise<number> {
+  const externalEvents =
+    await fetchFinanceCalendar(days);
 
-  let synced = 0;
+  let saved = 0;
 
-  for (const item of externalEvents) {
-    const eventTime = parseEventTime(item);
+  for (const externalEvent of externalEvents) {
+    const eventTime =
+      getEventTime(externalEvent);
 
     if (!eventTime) {
       continue;
     }
 
-    const eventName =
-      text(item.name) ||
-      text(item.title) ||
-      text(item.event);
-
-    if (!eventName) {
+    if (externalEvent.all_day) {
       continue;
     }
 
-    const externalId = externalIdFor(
-      item,
-      eventTime
-    );
+    const title =
+      asString(externalEvent.title) ||
+      asString(externalEvent.name);
 
-    const currency = inferCurrency(item);
-    const country = inferCountry(item);
+    if (!title) {
+      continue;
+    }
 
-    const importance = importanceToNumber(
-      item.impact
-    );
+    const name =
+      asString(externalEvent.name) ||
+      title;
 
-    const category =
-      text(item.category) ||
-      text(item.type) ||
-      null;
+    const country =
+      inferCountry(
+        title,
+        name
+      );
 
-    const previous =
-      text(item.previous) ||
-      text(item.prior) ||
-      null;
+    const currency =
+      inferCurrency(
+        title,
+        name,
+        country
+      );
 
-    const forecast =
-      text(item.forecast) ||
-      text(item.consensus) ||
-      null;
+    const importance =
+      normalizeImpact(
+        externalEvent.impact
+      );
 
-    const actual =
-      text(item.actual) ||
-      null;
-
-    const unit =
-      text(item.unit) ||
-      null;
-
-    const sourceUrl =
-      text(item.url) ||
-      SOURCE_URL;
+    const externalId =
+      makeExternalId(
+        externalEvent,
+        eventTime
+      );
 
     await prisma.economicEvent.upsert({
       where: {
         externalId,
       },
+
       create: {
         externalId,
+
         country,
         currency,
-        event: eventName,
-        category,
+
+        event: title,
+
+        category:
+          asString(
+            externalEvent.category
+          ),
+
         importance,
+
         eventTime,
-        previous,
-        forecast,
-        actual,
-        unit,
-        status: actual ? "RELEASED" : "SCHEDULED",
-        source: "FINANCECALENDAR",
-        sourceUrl,
-        rawData: safeJson(item),
+
+        previous:
+          asString(
+            externalEvent.prior
+          ),
+
+        forecast:
+          asString(
+            externalEvent.consensus
+          ),
+
+        actual:
+          asString(
+            externalEvent.actual
+          ),
+
+        unit: null,
+
+        status:
+          eventTime.getTime() <=
+          Date.now()
+            ? "RELEASED"
+            : "SCHEDULED",
+
+        source:
+          "FINANCE_CALENDAR",
+
+        sourceUrl:
+          asString(
+            externalEvent.url
+          ) ||
+          FINANCE_CALENDAR_HOME,
+
+        rawData:
+          externalEvent as unknown as object,
       },
+
       update: {
         country,
         currency,
-        event: eventName,
-        category,
+
+        event: title,
+
+        category:
+          asString(
+            externalEvent.category
+          ),
+
         importance,
+
         eventTime,
-        previous,
-        forecast,
-        actual,
-        status: actual ? "RELEASED" : "SCHEDULED",
-        source: "FINANCECALENDAR",
-        sourceUrl,
-        rawData: safeJson(item),
+
+        previous:
+          asString(
+            externalEvent.prior
+          ),
+
+        forecast:
+          asString(
+            externalEvent.consensus
+          ),
+
+        actual:
+          asString(
+            externalEvent.actual
+          ),
+
+        status:
+          eventTime.getTime() <=
+          Date.now()
+            ? "RELEASED"
+            : "SCHEDULED",
+
+        source:
+          "FINANCE_CALENDAR",
+
+        sourceUrl:
+          asString(
+            externalEvent.url
+          ) ||
+          FINANCE_CALENDAR_HOME,
+
+        rawData:
+          externalEvent as unknown as object,
       },
     });
 
-    synced++;
+    saved += 1;
   }
 
-  return synced;
+  return saved;
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function parseSettings(
+  value: {
+    highImpact: boolean;
+    mediumImpact: boolean;
+    lowImpact: boolean;
+    currencies: unknown;
+    alertMinutes: unknown;
+    telegramEnabled: boolean;
+    newsFilterEnabled: boolean;
+    marketRiskEnabled: boolean;
+  } | null
+): NewsSettingsShape {
+  const currencies =
+    Array.isArray(value?.currencies)
+      ? value.currencies
+          .map((item) =>
+            String(item)
+              .trim()
+              .toUpperCase()
+          )
+          .filter(Boolean)
+      : [
+          "USD",
+          "EUR",
+          "GBP",
+          "JPY",
+          "AUD",
+          "CAD",
+          "CHF",
+          "NZD",
+          "CNY",
+        ];
+
+  const alertMinutes =
+    Array.isArray(value?.alertMinutes)
+      ? value.alertMinutes
+          .map((item) =>
+            Number(item)
+          )
+          .filter(
+            (item) =>
+              Number.isFinite(item) &&
+              item > 0 &&
+              item <= 1440
+          )
+      : [120];
+
+  return {
+    highImpact:
+      value?.highImpact ?? true,
+
+    mediumImpact:
+      value?.mediumImpact ?? true,
+
+    lowImpact:
+      value?.lowImpact ?? false,
+
+    currencies,
+
+    alertMinutes:
+      alertMinutes.length > 0
+        ? alertMinutes
+        : [120],
+
+    telegramEnabled:
+      value?.telegramEnabled ?? true,
+
+    newsFilterEnabled:
+      value?.newsFilterEnabled ?? true,
+
+    marketRiskEnabled:
+      value?.marketRiskEnabled ?? true,
+  };
 }
 
-function formatTime(
-  date: Date,
+function allowedBySettings(
+  event: {
+    importance: number;
+    currency: string | null;
+  },
+  settings: NewsSettingsShape
+): boolean {
+  if (
+    event.importance >= 3 &&
+    !settings.highImpact
+  ) {
+    return false;
+  }
+
+  if (
+    event.importance === 2 &&
+    !settings.mediumImpact
+  ) {
+    return false;
+  }
+
+  if (
+    event.importance <= 1 &&
+    !settings.lowImpact
+  ) {
+    return false;
+  }
+
+  if (
+    event.currency &&
+    settings.currencies.length > 0 &&
+    !settings.currencies.includes(
+      event.currency.toUpperCase()
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function impactLabel(
+  importance: number
+): string {
+  if (importance >= 3) {
+    return "HIGH IMPACT";
+  }
+
+  if (importance === 2) {
+    return "MEDIUM IMPACT";
+  }
+
+  return "LOW IMPACT";
+}
+
+function impactIcon(
+  importance: number
+): string {
+  if (importance >= 3) {
+    return "🔴";
+  }
+
+  if (importance === 2) {
+    return "🟠";
+  }
+
+  return "🟢";
+}
+
+function formatTelegramTime(
+  value: Date,
   timeZone: string
-) {
+): string {
   return new Intl.DateTimeFormat(
     "en-GB",
     {
       timeZone,
-      dateStyle: "medium",
-      timeStyle: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
       hour12: false,
     }
-  ).format(date);
+  ).format(value);
 }
 
-function countdown(
+function minutesRemaining(
   eventTime: Date,
-  minutes: number
-) {
-  const target =
-    eventTime.getTime() -
-    minutes * 60 * 1000;
-
-  const diff = Math.max(
-    0,
-    target - Date.now()
-  );
-
-  const hours = Math.floor(
-    diff / 3600000
-  );
-
-  const mins = Math.floor(
-    (diff % 3600000) / 60000
-  );
-
-  const secs = Math.floor(
-    (diff % 60000) / 1000
-  );
-
-  return `${String(hours).padStart(2, "0")}:${String(
-    mins
-  ).padStart(2, "0")}:${String(secs).padStart(
-    2,
-    "0"
-  )}`;
-}
-
-function impactLabel(importance: number) {
-  if (importance >= 3) return "HIGH";
-  if (importance >= 2) return "MEDIUM";
-  return "LOW";
-}
-
-function impactEmoji(importance: number) {
-  if (importance >= 3) return "🔴";
-  if (importance >= 2) return "🟠";
-  return "🟢";
-}
-
-function eventCurrency(
-  event: {
-    currency: string | null;
-    country: string | null;
-    event: string;
-  }
-) {
-  return (
-    event.currency ||
-    inferCurrency({
-      country: event.country,
-      title: event.event,
-    }) ||
-    "GLOBAL"
-  );
-}
-
-function buildTelegramMessage(
-  event: {
-    event: string;
-    currency: string | null;
-    country: string | null;
-    category: string | null;
-    importance: number;
-    eventTime: Date;
-    previous: string | null;
-    forecast: string | null;
-    actual: string | null;
-    sourceUrl: string | null;
-  },
   alertMinutes: number
-) {
-  const currency = eventCurrency(event);
-
-  const impact = impactLabel(
-    event.importance
+): number {
+  return Math.max(
+    0,
+    Math.round(
+      (eventTime.getTime() -
+        Date.now()) /
+        60000
+    )
   );
-
-  const emoji = impactEmoji(
-    event.importance
-  );
-
-  const london = formatTime(
-    event.eventTime,
-    "Europe/London"
-  );
-
-  const newYork = formatTime(
-    event.eventTime,
-    "America/New_York"
-  );
-
-  const tehran = formatTime(
-    event.eventTime,
-    "Asia/Tehran"
-  );
-
-  const previous =
-    event.previous ?? "—";
-
-  const forecast =
-    event.forecast ?? "—";
-
-  const actual =
-    event.actual ?? "منتشر نشده";
-
-  const category =
-    event.category ?? "Economic Event";
-
-  const source =
-    event.sourceUrl ||
-    SOURCE_URL;
-
-  return [
-    `${emoji} <b>هشدار اقتصادی مهم</b>`,
-    ``,
-    `━━━━━━━━━━━━━━━━`,
-    `📌 <b>${escapeHtml(event.event)}</b>`,
-    `💱 ارز: <b>${escapeHtml(currency)}</b>`,
-    `🌍 کشور: <b>${escapeHtml(event.country ?? "Global")}</b>`,
-    `🏷 دسته: <b>${escapeHtml(category)}</b>`,
-    `⚠️ اهمیت: <b>${impact}</b>`,
-    ``,
-    `⏳ هشدار ${alertMinutes} دقیقه قبل از انتشار`,
-    `🕐 زمان باقی‌مانده تا هشدار: <b>${countdown(
-      event.eventTime,
-      alertMinutes
-    )}</b>`,
-    ``,
-    `🇬🇧 لندن: <b>${escapeHtml(london)}</b>`,
-    `🇺🇸 نیویورک: <b>${escapeHtml(newYork)}</b>`,
-    `🇮🇷 تهران: <b>${escapeHtml(tehran)}</b>`,
-    ``,
-    `📊 Previous: <b>${escapeHtml(previous)}</b>`,
-    `🎯 Forecast: <b>${escapeHtml(forecast)}</b>`,
-    `📈 Actual: <b>${escapeHtml(actual)}</b>`,
-    ``,
-    `━━━━━━━━━━━━━━━━`,
-    `🚨 <b>هشدار بازار</b>`,
-    `این رویداد می‌تواند باعث افزایش نوسان در بازارهای مرتبط شود.`,
-    ``,
-    `⚠️ این پیام صرفاً هشدار زمان‌بندی‌شده است و سیگنال خرید یا فروش نیست.`,
-    ``,
-    `🔗 <a href="${escapeHtml(source)}">منبع و جزئیات خبر</a>`,
-    `🌐 FinanceCalendar`,
-  ].join("\n");
 }
 
-async function sendTelegram(
-  message: string
-) {
+async function sendTelegramMessage(
+  text: string
+): Promise<string> {
   const token =
     process.env.TELEGRAM_BOT_TOKEN;
 
@@ -585,257 +754,489 @@ async function sendTelegram(
     `https://api.telegram.org/bot${token}/sendMessage`,
     {
       method: "POST",
+
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type":
+          "application/json",
       },
+
       body: JSON.stringify({
         chat_id: chatId,
-        text: message,
+        text,
+
         parse_mode: "HTML",
-        disable_web_page_preview: false,
+
+        disable_web_page_preview:
+          true,
       }),
+
+      cache: "no-store",
     }
   );
 
-  const data = await response.json();
+  const data = (await response.json()) as {
+    ok?: boolean;
+    result?: {
+      message_id?: number;
+    };
+    description?: string;
+  };
 
-  if (!response.ok || !data?.ok) {
+  if (
+    !response.ok ||
+    !data.ok
+  ) {
     throw new Error(
-      data?.description ||
-        `Telegram error ${response.status}`
+      data.description ||
+        `Telegram HTTP ${response.status}`
     );
   }
 
-  return data.result;
+  return String(
+    data.result?.message_id ?? ""
+  );
 }
 
-async function runTelegramAlerts() {
-  const alertMinutes = (
-    process.env.NEWS_ALERT_MINUTES ||
-    "120"
-  )
-    .split(",")
-    .map((value) => Number(value.trim()))
-    .filter(
-      (value) =>
-        Number.isFinite(value) &&
-        value >= 5 &&
-        value <= 1440
+function buildNewsTelegramMessage(
+  event: {
+    event: string;
+    country: string | null;
+    currency: string | null;
+    category: string | null;
+    importance: number;
+    eventTime: Date;
+    previous: string | null;
+    forecast: string | null;
+    actual: string | null;
+    sourceUrl: string | null;
+  },
+  alertMinutes: number
+): string {
+  const icon =
+    impactIcon(event.importance);
+
+  const impact =
+    impactLabel(event.importance);
+
+  const remaining =
+    minutesRemaining(
+      event.eventTime,
+      alertMinutes
     );
 
-  const minutesList =
-    alertMinutes.length
-      ? alertMinutes
-      : DEFAULT_ALERT_MINUTES;
+  const utc =
+    formatTelegramTime(
+      event.eventTime,
+      "UTC"
+    );
 
-  const minImportance = Number(
+  const london =
+    formatTelegramTime(
+      event.eventTime,
+      "Europe/London"
+    );
+
+  const newYork =
+    formatTelegramTime(
+      event.eventTime,
+      "America/New_York"
+    );
+
+  const tehran =
+    formatTelegramTime(
+      event.eventTime,
+      "Asia/Tehran"
+    );
+
+  const source =
+    event.sourceUrl ||
+    FINANCE_CALENDAR_HOME;
+
+  return [
+    `🚨 <b>ECONOMIC NEWS WARNING</b>`,
+
+    `━━━━━━━━━━━━━━━━━━`,
+
+    `${icon} <b>${escapeHtml(
+      impact
+    )}</b>`,
+
+    `📌 <b>${escapeHtml(
+      event.event
+    )}</b>`,
+
+    `💵 Currency: <b>${escapeHtml(
+      event.currency || "N/A"
+    )}</b>`,
+
+    `🌍 Country: <b>${escapeHtml(
+      event.country || "N/A"
+    )}</b>`,
+
+    `⏳ <b>${remaining} minutes remaining</b>`,
+
+    ``,
+
+    `🕐 UTC: <b>${utc}</b>`,
+
+    `🇬🇧 London: <b>${london}</b>`,
+
+    `🇺🇸 New York: <b>${newYork}</b>`,
+
+    `🇮🇷 Tehran: <b>${tehran}</b>`,
+
+    ``,
+
+    `📊 Forecast: <b>${escapeHtml(
+      event.forecast || "—"
+    )}</b>`,
+
+    `↩️ Previous: <b>${escapeHtml(
+      event.previous || "—"
+    )}</b>`,
+
+    `📈 Actual: <b>${escapeHtml(
+      event.actual || "Pending"
+    )}</b>`,
+
+    ``,
+
+    `🧭 Category: <b>${escapeHtml(
+      event.category || "Economic"
+    )}</b>`,
+
+    ``,
+
+    `⚠️ این رویداد ممکن است باعث افزایش نوسان در XAUUSD، USD و سایر بازارهای مرتبط شود.`,
+
+    ``,
+
+    `🔗 <a href="${escapeHtml(
+      source
+    )}">Finance Calendar</a>`,
+  ].join("\n");
+}
+
+async function runAlerts(): Promise<NextResponse> {
+  const cronSecret =
+    process.env.NEWS_CRON_SECRET;
+
+  const enabled =
+    process.env.NEWS_TELEGRAM_ENABLED !==
+    "false";
+
+  if (!cronSecret) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "NEWS_CRON_SECRET is not configured",
+      },
+      { status: 500 }
+    );
+  }
+
+  if (!enabled) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason:
+        "NEWS_TELEGRAM_ENABLED=false",
+    });
+  }
+
+  const days = Number(
+    process.env.NEWS_CALENDAR_DAYS ||
+      "14"
+  );
+
+  await syncCalendar(
+    Number.isFinite(days)
+      ? days
+      : 14
+  );
+
+  const minimumImportance = Number(
     process.env.NEWS_ALERT_MIN_IMPORTANCE ||
       "2"
   );
 
-  await syncCalendar(
-    Number(
-      process.env.NEWS_CALENDAR_DAYS ||
-        "14"
+  const alertMinutesFromEnv =
+    String(
+      process.env.NEWS_ALERT_MINUTES ||
+        "120"
     )
-  );
+      .split(",")
+      .map((value) =>
+        Number(value.trim())
+      )
+      .filter(
+        (value) =>
+          Number.isFinite(value) &&
+          value > 0
+      );
+
+  const alertMinutes =
+    alertMinutesFromEnv.length > 0
+      ? alertMinutesFromEnv
+      : [120];
+
+  const now = new Date();
+
+  const windowStart =
+    new Date(
+      now.getTime() -
+        3 * 60 * 1000
+    );
+
+  const windowEnd =
+    new Date(
+      now.getTime() +
+        Math.max(
+          ...alertMinutes
+        ) *
+          60 *
+          1000 +
+        3 * 60 * 1000
+    );
+
+  const events =
+    await prisma.economicEvent.findMany(
+      {
+        where: {
+          importance: {
+            gte: minimumImportance,
+          },
+
+          eventTime: {
+            gte: now,
+            lte: windowEnd,
+          },
+        },
+
+        orderBy: {
+          eventTime: "asc",
+        },
+
+        take: 100,
+      }
+    );
 
   const admin =
     await prisma.user.findFirst({
       where: {
         role: "ADMIN",
       },
+
       select: {
         id: true,
       },
     });
 
-  const fallbackUser =
-    admin ||
-    (await prisma.user.findFirst({
-      select: {
-        id: true,
+  if (!admin) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "No ADMIN user exists for news alert ownership",
       },
-    }));
-
-  if (!fallbackUser) {
-    throw new Error(
-      "No user exists for alert deduplication"
+      { status: 500 }
     );
   }
 
   let sent = 0;
+
   let skipped = 0;
 
-  const now = Date.now();
+  const errors: string[] = [];
 
-  for (const minutes of minutesList) {
-    const target =
-      now +
-      minutes * 60 * 1000;
+  for (const event of events) {
+    for (const minutes of alertMinutes) {
+      const targetTime =
+        new Date(
+          event.eventTime.getTime() -
+            minutes * 60 * 1000
+        );
 
-    const windowStart = new Date(
-      target - 3 * 60 * 1000
-    );
+      if (
+        targetTime < windowStart ||
+        targetTime > windowEnd
+      ) {
+        continue;
+      }
 
-    const windowEnd = new Date(
-      target + 3 * 60 * 1000
-    );
+      if (
+        !allowedBySettings(
+          {
+            importance:
+              event.importance,
 
-    const events =
-      await prisma.economicEvent.findMany({
-        where: {
-          eventTime: {
-            gte: windowStart,
-            lte: windowEnd,
+            currency:
+              event.currency,
           },
-          importance: {
-            gte: minImportance,
-          },
-          status: {
-            in: [
-              "SCHEDULED",
-              "RELEASED",
-            ],
-          },
-        },
-        orderBy: {
-          eventTime: "asc",
-        },
-      });
+          parseSettings(null)
+        )
+      ) {
+        continue;
+      }
 
-    for (const event of events) {
       const alertType =
         `TELEGRAM_${minutes}M`;
 
       const existing =
-        await prisma.newsAlert.findUnique({
-          where: {
-            userId_eventId_alertType: {
-              userId:
-                fallbackUser.id,
-              eventId: event.id,
-              alertType,
+        await prisma.newsAlert.findUnique(
+          {
+            where: {
+              userId_eventId_alertType: {
+                userId: admin.id,
+                eventId: event.id,
+                alertType,
+              },
             },
-          },
-        });
+          }
+        );
 
       if (
         existing?.status === "SENT"
       ) {
-        skipped++;
+        skipped += 1;
         continue;
       }
 
-      const alert =
-        await prisma.newsAlert.upsert({
-          where: {
-            userId_eventId_alertType: {
-              userId:
-                fallbackUser.id,
-              eventId: event.id,
-              alertType,
-            },
-          },
-          create: {
-            userId:
-              fallbackUser.id,
-            eventId: event.id,
-            alertType,
-            scheduledFor: new Date(
-              event.eventTime.getTime() -
-                minutes * 60 * 1000
-            ),
-            status: "PENDING",
-          },
-          update: {
-            scheduledFor: new Date(
-              event.eventTime.getTime() -
-                minutes * 60 * 1000
-            ),
-          },
-        });
-
       try {
         const message =
-          buildTelegramMessage(
-            event,
+          buildNewsTelegramMessage(
+            {
+              event: event.event,
+              country: event.country,
+              currency: event.currency,
+              category: event.category,
+              importance:
+                event.importance,
+              eventTime:
+                event.eventTime,
+              previous:
+                event.previous,
+              forecast:
+                event.forecast,
+              actual:
+                event.actual,
+              sourceUrl:
+                event.sourceUrl,
+            },
             minutes
           );
 
-        const result =
-          await sendTelegram(
+        const messageId =
+          await sendTelegramMessage(
             message
           );
 
-        const messageId =
-          result?.message_id
-            ? String(result.message_id)
-            : null;
+        const alert =
+          existing
+            ? await prisma.newsAlert.update(
+                {
+                  where: {
+                    id: existing.id,
+                  },
 
-        await prisma.newsAlert.update({
-          where: {
-            id: alert.id,
-          },
-          data: {
-            status: "SENT",
-            sentAt: new Date(),
-            errorMessage: null,
-          },
-        });
+                  data: {
+                    status: "SENT",
+                    sentAt: new Date(),
+                    errorMessage: null,
+                  },
+                }
+              )
+            : await prisma.newsAlert.create(
+                {
+                  data: {
+                    userId: admin.id,
+                    eventId: event.id,
+                    alertType,
+                    scheduledFor:
+                      targetTime,
+                    status: "SENT",
+                    sentAt: new Date(),
+                  },
+                }
+              );
 
-        await prisma.newsDelivery.create({
-          data: {
-            alertId: alert.id,
-            channel: "TELEGRAM",
-            destination:
-              process.env
-                .TELEGRAM_SIGNAL_CHAT_ID ||
-              "",
-            status: "SENT",
-            messageId,
-            sentAt: new Date(),
-          },
-        });
+        await prisma.newsDelivery.create(
+          {
+            data: {
+              alertId: alert.id,
 
-        sent++;
+              channel: "TELEGRAM",
+
+              destination:
+                process.env
+                  .TELEGRAM_SIGNAL_CHAT_ID ||
+                "",
+
+              status: "SENT",
+
+              messageId,
+
+              sentAt: new Date(),
+            },
+          }
+        );
+
+        sent += 1;
       } catch (error) {
-        const errorMessage =
+        const message =
           error instanceof Error
             ? error.message
             : "Unknown Telegram error";
 
-        await prisma.newsAlert.update({
-          where: {
-            id: alert.id,
-          },
-          data: {
-            status: "FAILED",
-            errorMessage,
-          },
-        });
+        errors.push(
+          `${event.event}: ${message}`
+        );
 
-        await prisma.newsDelivery.create({
-          data: {
-            alertId: alert.id,
-            channel: "TELEGRAM",
-            destination:
-              process.env
-                .TELEGRAM_SIGNAL_CHAT_ID ||
-              "",
-            status: "FAILED",
-            errorMessage,
-          },
-        });
+        if (existing) {
+          await prisma.newsAlert.update(
+            {
+              where: {
+                id: existing.id,
+              },
+
+              data: {
+                status: "FAILED",
+                errorMessage: message,
+              },
+            }
+          );
+        } else {
+          await prisma.newsAlert.create(
+            {
+              data: {
+                userId: admin.id,
+                eventId: event.id,
+                alertType,
+                scheduledFor:
+                  targetTime,
+                status: "FAILED",
+                errorMessage: message,
+              },
+            }
+          );
+        }
       }
     }
   }
 
-  return {
+  return NextResponse.json({
+    ok: true,
+    mode: "alerts",
     sent,
     skipped,
-    alertMinutes: minutesList,
-  };
+    checkedEvents: events.length,
+    errors,
+    source: {
+      name: "Finance Calendar",
+      url: FINANCE_CALENDAR_HOME,
+    },
+  });
 }
 
 export async function GET(
@@ -848,161 +1249,204 @@ export async function GET(
       );
 
     if (mode === "alerts") {
-      const cronSecret =
+      const expectedSecret =
+        process.env.NEWS_CRON_SECRET;
+
+      const receivedSecret =
         request.headers.get(
           "x-cron-secret"
         );
 
-      const expected =
-        process.env.NEWS_CRON_SECRET;
-
       if (
-        !expected ||
-        cronSecret !== expected
+        !expectedSecret ||
+        !receivedSecret ||
+        receivedSecret !==
+          expectedSecret
       ) {
         return NextResponse.json(
           {
             ok: false,
             error: "Unauthorized",
           },
-          {
-            status: 401,
-          }
+          { status: 401 }
         );
       }
 
-      const result =
-        await runTelegramAlerts();
-
-      return NextResponse.json({
-        ok: true,
-        mode: "alerts",
-        ...result,
-        timestamp:
-          new Date().toISOString(),
-      });
+      return await runAlerts();
     }
 
-    const userId =
-      await getCurrentUserId();
+    const session =
+      await getSession();
 
-    if (!userId) {
+    if (!session?.userId) {
       return NextResponse.json(
         {
           ok: false,
-          error: "UNAUTHORIZED",
+          error: "Unauthorized",
         },
-        {
-          status: 401,
-        }
+        { status: 401 }
       );
     }
 
-    const settings =
-      await getUserNewsSettings(
-        userId
-      );
-
-    const days = Math.min(
-      30,
-      Math.max(
-        1,
-        Number(
-          request.nextUrl.searchParams.get(
-            "days"
-          ) ||
-            process.env
-              .NEWS_CALENDAR_DAYS ||
-            DEFAULT_DAYS
-        )
-      )
-    );
-
-    const synced =
-      await syncCalendar(days);
-
-    const now = new Date();
-
-    const end = new Date(
-      now.getTime() +
-        days *
-          24 *
-          60 *
-          60 *
-          1000
-    );
-
-    const configuredCurrencies =
-      parseCurrencies(
-        settings.currencies
-      );
-
-    const events =
-      await prisma.economicEvent.findMany({
+    const user =
+      await prisma.user.findUnique({
         where: {
-          eventTime: {
-            gte: now,
-            lte: end,
-          },
+          id: session.userId,
         },
-        orderBy: {
-          eventTime: "asc",
+
+        select: {
+          id: true,
+
+          newsSetting: {
+            select: {
+              highImpact: true,
+              mediumImpact: true,
+              lowImpact: true,
+              currencies: true,
+              alertMinutes: true,
+              telegramEnabled: true,
+              newsFilterEnabled: true,
+              marketRiskEnabled: true,
+            },
+          },
         },
       });
 
-    const filtered = events.filter(
-      (event) => {
-        const currency =
-          eventCurrency(event);
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "User not found",
+        },
+        { status: 404 }
+      );
+    }
 
-        const impactAllowed =
-          event.importance >= 3
-            ? settings.highImpact
-            : event.importance >= 2
-              ? settings.mediumImpact
-              : settings.lowImpact;
-
-        const currencyAllowed =
-          currency === "GLOBAL" ||
-          configuredCurrencies.includes(
-            currency
-          );
-
-        return (
-          impactAllowed &&
-          currencyAllowed
-        );
-      }
+    const days = Number(
+      process.env.NEWS_CALENDAR_DAYS ||
+        "14"
     );
+
+    await syncCalendar(
+      Number.isFinite(days)
+        ? days
+        : 14
+    );
+
+    const settings =
+      parseSettings(
+        user.newsSetting
+      );
+
+    const now = new Date();
+
+    const end =
+      new Date(
+        now.getTime() +
+          (Number.isFinite(days)
+            ? days
+            : 14) *
+            24 *
+            60 *
+            60 *
+            1000
+      );
+
+    const events =
+      await prisma.economicEvent.findMany(
+        {
+          where: {
+            eventTime: {
+              gte: now,
+              lte: end,
+            },
+          },
+
+          orderBy: {
+            eventTime: "asc",
+          },
+
+          take: 500,
+        }
+      );
+
+    const filtered =
+      events.filter((event) =>
+        allowedBySettings(
+          {
+            importance:
+              event.importance,
+
+            currency:
+              event.currency,
+          },
+          settings
+        )
+      );
 
     return NextResponse.json({
       ok: true,
-      source: "FINANCECALENDAR",
-      sourceUrl: SOURCE_URL,
-      synced,
-      settings: {
-        highImpact:
-          settings.highImpact,
-        mediumImpact:
-          settings.mediumImpact,
-        lowImpact:
-          settings.lowImpact,
-        currencies:
-          configuredCurrencies,
-        alertMinutes:
-          parseAlertMinutes(
-            settings.alertMinutes
-          ),
-        telegramEnabled:
-          settings.telegramEnabled,
-        newsFilterEnabled:
-          settings.newsFilterEnabled,
-        marketRiskEnabled:
-          settings.marketRiskEnabled,
+
+      source: {
+        name: "Finance Calendar",
+        url: FINANCE_CALENDAR_HOME,
       },
-      events: filtered,
-      serverTime:
-        new Date().toISOString(),
+
+      settings,
+
+      events: filtered.map(
+        (event) => ({
+          id: event.id,
+
+          externalId:
+            event.externalId,
+
+          event:
+            event.event,
+
+          title:
+            event.event,
+
+          name:
+            event.event,
+
+          country:
+            event.country,
+
+          currency:
+            event.currency,
+
+          category:
+            event.category,
+
+          importance:
+            event.importance,
+
+          eventTime:
+            event.eventTime.toISOString(),
+
+          previous:
+            event.previous,
+
+          forecast:
+            event.forecast,
+
+          actual:
+            event.actual,
+
+          unit:
+            event.unit,
+
+          status:
+            event.status,
+
+          source:
+            event.source,
+
+          sourceUrl:
+            event.sourceUrl,
+        })
+      ),
     });
   } catch (error) {
     console.error(
@@ -1013,14 +1457,13 @@ export async function GET(
     return NextResponse.json(
       {
         ok: false,
+
         error:
           error instanceof Error
             ? error.message
             : "Economic calendar failed",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
