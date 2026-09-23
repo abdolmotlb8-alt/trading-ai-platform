@@ -1,627 +1,715 @@
-import Link from "next/link";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/current-user";
+"use client";
 
-type SearchParams = {
-  impact?: string;
-  currency?: string;
-  status?: string;
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+type Impact = "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+
+type EconomicEvent = {
+  id?: string;
+  externalId?: string | null;
+
+  event?: string | null;
+  title?: string | null;
+  name?: string | null;
+
+  country?: string | null;
+  currency?: string | null;
+  category?: string | null;
+
+  importance?: number | null;
+
+  eventTime?: string | null;
+  time?: string | null;
+  date?: string | null;
+  time_utc?: string | null;
+
+  previous?: string | null;
+  forecast?: string | null;
+  actual?: string | null;
+  unit?: string | null;
+
+  status?: string | null;
+
+  source?: string | null;
+  sourceUrl?: string | null;
 };
 
-function Icon({
-  children,
-  size = 22,
-}: {
-  children: React.ReactNode;
-  size?: number;
-}) {
+type NewsSettings = {
+  highImpact: boolean;
+  mediumImpact: boolean;
+  lowImpact: boolean;
+
+  currencies: string[];
+  alertMinutes: number[];
+
+  telegramEnabled: boolean;
+  newsFilterEnabled: boolean;
+  marketRiskEnabled: boolean;
+};
+
+type CalendarResponse = {
+  ok?: boolean;
+  error?: string;
+  events?: EconomicEvent[];
+  source?: {
+    name?: string;
+    url?: string;
+  };
+};
+
+type SettingsResponse = {
+  ok?: boolean;
+  error?: string;
+  settings?: NewsSettings;
+};
+
+const DEFAULT_SETTINGS: NewsSettings = {
+  highImpact: true,
+  mediumImpact: true,
+  lowImpact: false,
+  currencies: [
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "AUD",
+    "CAD",
+    "CHF",
+    "NZD",
+    "CNY",
+  ],
+  alertMinutes: [120],
+  telegramEnabled: true,
+  newsFilterEnabled: true,
+  marketRiskEnabled: true,
+};
+
+const CURRENCIES = [
+  "USD",
+  "EUR",
+  "GBP",
+  "JPY",
+  "AUD",
+  "CAD",
+  "CHF",
+  "NZD",
+  "CNY",
+];
+
+function eventTitle(event: EconomicEvent): string {
   return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: size,
-        height: size,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {children}
-    </span>
+    event.event?.trim() ||
+    event.title?.trim() ||
+    event.name?.trim() ||
+    "Economic Event"
   );
 }
 
-function CalendarIcon() {
+function eventTimeValue(event: EconomicEvent): string | null {
   return (
-    <Icon>
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      >
-        <rect x="3" y="5" width="18" height="16" rx="3" />
-        <path d="M16 3v4M8 3v4M3 10h18" />
-        <path d="M8 14h2M14 14h2M8 18h2" />
-      </svg>
-    </Icon>
+    event.eventTime ||
+    event.time_utc ||
+    event.time ||
+    event.date ||
+    null
   );
 }
 
-function ChartIcon() {
-  return (
-    <Icon>
-      <svg
-        width="21"
-        height="21"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      >
-        <path d="M4 19V5M4 19h16" />
-        <path d="m7 15 4-5 3 3 5-7" />
-        <path d="M16 6h3v3" />
-      </svg>
-    </Icon>
-  );
+function getImportance(event: EconomicEvent): number {
+  const value = Number(event.importance);
+
+  if (Number.isFinite(value)) {
+    return value;
+  }
+
+  return 0;
 }
 
-function BellIcon() {
-  return (
-    <Icon>
-      <svg
-        width="21"
-        height="21"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      >
-        <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
-        <path d="M10 21h4" />
-      </svg>
-    </Icon>
-  );
-}
+function getImpact(event: EconomicEvent): Impact {
+  const importance = getImportance(event);
 
-function FilterIcon() {
-  return (
-    <Icon>
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      >
-        <path d="M4 6h16M7 12h10M10 18h4" />
-      </svg>
-    </Icon>
-  );
-}
-
-function ArrowIcon() {
-  return (
-    <Icon size={16}>
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-      >
-        <path d="m9 18 6-6-6-6" />
-      </svg>
-    </Icon>
-  );
-}
-
-function getImpactData(importance: number) {
   if (importance >= 3) {
-    return {
-      label: "زیاد",
-      className: "high",
-    };
+    return "HIGH";
   }
 
   if (importance === 2) {
-    return {
-      label: "متوسط",
-      className: "medium",
-    };
+    return "MEDIUM";
   }
 
-  return {
-    label: "کم",
-    className: "low",
-  };
+  if (importance === 1) {
+    return "LOW";
+  }
+
+  return "UNKNOWN";
 }
 
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(date);
+function impactText(impact: Impact): string {
+  if (impact === "HIGH") return "اهمیت بالا";
+  if (impact === "MEDIUM") return "اهمیت متوسط";
+  if (impact === "LOW") return "اهمیت پایین";
+  return "نامشخص";
 }
 
-function formatTime(date: Date) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
+function impactIcon(impact: Impact): string {
+  if (impact === "HIGH") return "🔴";
+  if (impact === "MEDIUM") return "🟠";
+  if (impact === "LOW") return "🟢";
+  return "⚪";
 }
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("fa-IR").format(value);
+function formatDate(
+  value: string | null | undefined,
+  timeZone: string
+): string {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  try {
+    return new Intl.DateTimeFormat("fa-IR", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  } catch {
+    return "—";
+  }
 }
 
-export default async function EconomicPage({
-  searchParams,
+function formatTime(
+  value: string | null | undefined,
+  timeZone: string
+): string {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  try {
+    return new Intl.DateTimeFormat("fa-IR", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  } catch {
+    return "—";
+  }
+}
+
+function countdown(value: string | null | undefined): string {
+  if (!value) return "زمان نامشخص";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "زمان نامشخص";
+  }
+
+  const diff = date.getTime() - Date.now();
+
+  if (diff <= 0) {
+    return "منتشر شده / در حال انتشار";
+  }
+
+  const totalMinutes = Math.floor(diff / 60000);
+
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days} روز و ${hours} ساعت`;
+  }
+
+  if (hours > 0) {
+    return `${hours} ساعت و ${minutes} دقیقه`;
+  }
+
+  return `${minutes} دقیقه`;
+}
+
+function eventSortTime(event: EconomicEvent): number {
+  const value = eventTimeValue(event);
+
+  if (!value) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+}
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
 }: {
-  searchParams?: Promise<SearchParams>;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  description: string;
 }) {
-  const user = await getCurrentUser();
+  return (
+    <button
+      type="button"
+      className={`toggle-row ${checked ? "active" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className={`switch ${checked ? "on" : ""}`}>
+        <span />
+      </span>
 
-  if (!user) {
-    return (
-      <main dir="rtl" className="auth-required">
-        <div className="auth-card">
-          <div className="auth-icon">🔒</div>
-          <h1>ورود به حساب کاربری</h1>
-          <p>برای مشاهده تقویم اقتصادی ابتدا وارد حساب خود شوید.</p>
-          <Link href="/login" className="primary-button">
-            ورود به حساب
-          </Link>
-        </div>
+      <span className="toggle-copy">
+        <strong>{label}</strong>
+        <small>{description}</small>
+      </span>
+    </button>
+  );
+}
 
-        <style>{`
-          .auth-required {
-            min-height: 100vh;
-            display: grid;
-            place-items: center;
-            padding: 24px;
-            background: #07111f;
-            color: #f8fafc;
-            font-family: Arial, Tahoma, sans-serif;
-          }
+function EventCard({
+  event,
+  nowTick,
+}: {
+  event: EconomicEvent;
+  nowTick: number;
+}) {
+  void nowTick;
 
-          .auth-card {
-            width: min(430px, 100%);
-            padding: 35px;
-            text-align: center;
-            border: 1px solid rgba(148,163,184,.16);
-            border-radius: 28px;
-            background: rgba(15,23,42,.92);
-            box-shadow: 0 25px 80px rgba(0,0,0,.3);
-          }
-
-          .auth-icon {
-            font-size: 42px;
-            margin-bottom: 18px;
-          }
-
-          .auth-card h1 {
-            margin: 0 0 12px;
-            font-size: 25px;
-          }
-
-          .auth-card p {
-            color: #94a3b8;
-            line-height: 2;
-          }
-
-          .primary-button {
-            display: inline-flex;
-            justify-content: center;
-            margin-top: 18px;
-            padding: 13px 25px;
-            border-radius: 13px;
-            background: linear-gradient(135deg,#06b6d4,#2563eb);
-            color: white;
-            text-decoration: none;
-            font-weight: 700;
-          }
-        `}</style>
-      </main>
-    );
-  }
-
-  const params = (await searchParams) || {};
-
-  const importanceFilter = Number(params.impact || 0);
-  const currencyFilter = params.currency || "";
-  const statusFilter = params.status || "SCHEDULED";
-
-  const where = {
-    ...(importanceFilter > 0
-      ? {
-          importance: importanceFilter,
-        }
-      : {}),
-    ...(currencyFilter
-      ? {
-          currency: currencyFilter,
-        }
-      : {}),
-    ...(statusFilter !== "ALL"
-      ? {
-          status: statusFilter,
-        }
-      : {}),
-  };
-
-  const events = await prisma.economicEvent.findMany({
-    where,
-    orderBy: {
-      eventTime: "asc",
-    },
-    take: 100,
-  });
-
-  const currencies = await prisma.economicEvent.findMany({
-    where: {
-      currency: {
-        not: null,
-      },
-    },
-    select: {
-      currency: true,
-    },
-    distinct: ["currency"],
-    orderBy: {
-      currency: "asc",
-    },
-  });
-
-  const highImpactCount = events.filter(
-    (event) => event.importance >= 3
-  ).length;
-
-  const mediumImpactCount = events.filter(
-    (event) => event.importance === 2
-  ).length;
-
-  const lowImpactCount = events.filter(
-    (event) => event.importance <= 1
-  ).length;
-
-  const today = new Date();
-
-  const todayEvents = events.filter((event) => {
-    const eventDate = new Date(event.eventTime);
-
-    return (
-      eventDate.getFullYear() === today.getFullYear() &&
-      eventDate.getMonth() === today.getMonth() &&
-      eventDate.getDate() === today.getDate()
-    );
-  }).length;
+  const impact = getImpact(event);
+  const time = eventTimeValue(event);
 
   return (
-    <main dir="rtl" className="economic-page">
-      <div className="economic-shell">
-        <header className="topbar">
-          <Link href="/dashboard" className="brand">
-            <span className="brand-logo">AI</span>
-
-            <span>
-              <strong>Trading AI</strong>
-              <small>Smart Market Intelligence</small>
-            </span>
-          </Link>
-
-          <nav className="top-navigation">
-            <Link href="/dashboard">داشبورد</Link>
-            <Link href="/market">بازار</Link>
-            <Link href="/news">اخبار</Link>
-            <Link href="/settings">تنظیمات</Link>
-          </nav>
-
-          <Link href="/dashboard" className="back-button">
-            بازگشت به داشبورد
-          </Link>
-        </header>
-
-        <section className="hero">
-          <div className="hero-content">
-            <div className="eyebrow">
-              <CalendarIcon />
-              LIVE ECONOMIC CALENDAR
-            </div>
-
-            <h1>تقویم اقتصادی هوشمند</h1>
-
-            <p>
-              مشاهده رویدادهای اقتصادی ثبت‌شده، میزان اهمیت،
-              زمان انتشار و تأثیر احتمالی آن‌ها بر بازارهای مالی.
-            </p>
-
-            <div className="hero-actions">
-              <Link href="/economic" className="hero-button">
-                <ChartIcon />
-                مشاهده همه رویدادها
-              </Link>
-
-              <Link href="/settings" className="hero-button secondary">
-                <BellIcon />
-                تنظیم اعلان‌ها
-              </Link>
-            </div>
-          </div>
-
-          <div className="hero-visual">
-            <div className="visual-orbit orbit-one" />
-            <div className="visual-orbit orbit-two" />
-            <div className="visual-center">
-              <ChartIcon />
-              <strong>ECONOMIC</strong>
-              <span>INTELLIGENCE</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="statistics">
-          <div className="stat-card">
-            <div className="stat-top">
-              <span className="stat-icon blue">
-                <CalendarIcon />
-              </span>
-              <span className="stat-status">DATABASE</span>
-            </div>
-
-            <span className="stat-label">کل رویدادهای نمایش‌داده‌شده</span>
-            <strong>{formatNumber(events.length)}</strong>
-            <small>داده‌های موجود در پایگاه داده</small>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-top">
-              <span className="stat-icon red">
-                <BellIcon />
-              </span>
-              <span className="stat-status red-text">HIGH</span>
-            </div>
-
-            <span className="stat-label">رویدادهای با اهمیت زیاد</span>
-            <strong>{formatNumber(highImpactCount)}</strong>
-            <small>اهمیت سطح بالا</small>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-top">
-              <span className="stat-icon yellow">
-                <ChartIcon />
-              </span>
-              <span className="stat-status yellow-text">MEDIUM</span>
-            </div>
-
-            <span className="stat-label">رویدادهای متوسط</span>
-            <strong>{formatNumber(mediumImpactCount)}</strong>
-            <small>اهمیت سطح متوسط</small>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-top">
-              <span className="stat-icon green">
-                <CalendarIcon />
-              </span>
-              <span className="stat-status green-text">TODAY</span>
-            </div>
-
-            <span className="stat-label">رویدادهای امروز</span>
-            <strong>{formatNumber(todayEvents)}</strong>
-            <small>بر اساس تاریخ ثبت‌شده</small>
-          </div>
-        </section>
-
-        <section className="content-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="heading-label">MARKET EVENTS</span>
-              <h2>رویدادهای اقتصادی</h2>
-              <p>
-                اطلاعات زیر مستقیماً از جدول EconomicEvent خوانده می‌شود.
-              </p>
-            </div>
-
-            <div className="data-indicator">
-              <span />
-              داده‌های پایگاه داده
-            </div>
-          </div>
-
-          <form method="GET" className="filters">
-            <div className="filter-field">
-              <label htmlFor="impact">اهمیت رویداد</label>
-
-              <select id="impact" name="impact" defaultValue={params.impact || "0"}>
-                <option value="0">همه سطوح</option>
-                <option value="3">زیاد</option>
-                <option value="2">متوسط</option>
-                <option value="1">کم</option>
-              </select>
-            </div>
-
-            <div className="filter-field">
-              <label htmlFor="currency">ارز</label>
-
-              <select
-                id="currency"
-                name="currency"
-                defaultValue={currencyFilter}
-              >
-                <option value="">همه ارزها</option>
-
-                {currencies.map((item) => (
-                  <option key={item.currency} value={item.currency || ""}>
-                    {item.currency}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="filter-field">
-              <label htmlFor="status">وضعیت</label>
-
-              <select
-                id="status"
-                name="status"
-                defaultValue={statusFilter}
-              >
-                <option value="SCHEDULED">زمان‌بندی‌شده</option>
-                <option value="RELEASED">منتشرشده</option>
-                <option value="CANCELLED">لغوشده</option>
-                <option value="ALL">همه وضعیت‌ها</option>
-              </select>
-            </div>
-
-            <button type="submit" className="filter-button">
-              <FilterIcon />
-              اعمال فیلتر
-            </button>
-
-            <Link href="/economic" className="reset-button">
-              پاک‌کردن
-            </Link>
-          </form>
-
-          {events.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <CalendarIcon />
-              </div>
-
-              <h3>رویدادی پیدا نشد</h3>
-
-              <p>
-                در حال حاضر رویدادی مطابق فیلترهای انتخاب‌شده
-                در پایگاه داده وجود ندارد.
-              </p>
-
-              <Link href="/economic" className="primary-button">
-                حذف فیلترها
-              </Link>
-            </div>
-          ) : (
-            <div className="events-list">
-              {events.map((event) => {
-                const impact = getImpactData(event.importance);
-
-                return (
-                  <article className="event-card" key={event.id}>
-                    <div className="event-time">
-                      <span className="time-icon">
-                        <CalendarIcon />
-                      </span>
-
-                      <strong>{formatTime(event.eventTime)}</strong>
-                      <small>{formatDate(event.eventTime)}</small>
-                    </div>
-
-                    <div className="event-main">
-                      <div className="event-header">
-                        <span className={`impact-badge ${impact.className}`}>
-                          {impact.label}
-                        </span>
-
-                        <span className="event-status">
-                          {event.status}
-                        </span>
-                      </div>
-
-                      <h3>{event.event}</h3>
-
-                      <div className="event-details">
-                        <span>
-                          کشور: {event.country || "نامشخص"}
-                        </span>
-
-                        <span>
-                          ارز: {event.currency || "نامشخص"}
-                        </span>
-
-                        <span>
-                          دسته‌بندی: {event.category || "عمومی"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="event-values">
-                      <div>
-                        <span>قبلی</span>
-                        <strong>{event.previous || "—"}</strong>
-                      </div>
-
-                      <div>
-                        <span>پیش‌بینی</span>
-                        <strong>{event.forecast || "—"}</strong>
-                      </div>
-
-                      <div>
-                        <span>واقعی</span>
-                        <strong className={event.actual ? "actual" : ""}>
-                          {event.actual || "منتظر انتشار"}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {event.sourceUrl ? (
-                      <a
-                        href={event.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="source-button"
-                      >
-                        منبع
-                        <ArrowIcon />
-                      </a>
-                    ) : (
-                      <span className="source-disabled">
-                        بدون منبع
-                      </span>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="notice-panel">
-          <div className="notice-icon">
-            <BellIcon />
-          </div>
+    <article className={`event-card impact-${impact.toLowerCase()}`}>
+      <div className="event-top">
+        <div className="event-impact">
+          <span>{impactIcon(impact)}</span>
 
           <div>
-            <h2>هشدارهای اقتصادی</h2>
-            <p>
-              برای ارسال هشدار واقعی باید سرویس زمان‌بندی،
-              منبع دریافت داده و سیستم ارسال اعلان در پروژه
-              پیاده‌سازی و فعال شده باشد.
-            </p>
+            <strong>{impactText(impact)}</strong>
+            <small>
+              {event.currency || "—"}{" "}
+              {event.country ? `• ${event.country}` : ""}
+            </small>
           </div>
+        </div>
 
-          <Link href="/settings" className="notice-button">
-            تنظیمات اعلان
-            <ArrowIcon />
-          </Link>
-        </section>
-
-        <footer className="footer">
-          <span>Trading AI Platform</span>
-          <span>Economic Calendar</span>
-          <span>Database Connected</span>
-        </footer>
+        <div className="event-countdown">
+          <small>تا رویداد</small>
+          <strong>{countdown(time)}</strong>
+        </div>
       </div>
 
-      <style>{`
+      <div className="event-title">
+        {eventTitle(event)}
+      </div>
+
+      <div className="event-time-grid">
+        <div>
+          <span>UTC</span>
+          <strong>{formatTime(time, "UTC")}</strong>
+        </div>
+
+        <div>
+          <span>لندن</span>
+          <strong>
+            {formatTime(time, "Europe/London")}
+          </strong>
+        </div>
+
+        <div>
+          <span>نیویورک</span>
+          <strong>
+            {formatTime(time, "America/New_York")}
+          </strong>
+        </div>
+
+        <div>
+          <span>تهران</span>
+          <strong>
+            {formatTime(time, "Asia/Tehran")}
+          </strong>
+        </div>
+      </div>
+
+      <div className="numbers">
+        <div>
+          <span>قبلی</span>
+          <strong>{event.previous || "—"}</strong>
+        </div>
+
+        <div>
+          <span>پیش‌بینی</span>
+          <strong>{event.forecast || "—"}</strong>
+        </div>
+
+        <div>
+          <span>Actual</span>
+          <strong className={event.actual ? "actual" : ""}>
+            {event.actual || "—"}
+          </strong>
+        </div>
+      </div>
+
+      <div className="event-footer">
+        <div>
+          <span>تاریخ</span>
+          <strong>
+            {formatDate(time, "Asia/Tehran")}
+          </strong>
+        </div>
+
+        {event.category ? (
+          <span className="category">
+            {event.category}
+          </span>
+        ) : null}
+      </div>
+
+      {event.sourceUrl ? (
+        <a
+          className="source-link"
+          href={event.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          مشاهده منبع رویداد ↗
+        </a>
+      ) : null}
+    </article>
+  );
+}
+
+export default function EconomicPage() {
+  const [events, setEvents] = useState<EconomicEvent[]>([]);
+  const [settings, setSettings] =
+    useState<NewsSettings>(DEFAULT_SETTINGS);
+
+  const [sourceName, setSourceName] =
+    useState("Finance Calendar");
+
+  const [sourceUrl, setSourceUrl] = useState(
+    "https://www.financecalendar.com"
+  );
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [error, setError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+
+  const [impactFilter, setImpactFilter] =
+    useState<"ALL" | "HIGH" | "MEDIUM" | "LOW">("ALL");
+
+  const [currencyFilter, setCurrencyFilter] =
+    useState("ALL");
+
+  const [search, setSearch] = useState("");
+
+  const [settingsOpen, setSettingsOpen] =
+    useState(false);
+
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [calendarResponse, settingsResponse] =
+        await Promise.all([
+          fetch("/api/economic-calendar", {
+            method: "GET",
+            cache: "no-store",
+          }),
+
+          fetch("/api/news/settings", {
+            method: "GET",
+            cache: "no-store",
+          }),
+        ]);
+
+      const calendarData =
+        (await calendarResponse.json()) as CalendarResponse;
+
+      const settingsData =
+        (await settingsResponse.json()) as SettingsResponse;
+
+      if (!calendarResponse.ok || calendarData.ok === false) {
+        throw new Error(
+          calendarData.error ||
+            "دریافت تقویم اقتصادی انجام نشد."
+        );
+      }
+
+      setEvents(
+        Array.isArray(calendarData.events)
+          ? calendarData.events
+          : []
+      );
+
+      if (calendarData.source?.name) {
+        setSourceName(calendarData.source.name);
+      }
+
+      if (calendarData.source?.url) {
+        setSourceUrl(calendarData.source.url);
+      }
+
+      if (
+        settingsResponse.ok &&
+        settingsData.ok &&
+        settingsData.settings
+      ) {
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...settingsData.settings,
+          currencies:
+            Array.isArray(
+              settingsData.settings.currencies
+            )
+              ? settingsData.settings.currencies
+              : DEFAULT_SETTINGS.currencies,
+          alertMinutes:
+            Array.isArray(
+              settingsData.settings.alertMinutes
+            )
+              ? settingsData.settings.alertMinutes
+              : DEFAULT_SETTINGS.alertMinutes,
+        });
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "خطا در دریافت اطلاعات تقویم اقتصادی."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+
+    const interval = window.setInterval(() => {
+      void loadData();
+    }, 5 * 60 * 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [loadData]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 30000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const filteredEvents = useMemo(() => {
+    const result = [...events];
+
+    result.sort(
+      (a, b) =>
+        eventSortTime(a) -
+        eventSortTime(b)
+    );
+
+    return result.filter((event) => {
+      const impact = getImpact(event);
+      const currency =
+        event.currency?.toUpperCase() || "";
+
+      const title =
+        eventTitle(event).toLowerCase();
+
+      const matchesImpact =
+        impactFilter === "ALL" ||
+        impact === impactFilter;
+
+      const matchesCurrency =
+        currencyFilter === "ALL" ||
+        currency === currencyFilter;
+
+      const matchesSearch =
+        !search.trim() ||
+        title.includes(search.trim().toLowerCase()) ||
+        currency.includes(
+          search.trim().toUpperCase()
+        ) ||
+        (event.country || "")
+          .toLowerCase()
+          .includes(search.trim().toLowerCase());
+
+      return (
+        matchesImpact &&
+        matchesCurrency &&
+        matchesSearch
+      );
+    });
+  }, [
+    events,
+    impactFilter,
+    currencyFilter,
+    search,
+  ]);
+
+  const nextHighImpact = useMemo(() => {
+    const now = Date.now();
+
+    return (
+      [...events]
+        .filter((event) => {
+          const time = eventSortTime(event);
+
+          return (
+            getImpact(event) === "HIGH" &&
+            time > now
+          );
+        })
+        .sort(
+          (a, b) =>
+            eventSortTime(a) -
+            eventSortTime(b)
+        )[0] || null
+    );
+  }, [events, nowTick]);
+
+  const highCount = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          getImpact(event) === "HIGH"
+      ).length,
+    [events]
+  );
+
+  const mediumCount = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          getImpact(event) === "MEDIUM"
+      ).length,
+    [events]
+  );
+
+  const lowCount = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          getImpact(event) === "LOW"
+      ).length,
+    [events]
+  );
+
+  async function saveSettings() {
+    try {
+      setSaving(true);
+      setSaveMessage("");
+      setError("");
+
+      const response = await fetch(
+        "/api/news/settings",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(settings),
+        }
+      );
+
+      const data =
+        (await response.json()) as SettingsResponse;
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(
+          data.error ||
+            "ذخیره تنظیمات انجام نشد."
+        );
+      }
+
+      if (data.settings) {
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...data.settings,
+        });
+      }
+
+      setSaveMessage(
+        "تنظیمات با موفقیت ذخیره شد."
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "خطا در ذخیره تنظیمات."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggleCurrency(currency: string) {
+    setSettings((current) => {
+      const exists =
+        current.currencies.includes(currency);
+
+      const currencies = exists
+        ? current.currencies.filter(
+            (item) => item !== currency
+          )
+        : [...current.currencies, currency];
+
+      return {
+        ...current,
+        currencies,
+      };
+    });
+  }
+
+  function setAlertMinutes(value: number) {
+    setSettings((current) => {
+      const exists =
+        current.alertMinutes.includes(value);
+
+      const alertMinutes = exists
+        ? current.alertMinutes.filter(
+            (item) => item !== value
+          )
+        : [...current.alertMinutes, value].sort(
+            (a, b) => b - a
+          );
+
+      return {
+        ...current,
+        alertMinutes,
+      };
+    });
+  }
+
+  return (
+    <main className="economic-page" dir="rtl">
+      <style jsx>{`
         * {
           box-sizing: border-box;
         }
@@ -629,838 +717,1245 @@ export default async function EconomicPage({
         .economic-page {
           min-height: 100vh;
           padding: 24px;
-          color: #e2e8f0;
+          color: #f5f7fb;
           background:
             radial-gradient(
-              circle at 90% 0%,
-              rgba(6,182,212,.12),
-              transparent 30%
+              circle at 85% 0%,
+              rgba(212, 168, 67, 0.12),
+              transparent 28%
             ),
             radial-gradient(
-              circle at 0% 70%,
-              rgba(37,99,235,.12),
+              circle at 5% 70%,
+              rgba(19, 102, 112, 0.13),
               transparent 30%
             ),
-            #050d1a;
-          font-family: Arial, Tahoma, sans-serif;
+            #05080d;
+          font-family:
+            Tahoma,
+            Arial,
+            sans-serif;
         }
 
-        .economic-shell {
-          width: min(1480px, 100%);
-          margin: 0 auto;
+        .shell {
+          width: min(1500px, 100%);
+          margin: auto;
         }
 
         .topbar {
-          min-height: 78px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 25px;
-          padding: 15px 22px;
-          border: 1px solid rgba(148,163,184,.13);
-          border-radius: 23px;
-          background: rgba(8,20,35,.86);
-          backdrop-filter: blur(22px);
+          gap: 20px;
+          margin-bottom: 20px;
         }
 
         .brand {
           display: flex;
           align-items: center;
-          gap: 12px;
-          color: white;
-          text-decoration: none;
-          direction: ltr;
+          gap: 13px;
         }
 
-        .brand-logo {
-          width: 45px;
-          height: 45px;
+        .brand-icon {
+          width: 52px;
+          height: 52px;
           display: grid;
           place-items: center;
-          border-radius: 14px;
-          color: white;
-          font-size: 17px;
+          border-radius: 17px;
+          border: 1px solid
+            rgba(224, 180, 70, 0.32);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(224, 180, 70, 0.18),
+              rgba(255, 255, 255, 0.035)
+            );
+          color: #e3b54c;
+          font-size: 23px;
+          box-shadow:
+            0 18px 45px
+              rgba(0, 0, 0, 0.35);
+        }
+
+        .brand h1 {
+          margin: 0;
+          font-size: 25px;
           font-weight: 900;
-          background: linear-gradient(135deg,#06b6d4,#2563eb);
-          box-shadow: 0 12px 30px rgba(6,182,212,.2);
+          letter-spacing: -0.5px;
         }
 
-        .brand strong,
-        .brand small {
-          display: block;
+        .brand p {
+          margin: 6px 0 0;
+          color: #8490a3;
+          font-size: 12px;
         }
 
-        .brand strong {
-          font-size: 17px;
-        }
-
-        .brand small {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 10px;
-        }
-
-        .top-navigation {
+        .top-actions {
           display: flex;
           align-items: center;
-          justify-content: center;
-          flex-wrap: wrap;
-          gap: 23px;
+          gap: 10px;
         }
 
-        .top-navigation a {
-          color: #94a3b8;
-          text-decoration: none;
-          font-size: 12px;
-          font-weight: 700;
-          transition: .2s;
+        .icon-button,
+        .refresh-button {
+          border: 1px solid
+            rgba(255, 255, 255, 0.09);
+          background: rgba(255, 255, 255, 0.045);
+          color: #dce3ed;
+          border-radius: 13px;
+          min-height: 43px;
+          padding: 0 15px;
+          cursor: pointer;
+          font-family: inherit;
+          transition: 0.2s;
         }
 
-        .top-navigation a:hover {
-          color: #67e8f9;
-        }
-
-        .back-button {
-          padding: 11px 14px;
-          border-radius: 12px;
-          color: #67e8f9;
-          border: 1px solid rgba(34,211,238,.18);
-          background: rgba(34,211,238,.06);
-          text-decoration: none;
-          font-size: 11px;
-          font-weight: 700;
+        .icon-button:hover,
+        .refresh-button:hover {
+          border-color: rgba(224, 180, 70, 0.35);
+          background: rgba(224, 180, 70, 0.08);
         }
 
         .hero {
           position: relative;
           overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 35px;
-          min-height: 310px;
-          margin-top: 22px;
-          padding: 42px;
-          border: 1px solid rgba(34,211,238,.14);
-          border-radius: 30px;
+          padding: 27px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.08);
+          border-radius: 26px;
           background:
             linear-gradient(
-              125deg,
-              rgba(8,47,73,.9),
-              rgba(8,20,35,.97)
+              135deg,
+              rgba(24, 28, 34, 0.94),
+              rgba(11, 14, 19, 0.9)
             );
+          box-shadow:
+            0 25px 80px
+              rgba(0, 0, 0, 0.3);
         }
 
-        .hero-content {
-          position: relative;
-          z-index: 2;
-          max-width: 760px;
+        .hero:after {
+          content: "";
+          position: absolute;
+          width: 260px;
+          height: 260px;
+          left: -100px;
+          top: -140px;
+          border-radius: 50%;
+          background: rgba(221, 177, 67, 0.07);
+          filter: blur(20px);
         }
 
         .eyebrow {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: #67e8f9;
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: .8px;
+          color: #cba449;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 1.2px;
         }
 
-        .hero h1 {
-          margin: 20px 0 13px;
-          color: #f8fafc;
-          font-size: clamp(28px,4vw,45px);
-          line-height: 1.4;
+        .hero h2 {
+          margin: 10px 0 8px;
+          font-size: clamp(23px, 3vw, 35px);
+          line-height: 1.35;
         }
 
         .hero p {
-          max-width: 650px;
+          max-width: 780px;
           margin: 0;
-          color: #94a3b8;
+          color: #8995a7;
+          line-height: 1.9;
           font-size: 13px;
-          line-height: 2.1;
         }
 
-        .hero-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 11px;
-          margin-top: 25px;
-        }
-
-        .hero-button {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 9px;
-          padding: 13px 17px;
-          border-radius: 13px;
-          color: white;
-          background: linear-gradient(135deg,#0891b2,#2563eb);
-          text-decoration: none;
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .hero-button.secondary {
-          color: #a5f3fc;
-          background: rgba(34,211,238,.06);
-          border: 1px solid rgba(34,211,238,.18);
-        }
-
-        .hero-visual {
-          position: relative;
-          width: 260px;
-          height: 260px;
-          flex-shrink: 0;
+        .stats {
           display: grid;
-          place-items: center;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 13px;
+          margin: 15px 0;
         }
 
-        .visual-orbit {
-          position: absolute;
-          border: 1px solid rgba(34,211,238,.16);
-          border-radius: 50%;
-        }
-
-        .orbit-one {
-          width: 250px;
-          height: 250px;
-        }
-
-        .orbit-two {
-          width: 180px;
-          height: 180px;
-          border-style: dashed;
-          border-color: rgba(59,130,246,.35);
-        }
-
-        .visual-center {
-          position: relative;
-          z-index: 1;
-          width: 125px;
-          height: 125px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-direction: column;
-          gap: 7px;
-          border-radius: 35px;
-          color: #67e8f9;
-          background: linear-gradient(145deg,#0e7490,#1d4ed8);
-          box-shadow: 0 0 65px rgba(6,182,212,.22);
-        }
-
-        .visual-center strong {
-          font-size: 10px;
-        }
-
-        .visual-center span {
-          color: #bfdbfe;
-          font-size: 8px;
-        }
-
-        .statistics {
-          display: grid;
-          grid-template-columns: repeat(4,1fr);
-          gap: 15px;
-          margin-top: 20px;
-        }
-
-        .stat-card {
-          padding: 22px;
-          border: 1px solid rgba(148,163,184,.12);
-          border-radius: 21px;
-          background: rgba(8,20,35,.87);
-        }
-
-        .stat-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
+        .stat {
+          min-height: 112px;
+          padding: 18px;
+          border-radius: 20px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.07);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.055),
+              rgba(255, 255, 255, 0.018)
+            );
+          backdrop-filter: blur(18px);
         }
 
         .stat-icon {
-          width: 42px;
-          height: 42px;
-          display: grid;
-          place-items: center;
-          border-radius: 13px;
+          font-size: 18px;
         }
 
-        .stat-icon.blue {
-          color: #67e8f9;
-          background: rgba(6,182,212,.1);
-        }
-
-        .stat-icon.red {
-          color: #fca5a5;
-          background: rgba(239,68,68,.1);
-        }
-
-        .stat-icon.yellow {
-          color: #fde68a;
-          background: rgba(245,158,11,.1);
-        }
-
-        .stat-icon.green {
-          color: #86efac;
-          background: rgba(34,197,94,.1);
-        }
-
-        .stat-status {
-          color: #67e8f9;
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .red-text {
-          color: #fca5a5;
-        }
-
-        .yellow-text {
-          color: #fde68a;
-        }
-
-        .green-text {
-          color: #86efac;
-        }
-
-        .stat-label {
+        .stat small {
           display: block;
-          margin-top: 18px;
-          color: #94a3b8;
-          font-size: 10px;
-        }
-
-        .stat-card strong {
-          display: block;
-          margin-top: 9px;
-          color: #f8fafc;
-          font-size: 27px;
-        }
-
-        .stat-card small {
-          display: block;
-          margin-top: 9px;
-          color: #475569;
-          font-size: 9px;
-        }
-
-        .content-panel {
-          margin-top: 22px;
-          padding: 26px;
-          border: 1px solid rgba(148,163,184,.12);
-          border-radius: 25px;
-          background: rgba(8,20,35,.87);
-        }
-
-        .panel-heading {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 20px;
-          margin-bottom: 23px;
-        }
-
-        .heading-label {
-          color: #22d3ee;
-          font-size: 9px;
-          font-weight: 900;
-          letter-spacing: 1px;
-        }
-
-        .panel-heading h2 {
-          margin: 10px 0 7px;
-          color: #f8fafc;
-          font-size: 23px;
-        }
-
-        .panel-heading p {
-          margin: 0;
-          color: #64748b;
+          margin-top: 13px;
+          color: #7e8999;
           font-size: 11px;
         }
 
-        .data-indicator {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 12px;
-          border-radius: 11px;
-          color: #86efac;
-          background: rgba(34,197,94,.06);
-          border: 1px solid rgba(34,197,94,.12);
-          font-size: 9px;
-          white-space: nowrap;
+        .stat strong {
+          display: block;
+          margin-top: 6px;
+          color: #f3f6fa;
+          font-size: 22px;
         }
 
-        .data-indicator span {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 12px rgba(34,197,94,.7);
+        .stat.gold strong {
+          color: #e3b54c;
+        }
+
+        .stat.red strong {
+          color: #ff6868;
+        }
+
+        .stat.green strong {
+          color: #49d99b;
+        }
+
+        .next-event {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 280px;
+          gap: 15px;
+          margin-bottom: 15px;
+        }
+
+        .next-card,
+        .info-card {
+          border: 1px solid
+            rgba(255, 255, 255, 0.07);
+          border-radius: 22px;
+          background: rgba(13, 17, 23, 0.78);
+          padding: 20px;
+        }
+
+        .next-card {
+          border-color: rgba(224, 180, 70, 0.17);
+        }
+
+        .next-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .next-head small {
+          color: #8490a3;
+        }
+
+        .next-title {
+          margin-top: 12px;
+          font-size: 19px;
+          font-weight: 900;
+        }
+
+        .next-time {
+          margin-top: 9px;
+          color: #c7ced8;
+          font-size: 12px;
+        }
+
+        .countdown-box {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          min-height: 105px;
+          border-radius: 18px;
+          border: 1px solid
+            rgba(224, 180, 70, 0.2);
+          background: rgba(224, 180, 70, 0.055);
+        }
+
+        .countdown-box span {
+          color: #7f8a9a;
+          font-size: 11px;
+        }
+
+        .countdown-box strong {
+          margin-top: 9px;
+          color: #e2b44d;
+          font-size: 19px;
         }
 
         .filters {
           display: grid;
-          grid-template-columns: repeat(3,1fr) auto auto;
-          align-items: end;
-          gap: 12px;
-          padding: 18px;
-          margin-bottom: 20px;
-          border-radius: 17px;
-          background: rgba(255,255,255,.025);
-          border: 1px solid rgba(255,255,255,.06);
+          grid-template-columns: minmax(250px, 1fr) auto auto;
+          gap: 10px;
+          margin-bottom: 15px;
+          padding: 13px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.07);
+          border-radius: 20px;
+          background: rgba(10, 14, 20, 0.82);
         }
 
-        .filter-field label {
-          display: block;
-          margin-bottom: 8px;
-          color: #94a3b8;
-          font-size: 10px;
-        }
-
-        .filter-field select {
+        .search {
           width: 100%;
-          min-height: 43px;
-          padding: 0 12px;
-          border: 1px solid rgba(148,163,184,.15);
-          border-radius: 11px;
+          min-height: 46px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.08);
+          border-radius: 13px;
+          background: rgba(255, 255, 255, 0.035);
+          color: white;
           outline: none;
-          color: #e2e8f0;
-          background: #0f2034;
-          font: inherit;
-          font-size: 11px;
+          padding: 0 14px;
+          font-family: inherit;
         }
 
-        .filter-button,
-        .reset-button {
-          min-height: 43px;
-          display: inline-flex;
+        .search:focus {
+          border-color: rgba(224, 180, 70, 0.45);
+        }
+
+        .filter-group {
+          display: flex;
+          gap: 6px;
           align-items: center;
-          justify-content: center;
-          gap: 7px;
-          padding: 0 15px;
-          border-radius: 11px;
-          cursor: pointer;
-          text-decoration: none;
-          font-size: 10px;
-          font-weight: 700;
+          flex-wrap: wrap;
         }
 
         .filter-button {
-          border: 0;
-          color: white;
-          background: linear-gradient(135deg,#0891b2,#2563eb);
+          min-height: 42px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.07);
+          border-radius: 11px;
+          padding: 0 12px;
+          color: #8d98a9;
+          background: rgba(255, 255, 255, 0.035);
+          cursor: pointer;
+          font-family: inherit;
         }
 
-        .reset-button {
-          color: #94a3b8;
-          border: 1px solid rgba(148,163,184,.15);
-          background: rgba(255,255,255,.03);
+        .filter-button.active {
+          color: #e4b64e;
+          border-color: rgba(224, 180, 70, 0.35);
+          background: rgba(224, 180, 70, 0.09);
         }
 
-        .events-list {
+        .events-grid {
           display: grid;
-          gap: 12px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
         }
 
         .event-card {
-          display: grid;
-          grid-template-columns: 125px minmax(0,1fr) minmax(210px,.8fr) auto;
-          align-items: center;
-          gap: 22px;
           padding: 20px;
-          border: 1px solid rgba(148,163,184,.1);
-          border-radius: 19px;
-          background: rgba(255,255,255,.025);
-          transition: .2s;
+          border-radius: 22px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.07);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(15, 19, 26, 0.93),
+              rgba(8, 11, 16, 0.92)
+            );
+          box-shadow:
+            0 15px 50px
+              rgba(0, 0, 0, 0.16);
         }
 
-        .event-card:hover {
-          border-color: rgba(34,211,238,.23);
-          background: rgba(34,211,238,.035);
+        .event-card.impact-high {
+          border-color: rgba(255, 75, 75, 0.2);
         }
 
-        .event-time {
+        .event-card.impact-medium {
+          border-color: rgba(255, 163, 54, 0.17);
+        }
+
+        .event-card.impact-low {
+          border-color: rgba(65, 208, 142, 0.14);
+        }
+
+        .event-top {
           display: flex;
+          justify-content: space-between;
+          gap: 15px;
+        }
+
+        .event-impact {
+          display: flex;
+          gap: 10px;
           align-items: center;
-          flex-direction: column;
-          gap: 7px;
-          padding-left: 18px;
-          border-left: 1px solid rgba(148,163,184,.13);
-          text-align: center;
         }
 
-        .time-icon {
-          color: #22d3ee;
+        .event-impact > span {
+          font-size: 21px;
         }
 
-        .event-time strong {
-          color: #f8fafc;
-          font-size: 20px;
-        }
-
-        .event-time small {
-          color: #64748b;
-          font-size: 9px;
-          line-height: 1.8;
-        }
-
-        .event-header {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .impact-badge,
-        .event-status {
-          display: inline-flex;
-          padding: 6px 9px;
-          border-radius: 8px;
-          font-size: 9px;
-          font-weight: 700;
-        }
-
-        .impact-badge.high {
-          color: #fca5a5;
-          background: rgba(239,68,68,.1);
-        }
-
-        .impact-badge.medium {
-          color: #fde68a;
-          background: rgba(245,158,11,.1);
-        }
-
-        .impact-badge.low {
-          color: #86efac;
-          background: rgba(34,197,94,.1);
-        }
-
-        .event-status {
-          color: #94a3b8;
-          background: rgba(148,163,184,.08);
-        }
-
-        .event-main h3 {
-          margin: 13px 0 10px;
-          color: #f1f5f9;
-          font-size: 14px;
-          line-height: 1.8;
-        }
-
-        .event-details {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 9px 15px;
-          color: #64748b;
-          font-size: 9px;
-        }
-
-        .event-values {
-          display: grid;
-          grid-template-columns: repeat(3,1fr);
-          gap: 8px;
-        }
-
-        .event-values div {
-          padding: 11px 8px;
-          text-align: center;
-          border-radius: 11px;
-          background: rgba(255,255,255,.035);
-        }
-
-        .event-values span,
-        .event-values strong {
+        .event-impact strong {
           display: block;
+          font-size: 12px;
         }
 
-        .event-values span {
-          color: #64748b;
+        .event-impact small {
+          display: block;
+          margin-top: 4px;
+          color: #737f90;
+          font-size: 10px;
+        }
+
+        .event-countdown {
+          text-align: left;
+        }
+
+        .event-countdown small {
+          display: block;
+          color: #697587;
           font-size: 9px;
         }
 
-        .event-values strong {
-          margin-top: 8px;
-          color: #cbd5e1;
+        .event-countdown strong {
+          display: block;
+          margin-top: 4px;
+          color: #dcb04b;
           font-size: 11px;
-          overflow-wrap: anywhere;
         }
 
-        .event-values strong.actual {
-          color: #67e8f9;
+        .event-title {
+          min-height: 57px;
+          margin-top: 18px;
+          font-size: 17px;
+          line-height: 1.65;
+          font-weight: 900;
         }
 
-        .source-button,
-        .source-disabled {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-          min-width: 62px;
-          padding: 10px 8px;
-          border-radius: 10px;
-          font-size: 9px;
-          font-weight: 700;
-          text-decoration: none;
-        }
-
-        .source-button {
-          color: #67e8f9;
-          border: 1px solid rgba(34,211,238,.15);
-          background: rgba(34,211,238,.05);
-        }
-
-        .source-disabled {
-          color: #475569;
-          border: 1px solid rgba(148,163,184,.08);
-        }
-
-        .empty-state {
-          padding: 55px 20px;
-          text-align: center;
-          border-radius: 18px;
-          border: 1px dashed rgba(148,163,184,.18);
-          background: rgba(255,255,255,.02);
-        }
-
-        .empty-icon {
-          display: flex;
-          justify-content: center;
-          color: #64748b;
-        }
-
-        .empty-state h3 {
-          margin: 15px 0 10px;
-          color: #e2e8f0;
-          font-size: 18px;
-        }
-
-        .empty-state p {
-          margin: 0;
-          color: #64748b;
-          font-size: 11px;
-          line-height: 2;
-        }
-
-        .primary-button {
-          display: inline-flex;
-          margin-top: 20px;
-          padding: 12px 18px;
-          border-radius: 11px;
-          color: white;
-          background: linear-gradient(135deg,#0891b2,#2563eb);
-          text-decoration: none;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .notice-panel {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          margin-top: 20px;
-          padding: 22px;
-          border: 1px solid rgba(34,211,238,.12);
-          border-radius: 21px;
-          background: linear-gradient(
-            120deg,
-            rgba(6,182,212,.07),
-            rgba(37,99,235,.04)
-          );
-        }
-
-        .notice-icon {
-          width: 46px;
-          height: 46px;
+        .event-time-grid {
           display: grid;
-          place-items: center;
-          flex-shrink: 0;
-          color: #67e8f9;
-          border-radius: 14px;
-          background: rgba(34,211,238,.08);
+          grid-template-columns: repeat(4, 1fr);
+          gap: 7px;
+          margin-top: 13px;
         }
 
-        .notice-panel h2 {
-          margin: 0;
-          color: #e2e8f0;
-          font-size: 15px;
+        .event-time-grid > div,
+        .numbers > div {
+          padding: 10px;
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.035);
         }
 
-        .notice-panel p {
-          margin: 7px 0 0;
-          color: #64748b;
-          font-size: 10px;
-          line-height: 1.9;
+        .event-time-grid span,
+        .numbers span,
+        .event-footer span {
+          display: block;
+          color: #697588;
+          font-size: 9px;
         }
 
-        .notice-button {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          margin-right: auto;
-          padding: 11px 13px;
-          border-radius: 11px;
-          color: #67e8f9;
-          border: 1px solid rgba(34,211,238,.15);
-          background: rgba(34,211,238,.05);
-          text-decoration: none;
-          white-space: nowrap;
-          font-size: 10px;
-          font-weight: 700;
+        .event-time-grid strong,
+        .numbers strong,
+        .event-footer strong {
+          display: block;
+          margin-top: 5px;
+          color: #dfe5ec;
+          font-size: 11px;
         }
 
-        .footer {
+        .numbers {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 7px;
+          margin-top: 8px;
+        }
+
+        .numbers strong.actual {
+          color: #55dba0;
+        }
+
+        .event-footer {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 15px;
-          padding: 25px 5px 8px;
-          color: #475569;
+          gap: 10px;
+          margin-top: 11px;
+        }
+
+        .category {
+          padding: 7px 10px;
+          border-radius: 9px;
+          color: #a7b1c0;
+          background: rgba(255, 255, 255, 0.045);
           font-size: 9px;
         }
 
-        @media (max-width: 1200px) {
-          .statistics {
-            grid-template-columns: repeat(2,1fr);
+        .source-link {
+          display: inline-block;
+          margin-top: 12px;
+          color: #d6ab45;
+          text-decoration: none;
+          font-size: 10px;
+        }
+
+        .source-link:hover {
+          text-decoration: underline;
+        }
+
+        .settings-panel {
+          position: fixed;
+          z-index: 100;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.67);
+          backdrop-filter: blur(7px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+
+        .settings-box {
+          width: min(650px, 100%);
+          max-height: 90vh;
+          overflow: auto;
+          padding: 23px;
+          border: 1px solid
+            rgba(224, 180, 70, 0.2);
+          border-radius: 25px;
+          background: #0b1018;
+          box-shadow:
+            0 30px 100px
+              rgba(0, 0, 0, 0.5);
+        }
+
+        .settings-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+          margin-bottom: 20px;
+        }
+
+        .settings-head h3 {
+          margin: 0;
+          font-size: 20px;
+        }
+
+        .close {
+          width: 38px;
+          height: 38px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.08);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.04);
+          color: #cbd3df;
+          cursor: pointer;
+          font-size: 18px;
+        }
+
+        .toggle-list {
+          display: grid;
+          gap: 8px;
+        }
+
+        .toggle-row {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          padding: 13px;
+          border: 1px solid
+            rgba(255, 255, 255, 0.07);
+          border-radius: 14px;
+          color: white;
+          background: rgba(255, 255, 255, 0.025);
+          text-align: right;
+          cursor: pointer;
+          font-family: inherit;
+        }
+
+        .toggle-row.active {
+          border-color: rgba(224, 180, 70, 0.2);
+          background: rgba(224, 180, 70, 0.045);
+        }
+
+        .switch {
+          position: relative;
+          flex: 0 0 auto;
+          width: 43px;
+          height: 23px;
+          border-radius: 99px;
+          background: #252c36;
+        }
+
+        .switch span {
+          position: absolute;
+          top: 3px;
+          right: 3px;
+          width: 17px;
+          height: 17px;
+          border-radius: 50%;
+          background: #87909d;
+          transition: 0.2s;
+        }
+
+        .switch.on {
+          background: #987526;
+        }
+
+        .switch.on span {
+          right: 23px;
+          background: #fff1b7;
+        }
+
+        .toggle-copy {
+          min-width: 0;
+        }
+
+        .toggle-copy strong {
+          display: block;
+          font-size: 12px;
+        }
+
+        .toggle-copy small {
+          display: block;
+          margin-top: 4px;
+          color: #737f90;
+          font-size: 10px;
+        }
+
+        .setting-section {
+          margin-top: 22px;
+        }
+
+        .setting-section h4 {
+          margin: 0 0 10px;
+          color: #d6ad4c;
+          font-size: 12px;
+        }
+
+        .chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+
+        .chip {
+          border: 1px solid
+            rgba(255, 255, 255, 0.08);
+          border-radius: 10px;
+          padding: 8px 11px;
+          color: #8995a7;
+          background: rgba(255, 255, 255, 0.035);
+          cursor: pointer;
+          font-family: inherit;
+          font-size: 10px;
+        }
+
+        .chip.active {
+          color: #f0c95f;
+          border-color: rgba(224, 180, 70, 0.32);
+          background: rgba(224, 180, 70, 0.09);
+        }
+
+        .save-button {
+          width: 100%;
+          min-height: 48px;
+          margin-top: 22px;
+          border: 0;
+          border-radius: 13px;
+          color: #080a0d;
+          background: linear-gradient(
+            135deg,
+            #e5bc58,
+            #a97d25
+          );
+          font-weight: 900;
+          font-family: inherit;
+          cursor: pointer;
+        }
+
+        .save-button:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        .message,
+        .error {
+          margin: 13px 0;
+          padding: 12px 14px;
+          border-radius: 13px;
+          font-size: 11px;
+        }
+
+        .message {
+          color: #65dda4;
+          border: 1px solid
+            rgba(65, 208, 142, 0.17);
+          background: rgba(65, 208, 142, 0.055);
+        }
+
+        .error {
+          color: #ff8888;
+          border: 1px solid
+            rgba(255, 75, 75, 0.17);
+          background: rgba(255, 75, 75, 0.055);
+        }
+
+        .loading,
+        .empty {
+          grid-column: 1 / -1;
+          min-height: 220px;
+          display: grid;
+          place-items: center;
+          padding: 30px;
+          text-align: center;
+          border: 1px dashed
+            rgba(255, 255, 255, 0.09);
+          border-radius: 20px;
+          color: #798596;
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .loading strong,
+        .empty strong {
+          display: block;
+          margin-bottom: 8px;
+          color: #cbd4df;
+          font-size: 14px;
+        }
+
+        .footer {
+          margin-top: 18px;
+          padding: 16px;
+          text-align: center;
+          color: #697587;
+          font-size: 10px;
+          border-top: 1px solid
+            rgba(255, 255, 255, 0.06);
+        }
+
+        .footer a {
+          color: #d9ad45;
+          text-decoration: none;
+        }
+
+        @media (max-width: 1000px) {
+          .stats {
+            grid-template-columns: repeat(2, 1fr);
           }
 
-          .event-card {
-            grid-template-columns: 105px minmax(0,1fr) minmax(180px,.8fr);
+          .next-event {
+            grid-template-columns: 1fr;
           }
 
-          .source-button,
-          .source-disabled {
-            grid-column: 1 / -1;
-            justify-self: start;
+          .events-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .filters {
+            grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 650px) {
           .economic-page {
             padding: 12px;
           }
 
           .topbar {
-            flex-wrap: wrap;
-          }
-
-          .top-navigation {
-            order: 3;
-            width: 100%;
-          }
-
-          .hero {
-            padding: 27px;
-          }
-
-          .hero-visual {
-            display: none;
-          }
-
-          .filters {
-            grid-template-columns: repeat(2,1fr);
-          }
-
-          .event-card {
-            grid-template-columns: 1fr;
-            gap: 16px;
-          }
-
-          .event-time {
             align-items: flex-start;
-            padding: 0 0 15px;
-            border-left: 0;
-            border-bottom: 1px solid rgba(148,163,184,.13);
           }
 
-          .source-button,
-          .source-disabled {
-            grid-column: auto;
-          }
-        }
-
-        @media (max-width: 560px) {
-          .economic-page {
-            padding: 8px;
-          }
-
-          .topbar {
-            padding: 14px;
-          }
-
-          .top-navigation {
-            justify-content: space-between;
-            gap: 10px;
-          }
-
-          .top-navigation a {
-            font-size: 10px;
-          }
-
-          .back-button {
-            display: none;
-          }
-
-          .hero {
-            padding: 23px;
-            border-radius: 22px;
-          }
-
-          .hero h1 {
-            font-size: 27px;
-          }
-
-          .hero p {
-            font-size: 11px;
-          }
-
-          .statistics {
-            grid-template-columns: 1fr;
-          }
-
-          .content-panel {
-            padding: 17px;
-          }
-
-          .panel-heading {
+          .top-actions {
             flex-direction: column;
           }
 
-          .filters {
+          .hero {
+            padding: 20px;
+          }
+
+          .stats {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .event-time-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .numbers {
             grid-template-columns: 1fr;
-            padding: 13px;
           }
 
-          .filter-button,
-          .reset-button {
-            width: 100%;
-          }
-
-          .event-values {
-            grid-template-columns: 1fr;
-          }
-
-          .notice-panel {
+          .event-footer {
             align-items: flex-start;
-            flex-wrap: wrap;
-          }
-
-          .notice-button {
-            margin-right: 0;
-          }
-
-          .footer {
             flex-direction: column;
-            align-items: flex-start;
           }
         }
       `}</style>
+
+      <div className="shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-icon">
+              ◷
+            </div>
+
+            <div>
+              <h1>تقویم اقتصادی</h1>
+              <p>
+                رویدادهای اقتصادی واقعی و هشدارهای بازار
+              </p>
+            </div>
+          </div>
+
+          <div className="top-actions">
+            <button
+              type="button"
+              className="refresh-button"
+              onClick={() => void loadData()}
+            >
+              ↻ بروزرسانی
+            </button>
+
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() =>
+                setSettingsOpen(true)
+              }
+            >
+              ⚙ تنظیمات اخبار
+            </button>
+          </div>
+        </header>
+
+        <section className="hero">
+          <div className="eyebrow">
+            REAL ECONOMIC CALENDAR
+          </div>
+
+          <h2>
+            اخبار مهم بازار را قبل از انتشار ببینید
+          </h2>
+
+          <p>
+            این بخش داده‌های تقویم اقتصادی را از
+            سرویس متصل دریافت می‌کند و رویدادهایی
+            مانند NFP، CPI، FOMC، نرخ بهره، GDP و
+            سایر اخبار مهم را نمایش می‌دهد. اگر
+            سرویس داده در دسترس نباشد، اطلاعات
+            ساختگی نمایش داده نمی‌شود.
+          </p>
+        </section>
+
+        {error ? (
+          <div className="error">
+            ⚠️ {error}
+          </div>
+        ) : null}
+
+        {saveMessage ? (
+          <div className="message">
+            ✓ {saveMessage}
+          </div>
+        ) : null}
+
+        <section className="stats">
+          <div className="stat gold">
+            <span className="stat-icon">
+              📅
+            </span>
+            <small>کل رویدادهای دریافت‌شده</small>
+            <strong>{events.length}</strong>
+          </div>
+
+          <div className="stat red">
+            <span className="stat-icon">
+              🔴
+            </span>
+            <small>اهمیت بالا</small>
+            <strong>{highCount}</strong>
+          </div>
+
+          <div className="stat">
+            <span className="stat-icon">
+              🟠
+            </span>
+            <small>اهمیت متوسط</small>
+            <strong>{mediumCount}</strong>
+          </div>
+
+          <div className="stat green">
+            <span className="stat-icon">
+              🟢
+            </span>
+            <small>اهمیت پایین</small>
+            <strong>{lowCount}</strong>
+          </div>
+        </section>
+
+        <section className="next-event">
+          <div className="next-card">
+            <div className="next-head">
+              <small>
+                نزدیک‌ترین خبر با اهمیت بالا
+              </small>
+
+              {nextHighImpact?.currency ? (
+                <strong>
+                  {nextHighImpact.currency}
+                </strong>
+              ) : null}
+            </div>
+
+            {nextHighImpact ? (
+              <>
+                <div className="next-title">
+                  {impactIcon(
+                    getImpact(nextHighImpact)
+                  )}{" "}
+                  {eventTitle(nextHighImpact)}
+                </div>
+
+                <div className="next-time">
+                  زمان تهران:{" "}
+                  {formatDate(
+                    eventTimeValue(
+                      nextHighImpact
+                    ),
+                    "Asia/Tehran"
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="next-title">
+                فعلاً رویداد مهم آینده‌ای پیدا نشد.
+              </div>
+            )}
+          </div>
+
+          <div className="countdown-box">
+            <span>شمارش معکوس</span>
+
+            <strong>
+              {nextHighImpact
+                ? countdown(
+                    eventTimeValue(
+                      nextHighImpact
+                    )
+                  )
+                : "—"}
+            </strong>
+          </div>
+        </section>
+
+        <section className="filters">
+          <input
+            className="search"
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+            placeholder="جستجوی NFP، CPI، FOMC، USD، کشور و..."
+          />
+
+          <div className="filter-group">
+            {(
+              [
+                ["ALL", "همه"],
+                ["HIGH", "بالا"],
+                ["MEDIUM", "متوسط"],
+                ["LOW", "پایین"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`filter-button ${
+                  impactFilter === value
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setImpactFilter(value)
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="filter-group">
+            <button
+              type="button"
+              className={`filter-button ${
+                currencyFilter === "ALL"
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() =>
+                setCurrencyFilter("ALL")
+              }
+            >
+              همه ارزها
+            </button>
+
+            {CURRENCIES.slice(0, 5).map(
+              (currency) => (
+                <button
+                  key={currency}
+                  type="button"
+                  className={`filter-button ${
+                    currencyFilter === currency
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setCurrencyFilter(currency)
+                  }
+                >
+                  {currency}
+                </button>
+              )
+            )}
+          </div>
+        </section>
+
+        <section className="events-grid">
+          {loading ? (
+            <div className="loading">
+              <div>
+                <strong>
+                  در حال دریافت تقویم اقتصادی...
+                </strong>
+                <span>
+                  داده ساختگی نمایش داده نمی‌شود.
+                </span>
+              </div>
+            </div>
+          ) : filteredEvents.length === 0 ? (
+            <div className="empty">
+              <div>
+                <strong>
+                  رویدادی برای نمایش پیدا نشد
+                </strong>
+
+                <span>
+                  فیلترها را تغییر دهید یا دوباره
+                  بروزرسانی کنید.
+                </span>
+              </div>
+            </div>
+          ) : (
+            filteredEvents.map((event, index) => (
+              <EventCard
+                key={
+                  event.id ||
+                  event.externalId ||
+                  `${eventTitle(event)}-${eventTimeValue(
+                    event
+                  )}-${index}`
+                }
+                event={event}
+                nowTick={nowTick}
+              />
+            ))
+          )}
+        </section>
+
+        <footer className="footer">
+          منبع داده:{" "}
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {sourceName}
+          </a>
+          {" • "}
+          زمان‌ها بر اساس منطقه زمانی واقعی
+          رویداد نمایش داده می‌شوند.
+        </footer>
+      </div>
+
+      {settingsOpen ? (
+        <div
+          className="settings-panel"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSettingsOpen(false);
+            }
+          }}
+        >
+          <section className="settings-box">
+            <div className="settings-head">
+              <div>
+                <h3>
+                  ⚙ تنظیمات اخبار و هشدار
+                </h3>
+
+                <p
+                  style={{
+                    color: "#737f90",
+                    fontSize: "10px",
+                    margin: "6px 0 0",
+                  }}
+                >
+                  تنظیم کنید چه اخبار و چه زمانی
+                  به Telegram ارسال شود.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="close"
+                onClick={() =>
+                  setSettingsOpen(false)
+                }
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="toggle-list">
+              <Toggle
+                checked={settings.telegramEnabled}
+                onChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    telegramEnabled: value,
+                  }))
+                }
+                label="هشدار Telegram"
+                description="ارسال هشدار رویدادهای اقتصادی به کانال Telegram"
+              />
+
+              <Toggle
+                checked={settings.newsFilterEnabled}
+                onChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    newsFilterEnabled: value,
+                  }))
+                }
+                label="فیلتر اخبار برای سیگنال‌ها"
+                description="در زمان اخبار پرریسک، موتور سیگنال بتواند معامله را متوقف کند"
+              />
+
+              <Toggle
+                checked={settings.marketRiskEnabled}
+                onChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    marketRiskEnabled: value,
+                  }))
+                }
+                label="هشدار ریسک بازار"
+                description="رویدادهای مهم قبل از انتشار به عنوان ریسک بازار علامت‌گذاری شوند"
+              />
+
+              <Toggle
+                checked={settings.highImpact}
+                onChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    highImpact: value,
+                  }))
+                }
+                label="اخبار اهمیت بالا"
+                description="NFP، CPI، FOMC، نرخ بهره و رویدادهای مهم"
+              />
+
+              <Toggle
+                checked={settings.mediumImpact}
+                onChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    mediumImpact: value,
+                  }))
+                }
+                label="اخبار اهمیت متوسط"
+                description="رویدادهای متوسط اقتصادی"
+              />
+
+              <Toggle
+                checked={settings.lowImpact}
+                onChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    lowImpact: value,
+                  }))
+                }
+                label="اخبار اهمیت پایین"
+                description="رویدادهای کم‌ریسک‌تر"
+              />
+            </div>
+
+            <div className="setting-section">
+              <h4>
+                ارزهای موردنظر
+              </h4>
+
+              <div className="chips">
+                {CURRENCIES.map((currency) => (
+                  <button
+                    key={currency}
+                    type="button"
+                    className={`chip ${
+                      settings.currencies.includes(
+                        currency
+                      )
+                        ? "active"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      toggleCurrency(currency)
+                    }
+                  >
+                    {currency}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="setting-section">
+              <h4>
+                زمان هشدار قبل از انتشار
+              </h4>
+
+              <div className="chips">
+                {[15, 30, 60, 120, 180].map(
+                  (minutes) => (
+                    <button
+                      key={minutes}
+                      type="button"
+                      className={`chip ${
+                        settings.alertMinutes.includes(
+                          minutes
+                        )
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setAlertMinutes(minutes)
+                      }
+                    >
+                      {minutes >= 60
+                        ? `${minutes / 60} ساعت قبل`
+                        : `${minutes} دقیقه قبل`}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="save-button"
+              disabled={saving}
+              onClick={() => void saveSettings()}
+            >
+              {saving
+                ? "در حال ذخیره..."
+                : "ذخیره تنظیمات"}
+            </button>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
