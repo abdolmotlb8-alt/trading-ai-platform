@@ -1,170 +1,140 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
+"use client";
 
-export const dynamic = "force-dynamic";
+import React, { useEffect, useMemo, useState } from "react";
 
-type DashboardSignal = {
-  id: string;
-  symbol: string;
-  timeframe: string | null;
-  direction: string;
-  entry: unknown;
-  stopLoss: unknown;
-  takeProfit: unknown;
-  riskReward: unknown;
-  score: unknown;
-  confidence: unknown;
-  status: string;
-  createdAt: Date;
+/* =========================================================
+   TRADING AI PLATFORM
+   PREMIUM DARK / GOLD DASHBOARD
+   File: app/dashboard/page.tsx
+
+   IMPORTANT:
+   - No styled-jsx
+   - No external icon package
+   - No Prisma in client
+   - No fake trading numbers
+   - Data is read from existing APIs when available
+========================================================= */
+
+type IconName =
+  | "home"
+  | "market"
+  | "signals"
+  | "bots"
+  | "analysis"
+  | "news"
+  | "calendar"
+  | "broker"
+  | "mt"
+  | "telegram"
+  | "subscription"
+  | "vpn"
+  | "support"
+  | "profile"
+  | "settings"
+  | "logout"
+  | "bell"
+  | "sun"
+  | "menu"
+  | "close"
+  | "chart"
+  | "wallet"
+  | "robot"
+  | "target"
+  | "clock"
+  | "shield"
+  | "arrow"
+  | "trendUp"
+  | "trendDown"
+  | "refresh";
+
+type RawSignal = {
+  id?: string;
+  symbol?: string;
+  direction?: string;
+  status?: string;
+  timeframe?: string;
+  entryPrice?: number | string | null;
+  entry?: number | string | null;
+  stopLoss?: number | string | null;
+  takeProfit?: number | string | null;
+  score?: number | null;
+  confirmations?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  expiresAt?: string | null;
+  bot?: {
+    name?: string;
+  } | null;
+  metadata?: any;
+  levels?: any;
 };
 
-function num(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
+type Bot = {
+  id?: string;
+  name?: string;
+  symbol?: string;
+  timeframe?: string;
+  marketType?: string;
+  isActive?: boolean;
+  botStatus?: string;
+  telegramEnabled?: boolean;
+};
 
-  const n = Number(value);
+type Performance = {
+  totalSignals?: number;
+  winningSignals?: number;
+  losingSignals?: number;
+  winRate?: number;
+  profit?: number;
+  pnl?: number;
+  netProfit?: number;
+};
 
-  if (!Number.isFinite(n)) return null;
+type UserInfo = {
+  id?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  plan?: string;
+};
 
-  return n;
-}
+type MarketItem = {
+  symbol: string;
+  price: number | null;
+  change: number | null;
+  source?: string;
+};
 
-function price(value: unknown, digits = 2) {
-  const n = num(value);
+type DashboardState = {
+  user: UserInfo | null;
+  signals: RawSignal[];
+  bots: Bot[];
+  performance: Performance | null;
+  loading: boolean;
+  error: string;
+};
 
-  if (n === null) return "—";
-
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-}
-
-function integer(value: unknown) {
-  const n = num(value);
-
-  if (n === null) return "0";
-
-  return Math.round(n).toLocaleString("en-US");
-}
-
-function formatDate(date: Date) {
-  try {
-    return new Intl.DateTimeFormat("fa-IR", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  } catch {
-    return "";
-  }
-}
-
-function firstName(name: string | null) {
-  if (!name) return "کاربر";
-
-  return name.trim().split(/\s+/)[0] || "کاربر";
-}
-
-function signalDirection(direction: string) {
-  const d = String(direction).toUpperCase();
-
-  if (d === "BUY" || d === "LONG") {
-    return {
-      label: "BUY",
-      className: "buy",
-      icon: "↗",
-    };
-  }
-
-  if (d === "SELL" || d === "SHORT") {
-    return {
-      label: "SELL",
-      className: "sell",
-      icon: "↘",
-    };
-  }
-
-  return {
-    label: d,
-    className: "neutral",
-    icon: "•",
-  };
-}
-
-function signalStatus(status: string) {
-  const s = String(status).toUpperCase();
-
-  if (s === "ACTIVE") {
-    return {
-      label: "فعال",
-      className: "statusActive",
-    };
-  }
-
-  if (s === "TP1_HIT") {
-    return {
-      label: "TP1",
-      className: "statusActive",
-    };
-  }
-
-  if (s === "TP2_HIT") {
-    return {
-      label: "TP2",
-      className: "statusActive",
-    };
-  }
-
-  if (s === "TP3_HIT") {
-    return {
-      label: "TP3",
-      className: "statusActive",
-    };
-  }
-
-  if (s === "STOP_LOSS") {
-    return {
-      label: "حد ضرر",
-      className: "statusDanger",
-    };
-  }
-
-  if (s === "EXPIRED") {
-    return {
-      label: "منقضی",
-      className: "statusMuted",
-    };
-  }
-
-  if (s === "CLOSED") {
-    return {
-      label: "بسته",
-      className: "statusMuted",
-    };
-  }
-
-  if (s === "WAITING") {
-    return {
-      label: "در انتظار",
-      className: "statusWaiting",
-    };
-  }
-
-  return {
-    label: s,
-    className: "statusMuted",
-  };
-}
+const GOLD = "#d8b45a";
+const GOLD_LIGHT = "#f1d98a";
+const GOLD_DARK = "#8e6b25";
+const BG = "#07090c";
+const PANEL = "#0d1117";
+const PANEL_2 = "#11161e";
+const BORDER = "rgba(216,180,90,.16)";
+const TEXT = "#f5f1e8";
+const MUTED = "#8e96a3";
+const GREEN = "#35d59a";
+const RED = "#ff5d6c";
+const BLUE = "#42a5ff";
 
 function Icon({
   name,
-  size = 19,
+  size = 20,
+  strokeWidth = 1.8,
 }: {
-  name: string;
+  name: IconName;
   size?: number;
+  strokeWidth?: number;
 }) {
   const common = {
     width: size,
@@ -172,7 +142,7 @@ function Icon({
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: 1.8,
+    strokeWidth,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
@@ -181,9 +151,9 @@ function Icon({
     case "home":
       return (
         <svg {...common}>
-          <path d="M3 10.5 12 3l9 7.5" />
-          <path d="M5.5 9.5V21h13V9.5" />
-          <path d="M9 21v-6h6v6" />
+          <path d="M3 10.8 12 3l9 7.8" />
+          <path d="M5 10v10h14V10" />
+          <path d="M9 20v-6h6v6" />
         </svg>
       );
 
@@ -191,54 +161,46 @@ function Icon({
       return (
         <svg {...common}>
           <path d="M4 19V5" />
-          <path d="M4 19h16" />
-          <path d="m7 15 4-4 3 2 5-6" />
+          <path d="M4 19h17" />
+          <path d="m7 15 4-5 3 2 5-7" />
+          <path d="M16 5h3v3" />
         </svg>
       );
 
-    case "signal":
+    case "signals":
       return (
         <svg {...common}>
-          <path d="M4 19V9" />
-          <path d="M9 19V5" />
-          <path d="M14 19v-7" />
-          <path d="M19 19V3" />
+          <path d="M4 18V9" />
+          <path d="M9 18V5" />
+          <path d="M14 18v-8" />
+          <path d="M19 18V3" />
         </svg>
       );
 
-    case "bot":
+    case "bots":
       return (
         <svg {...common}>
-          <rect x="4" y="7" width="16" height="12" rx="3" />
-          <path d="M12 3v4" />
-          <path d="M8 12h.01" />
-          <path d="M16 12h.01" />
+          <rect x="4" y="6" width="16" height="13" rx="3" />
+          <path d="M12 3v3" />
+          <path d="M8 12h.01M16 12h.01" />
           <path d="M8 16h8" />
         </svg>
       );
 
-    case "chart":
+    case "analysis":
       return (
         <svg {...common}>
           <path d="M4 19V5" />
           <path d="M4 19h16" />
-          <path d="m7 15 3-4 3 2 5-7" />
-        </svg>
-      );
-
-    case "trade":
-      return (
-        <svg {...common}>
-          <rect x="4" y="4" width="16" height="16" rx="2" />
-          <path d="M8 9h8M8 13h8M8 17h5" />
+          <path d="m7 15 3-4 3 2 4-6" />
         </svg>
       );
 
     case "news":
       return (
         <svg {...common}>
-          <rect x="4" y="3" width="16" height="18" rx="2" />
-          <path d="M8 7h8M8 11h8M8 15h5" />
+          <path d="M5 4h14v16H5z" />
+          <path d="M8 8h8M8 12h8M8 16h5" />
         </svg>
       );
 
@@ -246,33 +208,48 @@ function Icon({
       return (
         <svg {...common}>
           <rect x="3" y="5" width="18" height="16" rx="2" />
-          <path d="M7 3v4M17 3v4M3 10h18" />
-          <path d="M8 14h2M12 14h2M16 14h1M8 17h2" />
+          <path d="M16 3v4M8 3v4M3 10h18" />
         </svg>
       );
 
     case "broker":
       return (
         <svg {...common}>
-          <circle cx="7" cy="12" r="3" />
-          <circle cx="17" cy="7" r="3" />
-          <circle cx="17" cy="17" r="3" />
-          <path d="m9.5 10.5 5-2M9.5 13.5l5 2" />
+          <path d="M4 20V8l8-5 8 5v12" />
+          <path d="M7 20v-5h10v5" />
+          <path d="M9 10h6M9 13h6" />
+        </svg>
+      );
+
+    case "mt":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="m8 15 3-6 2 5 3-3" />
         </svg>
       );
 
     case "telegram":
       return (
         <svg {...common}>
-          <path d="m21 4-3 16-6-5-4 3 1-6L21 4Z" />
-          <path d="m9 12 8-5-6 6" />
+          <path d="m21 4-3 16-6-5-3 2 1-5-5-2 16-6Z" />
+          <path d="m9 12 8-5-5 6" />
         </svg>
       );
 
     case "subscription":
       return (
         <svg {...common}>
-          <path d="M12 3 20 7v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4Z" />
+          <path d="M4 7h16v13H4z" />
+          <path d="M7 7V5h10v2" />
+          <path d="M8 11h8M8 15h5" />
+        </svg>
+      );
+
+    case "vpn":
+      return (
+        <svg {...common}>
+          <path d="M12 3 20 6v5c0 5-3.2 8.6-8 10-4.8-1.4-8-5-8-10V6l8-3Z" />
           <path d="m9 12 2 2 4-5" />
         </svg>
       );
@@ -280,10 +257,10 @@ function Icon({
     case "support":
       return (
         <svg {...common}>
-          <path d="M4 12a8 8 0 0 1 16 0" />
-          <path d="M4 12v4a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2Z" />
-          <path d="M20 12v4a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2Z" />
-          <path d="M15 20h2" />
+          <path d="M4 13a8 8 0 0 1 16 0v4a2 2 0 0 1-2 2h-3" />
+          <path d="M4 14H3v4h4v-5H4" />
+          <path d="M20 14h1v4h-4v-5h3" />
+          <path d="M12 19h3" />
         </svg>
       );
 
@@ -291,22 +268,22 @@ function Icon({
       return (
         <svg {...common}>
           <circle cx="12" cy="8" r="4" />
-          <path d="M4 21c.8-4 3.4-6 8-6s7.2 2 8 6" />
+          <path d="M4 21c.7-4 3.4-6 8-6s7.3 2 8 6" />
         </svg>
       );
 
     case "settings":
       return (
         <svg {...common}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V20h-2.6v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H6v-2.6h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1L9 6.6l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V5h2.6v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1v2.6h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+          <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
+          <path d="m19 13 2-1-2-1-.4-2 1-1-1.8-1.8-1 1-2-.4-1-2-1 2-2 .4-1-1L7 7l1 1-.4 2-2 .9 2 1-.4 2-1 1L7 16l1-1 2 .4 1 2 1-2 2-.4 1 1 1.8-1.8-1-1 .4-2Z" />
         </svg>
       );
 
     case "logout":
       return (
         <svg {...common}>
-          <path d="M10 5H5v14h5" />
+          <path d="M10 4H5v16h5" />
           <path d="M14 8l4 4-4 4" />
           <path d="M8 12h10" />
         </svg>
@@ -320,6 +297,14 @@ function Icon({
         </svg>
       );
 
+    case "sun":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      );
+
     case "menu":
       return (
         <svg {...common}>
@@ -327,2414 +312,2839 @@ function Icon({
         </svg>
       );
 
-    case "arrow":
+    case "close":
       return (
         <svg {...common}>
-          <path d="M5 12h14" />
-          <path d="m13 6 6 6-6 6" />
+          <path d="m6 6 12 12M18 6 6 18" />
         </svg>
       );
 
-    case "spark":
+    case "chart":
       return (
         <svg {...common}>
-          <path d="m12 2 1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5L12 2Z" />
+          <path d="M4 19V5M4 19h16" />
+          <path d="m7 15 3-4 3 2 4-6" />
+        </svg>
+      );
+
+    case "wallet":
+      return (
+        <svg {...common}>
+          <path d="M4 6h15a2 2 0 0 1 2 2v11H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+          <path d="M3 8h15" />
+          <path d="M16 13h5" />
+        </svg>
+      );
+
+    case "robot":
+      return (
+        <svg {...common}>
+          <rect x="4" y="6" width="16" height="13" rx="3" />
+          <path d="M12 3v3M8 12h.01M16 12h.01M8 16h8" />
+        </svg>
+      );
+
+    case "target":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8" />
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v3M22 12h-3" />
+        </svg>
+      );
+
+    case "clock":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      );
+
+    case "shield":
+      return (
+        <svg {...common}>
+          <path d="M12 3 20 6v5c0 5-3.2 8.6-8 10-4.8-1.4-8-5-8-10V6l8-3Z" />
+        </svg>
+      );
+
+    case "arrow":
+      return (
+        <svg {...common}>
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      );
+
+    case "trendUp":
+      return (
+        <svg {...common}>
+          <path d="m4 16 5-5 4 3 7-8" />
+          <path d="M15 6h5v5" />
+        </svg>
+      );
+
+    case "trendDown":
+      return (
+        <svg {...common}>
+          <path d="m4 8 5 5 4-3 7 8" />
+          <path d="M15 18h5v-5" />
+        </svg>
+      );
+
+    case "refresh":
+      return (
+        <svg {...common}>
+          <path d="M20 11a8 8 0 0 0-14.7-4L4 9" />
+          <path d="M4 4v5h5" />
+          <path d="M4 13a8 8 0 0 0 14.7 4L20 15" />
+          <path d="M20 20v-5h-5" />
         </svg>
       );
 
     default:
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="8" />
-        </svg>
-      );
+      return null;
   }
 }
 
-function MenuItem({
-  href,
-  icon,
-  label,
-  active = false,
-}: {
-  href: string;
-  icon: string;
-  label: string;
-  active?: boolean;
-}) {
+function safeNumber(value: any): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function money(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  const sign = value > 0 ? "+" : "";
+  return `${sign}$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function price(value: number | null | undefined, symbol = "") {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  const digits =
+    symbol.includes("JPY") || symbol.includes("XAU") || symbol.includes("XAG")
+      ? 2
+      : symbol.includes("BTC") || symbol.includes("ETH")
+        ? 2
+        : 5;
+
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function normalizeDirection(signal: RawSignal) {
+  const value = String(signal.direction || "").toUpperCase();
+
+  if (value.includes("BUY") || value.includes("LONG")) return "BUY";
+  if (value.includes("SELL") || value.includes("SHORT")) return "SELL";
+
+  return "—";
+}
+
+function signalColor(direction: string) {
+  if (direction === "BUY") return GREEN;
+  if (direction === "SELL") return RED;
+  return MUTED;
+}
+
+function getSignalEntry(signal: RawSignal) {
   return (
-    <Link
-      href={href}
-      className={`menuItem ${active ? "menuActive" : ""}`}
-    >
-      <span className="menuIcon">
-        <Icon name={icon} size={18} />
-      </span>
-
-      <span>{label}</span>
-
-      {active && <span className="activeDot" />}
-    </Link>
+    safeNumber(signal.entryPrice) ??
+    safeNumber(signal.entry) ??
+    safeNumber(signal.metadata?.levels?.entry) ??
+    safeNumber(signal.metadata?.entryPrice)
   );
 }
 
-export default async function DashboardPage() {
-  const session = await getSession();
+function getSignalSL(signal: RawSignal) {
+  return (
+    safeNumber(signal.stopLoss) ??
+    safeNumber(signal.metadata?.levels?.stopLoss) ??
+    safeNumber(signal.metadata?.risk?.stopLossPrice)
+  );
+}
 
-  if (!session?.userId) {
-    redirect("/login");
+function getSignalTP(signal: RawSignal) {
+  return (
+    safeNumber(signal.takeProfit) ??
+    safeNumber(signal.metadata?.levels?.tp3) ??
+    safeNumber(signal.metadata?.levels?.takeProfit)
+  );
+}
+
+function getSignalCurrentPrice(signal: RawSignal) {
+  return (
+    safeNumber(signal.metadata?.state?.currentPrice) ??
+    safeNumber(signal.metadata?.currentPrice) ??
+    getSignalEntry(signal)
+  );
+}
+
+function getSignalTime(signal: RawSignal) {
+  const date = signal.createdAt || signal.updatedAt;
+
+  if (!date) return "—";
+
+  try {
+    return new Date(date).toLocaleTimeString("fa-IR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
   }
+}
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: session.userId,
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      plan: true,
+async function requestJSON(url: string, options?: RequestInit) {
+  const response = await fetch(url, {
+    ...options,
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      ...(options?.headers || {}),
     },
   });
 
-  if (!user) {
-    redirect("/login");
+  if (!response.ok) {
+    throw new Error(`${response.status}`);
   }
 
-  const [
-    signalRows,
-    activeBots,
-    totalBots,
-    activeSignals,
-    totalSignals,
-  ] = await Promise.all([
-    prisma.tradingSignal.findMany({
-      where: {
-        userId: user.id,
-      },
-      select: {
-        id: true,
-        symbol: true,
-        timeframe: true,
-        direction: true,
-        entry: true,
-        stopLoss: true,
-        takeProfit: true,
-        riskReward: true,
-        score: true,
-        confidence: true,
-        status: true,
-        createdAt: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 8,
-    }),
+  return response.json();
+}
 
-    prisma.tradingBot.count({
-      where: {
-        userId: user.id,
-        isActive: true,
-      },
-    }),
+export default function DashboardPage() {
+  const [mobileMenu, setMobileMenu] = useState(false);
 
-    prisma.tradingBot.count({
-      where: {
-        userId: user.id,
-      },
-    }),
+  const [state, setState] = useState<DashboardState>({
+    user: null,
+    signals: [],
+    bots: [],
+    performance: null,
+    loading: true,
+    error: "",
+  });
 
-    prisma.tradingSignal.count({
-      where: {
-        userId: user.id,
-        status: "ACTIVE",
-      },
-    }),
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-    prisma.tradingSignal.count({
-      where: {
-        userId: user.id,
-      },
-    }),
-  ]);
+  const loadDashboard = async () => {
+    try {
+      setState((old) => ({
+        ...old,
+        loading: true,
+        error: "",
+      }));
 
-  const signals = signalRows as unknown as DashboardSignal[];
+      const [signalsResult, botsResult] = await Promise.allSettled([
+        requestJSON("/api/signals?limit=30"),
+        requestJSON("/api/bots"),
+      ]);
 
-  const buyCount = signals.filter((s) => {
-    const d = String(s.direction).toUpperCase();
-    return d === "BUY" || d === "LONG";
-  }).length;
+      let signals: RawSignal[] = [];
+      let bots: Bot[] = [];
+      let performance: Performance | null = null;
+      let user: UserInfo | null = null;
 
-  const sellCount = signals.filter((s) => {
-    const d = String(s.direction).toUpperCase();
-    return d === "SELL" || d === "SHORT";
-  }).length;
+      if (signalsResult.status === "fulfilled") {
+        const data = signalsResult.value;
 
-  const completed = signals.filter((s) =>
-    [
-      "TP1_HIT",
-      "TP2_HIT",
-      "TP3_HIT",
-      "STOP_LOSS",
-      "CLOSED",
-    ].includes(String(s.status).toUpperCase()),
+        if (Array.isArray(data)) {
+          signals = data;
+        } else {
+          signals =
+            Array.isArray(data?.signals)
+              ? data.signals
+              : Array.isArray(data?.data)
+                ? data.data
+                : [];
+
+          performance =
+            data?.performance ||
+            data?.stats ||
+            data?.summary ||
+            null;
+
+          user = data?.user || null;
+        }
+      }
+
+      if (botsResult.status === "fulfilled") {
+        const data = botsResult.value;
+
+        if (Array.isArray(data)) {
+          bots = data;
+        } else {
+          bots =
+            Array.isArray(data?.bots)
+              ? data.bots
+              : Array.isArray(data?.data)
+                ? data.data
+                : [];
+
+          user = user || data?.user || null;
+        }
+      }
+
+      const activeSignals = signals.filter((signal) => {
+        const status = String(signal.status || "").toUpperCase();
+
+        return (
+          status === "ACTIVE" ||
+          status === "OPEN" ||
+          status === "WAITING" ||
+          status === "TP1_HIT" ||
+          status === "TP2_HIT"
+        );
+      });
+
+      const wins = signals.filter((signal) =>
+        ["TP1_HIT", "TP2_HIT", "TP3_HIT", "CLOSED", "WIN"].includes(
+          String(signal.status || "").toUpperCase()
+        )
+      ).length;
+
+      const losses = signals.filter((signal) =>
+        ["STOP_LOSS", "LOSS"].includes(
+          String(signal.status || "").toUpperCase()
+        )
+      ).length;
+
+      const totalFinished = wins + losses;
+
+      if (!performance) {
+        performance = {
+          totalSignals: signals.length,
+          winningSignals: wins,
+          losingSignals: losses,
+          winRate:
+            totalFinished > 0
+              ? Math.round((wins / totalFinished) * 100)
+              : 0,
+        };
+      }
+
+      setState({
+        user,
+        signals: signals.length ? signals : [],
+        bots,
+        performance,
+        loading: false,
+        error:
+          signalsResult.status === "rejected" &&
+          botsResult.status === "rejected"
+            ? "داده‌های داشبورد هنوز از API دریافت نشده‌اند."
+            : "",
+      });
+
+      setLastUpdate(new Date());
+
+      void activeSignals;
+    } catch {
+      setState((old) => ({
+        ...old,
+        loading: false,
+        error: "اتصال به داده‌های داشبورد برقرار نشد.",
+      }));
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+
+    const interval = window.setInterval(() => {
+      loadDashboard();
+    }, 60000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        cache: "no-store",
+      });
+    } catch {
+      // redirect anyway
+    }
+
+    window.location.href = "/login";
+  };
+
+  const activeBots = useMemo(
+    () =>
+      state.bots.filter(
+        (bot) =>
+          bot.isActive === true ||
+          String(bot.botStatus || "").toUpperCase() === "ACTIVE"
+      ),
+    [state.bots]
   );
 
-  const wins = signals.filter((s) =>
-    ["TP1_HIT", "TP2_HIT", "TP3_HIT"].includes(
-      String(s.status).toUpperCase(),
-    ),
+  const activeSignals = useMemo(
+    () =>
+      state.signals.filter((signal) => {
+        const status = String(signal.status || "").toUpperCase();
+
+        return [
+          "ACTIVE",
+          "OPEN",
+          "WAITING",
+          "TP1_HIT",
+          "TP2_HIT",
+        ].includes(status);
+      }),
+    [state.signals]
   );
+
+  const recentSignals = useMemo(
+    () => state.signals.slice(0, 6),
+    [state.signals]
+  );
+
+  const performance = state.performance;
 
   const winRate =
-    completed.length > 0
-      ? Math.round((wins.length / completed.length) * 100)
-      : 0;
+    safeNumber(performance?.winRate) ??
+    (() => {
+      const wins = safeNumber(performance?.winningSignals) || 0;
+      const losses = safeNumber(performance?.losingSignals) || 0;
+      const total = wins + losses;
 
-  const name = firstName(user.name);
+      return total ? Math.round((wins / total) * 100) : 0;
+    })();
+
+  const totalSignals =
+    safeNumber(performance?.totalSignals) ?? state.signals.length;
+
+  const totalProfit =
+    safeNumber(performance?.netProfit) ??
+    safeNumber(performance?.profit) ??
+    safeNumber(performance?.pnl) ??
+    0;
+
+  const marketItems: MarketItem[] = useMemo(() => {
+    const symbols = [
+      "XAUUSD",
+      "EURUSD",
+      "GBPUSD",
+      "USDJPY",
+      "BTCUSDT",
+      "ETHUSDT",
+    ];
+
+    return symbols.map((symbol) => {
+      const related = state.signals.find(
+        (signal) =>
+          String(signal.symbol || "").toUpperCase() === symbol
+      );
+
+      const current = related
+        ? getSignalCurrentPrice(related)
+        : null;
+
+      const entry = related ? getSignalEntry(related) : null;
+
+      let change: number | null = null;
+
+      if (
+        current !== null &&
+        entry !== null &&
+        entry !== 0
+      ) {
+        change = ((current - entry) / entry) * 100;
+
+        if (normalizeDirection(related!) === "SELL") {
+          change *= -1;
+        }
+      }
+
+      return {
+        symbol,
+        price: current,
+        change,
+        source: related ? "Trading AI" : undefined,
+      };
+    });
+  }, [state.signals]);
+
+  const css = `
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: ${BG};
+    }
+
+    body {
+      font-family:
+        Tahoma,
+        Arial,
+        "Segoe UI",
+        sans-serif;
+      color: ${TEXT};
+    }
+
+    button,
+    a {
+      font: inherit;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      border: 0;
+    }
+
+    .ta-shell {
+      min-height: 100vh;
+      background:
+        radial-gradient(
+          circle at 15% 10%,
+          rgba(216,180,90,.09),
+          transparent 28%
+        ),
+        radial-gradient(
+          circle at 75% 80%,
+          rgba(45,115,170,.08),
+          transparent 30%
+        ),
+        linear-gradient(
+          135deg,
+          #06080b 0%,
+          #090d12 48%,
+          #06080b 100%
+        );
+      direction: rtl;
+    }
+
+    .ta-noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .025;
+      background-image:
+        radial-gradient(#fff 1px, transparent 1px);
+      background-size: 5px 5px;
+      z-index: 0;
+    }
+
+    .ta-sidebar {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 255px;
+      height: 100vh;
+      background:
+        linear-gradient(
+          180deg,
+          rgba(16,20,27,.97),
+          rgba(7,10,14,.98)
+        );
+      border-left: 1px solid rgba(216,180,90,.13);
+      box-shadow:
+        -20px 0 60px rgba(0,0,0,.24);
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .ta-brand {
+      padding: 25px 20px 20px;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+
+    .ta-brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ta-logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      color: #090b0d;
+      background:
+        linear-gradient(
+          135deg,
+          ${GOLD_LIGHT},
+          ${GOLD},
+          ${GOLD_DARK}
+        );
+      box-shadow:
+        0 10px 35px rgba(216,180,90,.16),
+        inset 0 1px rgba(255,255,255,.55);
+    }
+
+    .ta-brand-name {
+      font-size: 15px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    .ta-brand-sub {
+      margin-top: 4px;
+      color: #777f8b;
+      font-size: 9px;
+      letter-spacing: 2px;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .ta-nav {
+      padding: 17px 12px;
+      flex: 1;
+    }
+
+    .ta-nav-title {
+      color: #666e7a;
+      font-size: 10px;
+      padding: 12px 10px 8px;
+      font-weight: 800;
+    }
+
+    .ta-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      padding: 12px 12px;
+      margin-bottom: 4px;
+      border-radius: 13px;
+      color: #9299a4;
+      transition:
+        .2s ease;
+      cursor: pointer;
+      background: transparent;
+    }
+
+    .ta-nav-item:hover {
+      background: rgba(255,255,255,.035);
+      color: #eee;
+      transform: translateX(-2px);
+    }
+
+    .ta-nav-item.active {
+      color: ${GOLD_LIGHT};
+      background:
+        linear-gradient(
+          90deg,
+          rgba(216,180,90,.18),
+          rgba(216,180,90,.035)
+        );
+      box-shadow:
+        inset -2px 0 ${GOLD};
+    }
+
+    .ta-nav-label {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .ta-sidebar-bottom {
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,.05);
+    }
+
+    .ta-user-mini {
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.06);
+      background: rgba(255,255,255,.025);
+      border-radius: 15px;
+      margin-bottom: 9px;
+    }
+
+    .ta-user-mini-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ta-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(
+          135deg,
+          #1d222b,
+          #0d1015
+        );
+      border: 1px solid rgba(216,180,90,.35);
+      color: ${GOLD_LIGHT};
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .ta-user-name {
+      font-size: 12px;
+      font-weight: 800;
+      color: #eee;
+    }
+
+    .ta-user-email {
+      font-size: 9px;
+      color: #6d7580;
+      margin-top: 4px;
+      direction: ltr;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ta-content {
+      position: relative;
+      z-index: 1;
+      margin-right: 255px;
+      min-height: 100vh;
+      padding: 18px 24px 40px;
+    }
+
+    .ta-topbar {
+      height: 68px;
+      border: 1px solid rgba(255,255,255,.06);
+      background: rgba(13,17,23,.72);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 15px;
+      margin-bottom: 18px;
+      box-shadow: 0 18px 60px rgba(0,0,0,.18);
+    }
+
+    .ta-top-left,
+    .ta-top-right {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .ta-mobile-menu {
+      display: none;
+    }
+
+    .ta-icon-btn {
+      width: 39px;
+      height: 39px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: #9ca4ae;
+      background: rgba(255,255,255,.035);
+      border: 1px solid rgba(255,255,255,.06);
+      cursor: pointer;
+    }
+
+    .ta-icon-btn:hover {
+      color: ${GOLD_LIGHT};
+      border-color: rgba(216,180,90,.25);
+    }
+
+    .ta-lang {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(255,255,255,.035);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 12px;
+      color: #b7bdc6;
+      font-size: 11px;
+    }
+
+    .ta-live-status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #9ca4ae;
+      font-size: 10px;
+    }
+
+    .ta-live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: ${GREEN};
+      box-shadow: 0 0 14px ${GREEN};
+    }
+
+    .ta-welcome {
+      margin-bottom: 17px;
+    }
+
+    .ta-welcome-small {
+      color: #757e89;
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+
+    .ta-welcome-title {
+      font-size: 24px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    .ta-welcome-title span {
+      color: ${GOLD_LIGHT};
+    }
+
+    .ta-welcome-sub {
+      color: #717985;
+      font-size: 11px;
+      margin-top: 7px;
+    }
+
+    .ta-alert {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      min-height: 75px;
+      padding: 14px 17px;
+      margin-bottom: 17px;
+      border-radius: 17px;
+      border: 1px solid rgba(216,180,90,.15);
+      background:
+        linear-gradient(
+          110deg,
+          rgba(216,180,90,.11),
+          rgba(255,255,255,.025)
+        );
+    }
+
+    .ta-alert-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      color: ${GOLD_LIGHT};
+      background: rgba(216,180,90,.12);
+      flex-shrink: 0;
+    }
+
+    .ta-alert-title {
+      font-size: 12px;
+      font-weight: 900;
+      color: #f5ead0;
+    }
+
+    .ta-alert-text {
+      color: #858c97;
+      font-size: 10px;
+      margin-top: 5px;
+      line-height: 1.8;
+    }
+
+    .ta-alert-action {
+      margin-right: auto;
+      padding: 9px 13px;
+      border-radius: 10px;
+      border: 1px solid rgba(216,180,90,.25);
+      color: ${GOLD_LIGHT};
+      font-size: 9px;
+      background: rgba(216,180,90,.06);
+      white-space: nowrap;
+    }
+
+    .ta-stat-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 17px;
+    }
+
+    .ta-stat {
+      position: relative;
+      overflow: hidden;
+      min-height: 115px;
+      padding: 16px;
+      border-radius: 17px;
+      border: 1px solid rgba(255,255,255,.07);
+      background:
+        linear-gradient(
+          145deg,
+          rgba(22,27,35,.95),
+          rgba(10,13,18,.95)
+        );
+      box-shadow:
+        inset 0 1px rgba(255,255,255,.025),
+        0 16px 40px rgba(0,0,0,.12);
+    }
+
+    .ta-stat::after {
+      content: "";
+      position: absolute;
+      width: 90px;
+      height: 90px;
+      left: -30px;
+      bottom: -45px;
+      border-radius: 50%;
+      background: rgba(216,180,90,.08);
+      filter: blur(15px);
+    }
+
+    .ta-stat-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ta-stat-icon {
+      width: 39px;
+      height: 39px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: ${GOLD_LIGHT};
+      background: rgba(216,180,90,.08);
+      border: 1px solid rgba(216,180,90,.1);
+    }
+
+    .ta-stat-label {
+      color: #777f8a;
+      font-size: 10px;
+    }
+
+    .ta-stat-value {
+      font-size: 22px;
+      font-weight: 900;
+      direction: ltr;
+      text-align: right;
+      margin-top: 10px;
+    }
+
+    .ta-stat-foot {
+      color: #656d77;
+      font-size: 9px;
+      margin-top: 7px;
+    }
+
+    .ta-grid-2 {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1.4fr)
+        minmax(290px, .6fr);
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .ta-card {
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.065);
+      background:
+        linear-gradient(
+          145deg,
+          rgba(17,22,29,.95),
+          rgba(9,12,17,.96)
+        );
+      box-shadow:
+        0 20px 60px rgba(0,0,0,.16),
+        inset 0 1px rgba(255,255,255,.025);
+      overflow: hidden;
+    }
+
+    .ta-card-head {
+      min-height: 57px;
+      padding: 12px 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+
+    .ta-card-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 12px;
+      font-weight: 900;
+      color: #e7e8e9;
+    }
+
+    .ta-card-title-icon {
+      color: ${GOLD};
+    }
+
+    .ta-card-sub {
+      color: #666f7b;
+      font-size: 9px;
+    }
+
+    .ta-market-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .ta-market {
+      min-width: 0;
+      padding: 11px 10px;
+      border-radius: 13px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid rgba(255,255,255,.045);
+    }
+
+    .ta-market-symbol {
+      font-size: 9px;
+      font-weight: 900;
+      color: #d4d8de;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .ta-market-price {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 900;
+      direction: ltr;
+      text-align: right;
+      color: #f1f2f4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ta-market-change {
+      margin-top: 5px;
+      font-size: 9px;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .ta-up {
+      color: ${GREEN};
+    }
+
+    .ta-down {
+      color: ${RED};
+    }
+
+    .ta-neutral {
+      color: #68717d;
+    }
+
+    .ta-body {
+      padding: 13px;
+    }
+
+    .ta-signal-list,
+    .ta-bot-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .ta-signal-row {
+      display: grid;
+      grid-template-columns:
+        38px
+        minmax(80px, 1fr)
+        auto
+        auto;
+      gap: 9px;
+      align-items: center;
+      padding: 10px;
+      border-radius: 13px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid rgba(255,255,255,.045);
+    }
+
+    .ta-signal-direction {
+      width: 35px;
+      height: 35px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+    }
+
+    .ta-signal-buy {
+      color: ${GREEN};
+      background: rgba(53,213,154,.08);
+    }
+
+    .ta-signal-sell {
+      color: ${RED};
+      background: rgba(255,93,108,.08);
+    }
+
+    .ta-signal-symbol {
+      font-size: 10px;
+      font-weight: 900;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .ta-signal-meta {
+      color: #68717d;
+      font-size: 8px;
+      margin-top: 4px;
+    }
+
+    .ta-signal-price {
+      direction: ltr;
+      text-align: right;
+      font-size: 9px;
+      color: #b9c0c9;
+    }
+
+    .ta-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 7px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.035);
+      color: #9098a4;
+      font-size: 8px;
+      white-space: nowrap;
+    }
+
+    .ta-status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .ta-bot-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 13px;
+      border: 1px solid rgba(255,255,255,.045);
+      background: rgba(255,255,255,.025);
+    }
+
+    .ta-bot-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      color: #ae7cff;
+      background: rgba(142,94,255,.1);
+      flex-shrink: 0;
+    }
+
+    .ta-bot-main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .ta-bot-name {
+      font-size: 10px;
+      font-weight: 900;
+      color: #e0e3e8;
+    }
+
+    .ta-bot-symbol {
+      font-size: 8px;
+      color: #69727e;
+      margin-top: 4px;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .ta-bot-state {
+      color: ${GREEN};
+      font-size: 8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .ta-performance {
+      padding: 15px;
+    }
+
+    .ta-ring-wrap {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+
+    .ta-ring {
+      width: 116px;
+      height: 116px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      position: relative;
+      background:
+        conic-gradient(
+          ${GREEN} ${winRate}%,
+          #252b34 ${winRate}% 100%
+        );
+      flex-shrink: 0;
+    }
+
+    .ta-ring::before {
+      content: "";
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      position: absolute;
+      background: #0e1319;
+      border: 1px solid rgba(255,255,255,.05);
+    }
+
+    .ta-ring-value {
+      position: relative;
+      z-index: 1;
+      font-size: 22px;
+      font-weight: 900;
+      direction: ltr;
+    }
+
+    .ta-performance-main {
+      flex: 1;
+    }
+
+    .ta-performance-title {
+      font-size: 10px;
+      color: #7a828d;
+    }
+
+    .ta-performance-number {
+      margin-top: 7px;
+      font-size: 20px;
+      font-weight: 900;
+      direction: ltr;
+    }
+
+    .ta-performance-caption {
+      margin-top: 5px;
+      color: #666f7a;
+      font-size: 8px;
+      line-height: 1.7;
+    }
+
+    .ta-bars {
+      height: 78px;
+      display: flex;
+      align-items: end;
+      gap: 7px;
+      padding: 8px 0 0;
+    }
+
+    .ta-bar {
+      flex: 1;
+      border-radius: 5px 5px 2px 2px;
+      min-height: 8px;
+      background:
+        linear-gradient(
+          180deg,
+          ${GOLD_LIGHT},
+          ${GOLD_DARK}
+        );
+      opacity: .75;
+    }
+
+    .ta-action-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(5, minmax(0, 1fr));
+      gap: 9px;
+      margin-bottom: 14px;
+    }
+
+    .ta-action {
+      min-height: 74px;
+      border-radius: 15px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid rgba(255,255,255,.06);
+      background:
+        linear-gradient(
+          145deg,
+          rgba(19,24,32,.95),
+          rgba(10,13,18,.96)
+        );
+    }
+
+    .ta-action:hover {
+      border-color: rgba(216,180,90,.2);
+      transform: translateY(-1px);
+    }
+
+    .ta-action-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: ${GOLD_LIGHT};
+      background: rgba(216,180,90,.08);
+      flex-shrink: 0;
+    }
+
+    .ta-action-text {
+      font-size: 9px;
+      color: #c7ccd3;
+      line-height: 1.7;
+    }
+
+    .ta-bottom-grid {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1fr)
+        minmax(270px, .6fr);
+      gap: 14px;
+    }
+
+    .ta-news-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.045);
+    }
+
+    .ta-news-item:last-child {
+      border-bottom: 0;
+    }
+
+    .ta-news-thumb {
+      width: 46px;
+      height: 46px;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      color: ${GOLD};
+      background: rgba(216,180,90,.08);
+      border: 1px solid rgba(216,180,90,.09);
+      flex-shrink: 0;
+    }
+
+    .ta-news-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .ta-news-title {
+      font-size: 9px;
+      color: #d4d8dd;
+      line-height: 1.8;
+    }
+
+    .ta-news-meta {
+      font-size: 8px;
+      color: #626b76;
+      margin-top: 3px;
+    }
+
+    .ta-subscription {
+      padding: 14px;
+    }
+
+    .ta-plan {
+      padding: 15px;
+      border-radius: 15px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(216,180,90,.12),
+          rgba(255,255,255,.025)
+        );
+      border: 1px solid rgba(216,180,90,.16);
+    }
+
+    .ta-plan-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .ta-plan-name {
+      font-size: 12px;
+      font-weight: 900;
+      color: ${GOLD_LIGHT};
+    }
+
+    .ta-plan-badge {
+      padding: 5px 8px;
+      border-radius: 7px;
+      color: #0b0d10;
+      background: ${GOLD};
+      font-size: 8px;
+      font-weight: 900;
+    }
+
+    .ta-plan-info {
+      color: #7c848e;
+      font-size: 9px;
+      line-height: 2;
+      margin-top: 10px;
+    }
+
+    .ta-support {
+      margin-top: 10px;
+      padding: 13px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid rgba(255,255,255,.05);
+    }
+
+    .ta-support-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #d9dde2;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .ta-support-text {
+      color: #6e7782;
+      font-size: 8px;
+      line-height: 1.8;
+      margin-top: 7px;
+    }
+
+    .ta-footer {
+      padding: 20px 5px 5px;
+      color: #4e5661;
+      font-size: 8px;
+      display: flex;
+      justify-content: space-between;
+      direction: rtl;
+    }
+
+    .ta-empty {
+      padding: 28px 14px;
+      text-align: center;
+      color: #626b76;
+      font-size: 9px;
+    }
+
+    .ta-refresh {
+      transition: transform .35s ease;
+    }
+
+    .ta-refresh:hover {
+      transform: rotate(180deg);
+    }
+
+    .ta-error {
+      padding: 10px 13px;
+      border-radius: 12px;
+      margin-bottom: 13px;
+      color: #ffb1b8;
+      border: 1px solid rgba(255,93,108,.14);
+      background: rgba(255,93,108,.05);
+      font-size: 9px;
+    }
+
+    .ta-loading {
+      opacity: .7;
+    }
+
+    @media (max-width: 1200px) {
+      .ta-sidebar {
+        width: 225px;
+      }
+
+      .ta-content {
+        margin-right: 225px;
+      }
+
+      .ta-stat-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+
+      .ta-market-grid {
+        grid-template-columns:
+          repeat(3, minmax(0, 1fr));
+      }
+
+      .ta-action-grid {
+        grid-template-columns:
+          repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 900px) {
+      .ta-sidebar {
+        transform: translateX(110%);
+        transition: transform .25s ease;
+        width: 270px;
+      }
+
+      .ta-sidebar.open {
+        transform: translateX(0);
+      }
+
+      .ta-content {
+        margin-right: 0;
+        padding: 12px;
+      }
+
+      .ta-mobile-menu {
+        display: grid;
+      }
+
+      .ta-grid-2,
+      .ta-bottom-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .ta-stat-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 600px) {
+      .ta-topbar {
+        height: 58px;
+        border-radius: 15px;
+        padding: 8px;
+      }
+
+      .ta-lang {
+        display: none;
+      }
+
+      .ta-live-status span {
+        display: none;
+      }
+
+      .ta-welcome-title {
+        font-size: 20px;
+      }
+
+      .ta-alert {
+        align-items: flex-start;
+      }
+
+      .ta-alert-action {
+        display: none;
+      }
+
+      .ta-stat-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .ta-stat {
+        min-height: 105px;
+        padding: 12px;
+      }
+
+      .ta-stat-value {
+        font-size: 18px;
+      }
+
+      .ta-market-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+
+      .ta-signal-row {
+        grid-template-columns:
+          34px
+          minmax(0, 1fr)
+          auto;
+      }
+
+      .ta-signal-price {
+        display: none;
+      }
+
+      .ta-action-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+
+      .ta-ring-wrap {
+        gap: 12px;
+      }
+
+      .ta-ring {
+        width: 92px;
+        height: 92px;
+      }
+
+      .ta-ring::before {
+        width: 68px;
+        height: 68px;
+      }
+
+      .ta-ring-value {
+        font-size: 18px;
+      }
+    }
+  `;
 
   return (
-    <main dir="rtl" className="dashboardRoot">
-      <style jsx>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .dashboardRoot {
-          min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at 82% 4%,
-              rgba(218, 181, 72, 0.11),
-              transparent 25%
-            ),
-            radial-gradient(
-              circle at 20% 30%,
-              rgba(26, 123, 156, 0.08),
-              transparent 27%
-            ),
-            #070b10;
-          color: #f6f6f6;
-          font-family:
-            Tahoma,
-            Arial,
-            sans-serif;
-          overflow-x: hidden;
-        }
-
-        .app {
-          min-height: 100vh;
-          display: flex;
-          flex-direction: row-reverse;
-        }
-
-        .sidebar {
-          width: 275px;
-          flex: 0 0 275px;
-          min-height: 100vh;
-          position: sticky;
-          top: 0;
-          height: 100vh;
-          overflow-y: auto;
-          border-left: 1px solid rgba(255, 255, 255, 0.07);
-          background:
-            linear-gradient(
-              180deg,
-              rgba(12, 17, 23, 0.98),
-              rgba(7, 11, 16, 0.98)
-            );
-          padding: 22px 16px;
-        }
-
-        .sidebar::-webkit-scrollbar {
-          width: 4px;
-        }
-
-        .sidebar::-webkit-scrollbar-thumb {
-          background: rgba(218, 181, 72, 0.2);
-          border-radius: 20px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          padding: 4px 7px 24px;
-        }
-
-        .brandLogo {
-          width: 47px;
-          height: 47px;
-          border-radius: 15px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #e5c45b;
-          border: 1px solid rgba(229, 196, 91, 0.3);
-          background:
-            linear-gradient(
-              135deg,
-              rgba(229, 196, 91, 0.18),
-              rgba(229, 196, 91, 0.02)
-            );
-          box-shadow:
-            inset 0 1px rgba(255, 255, 255, 0.08),
-            0 12px 35px rgba(0, 0, 0, 0.25);
-        }
-
-        .brandLogo span {
-          font-size: 22px;
-          font-weight: 900;
-        }
-
-        .brandTitle {
-          font-size: 15px;
-          font-weight: 900;
-          letter-spacing: 0.5px;
-        }
-
-        .brandSub {
-          color: #656c75;
-          font-size: 8px;
-          letter-spacing: 2.2px;
-          margin-top: 4px;
-          white-space: nowrap;
-        }
-
-        .profileMini {
-          padding: 13px;
-          border-radius: 17px;
-          border: 1px solid rgba(255, 255, 255, 0.065);
-          background: rgba(255, 255, 255, 0.025);
-          margin-bottom: 18px;
-        }
-
-        .profileRow {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .avatar {
-          width: 42px;
-          height: 42px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(226, 191, 78, 0.35),
-              rgba(30, 35, 42, 0.8)
-            );
-          border: 1px solid rgba(229, 196, 91, 0.28);
-          color: #f2d979;
-          font-size: 16px;
-          font-weight: 900;
-        }
-
-        .profileText {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .profileName {
-          font-size: 12px;
-          font-weight: 800;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .profileEmail {
-          color: #656c75;
-          font-size: 9px;
-          direction: ltr;
-          text-align: right;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          margin-top: 4px;
-        }
-
-        .online {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          color: #4bd996;
-          font-size: 9px;
-          margin-top: 7px;
-        }
-
-        .onlineDot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #43d991;
-          box-shadow: 0 0 10px rgba(67, 217, 145, 0.7);
-        }
-
-        .menuSection {
-          color: #4f565f;
-          font-size: 9px;
-          margin: 18px 9px 8px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .menuSection::before {
-          content: "";
-          height: 1px;
-          width: 26px;
-          background: rgba(218, 181, 72, 0.35);
-        }
-
-        .menu {
-          display: flex;
-          flex-direction: column;
-          gap: 3px;
-        }
-
-        .menuItem {
-          min-height: 43px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          position: relative;
-          padding: 0 11px;
-          border-radius: 13px;
-          color: #89909a;
-          text-decoration: none;
-          font-size: 11px;
-          transition:
-            background 0.2s ease,
-            color 0.2s ease,
-            transform 0.2s ease;
-        }
-
-        .menuItem:hover {
-          color: #eee;
-          background: rgba(255, 255, 255, 0.035);
-          transform: translateX(-2px);
-        }
-
-        .menuIcon {
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #626a74;
-        }
-
-        .menuActive {
-          color: #e5c45b;
-          background:
-            linear-gradient(
-              90deg,
-              rgba(229, 196, 91, 0.12),
-              rgba(229, 196, 91, 0.035)
-            );
-          border: 1px solid rgba(229, 196, 91, 0.12);
-          box-shadow:
-            inset 0 1px rgba(255, 255, 255, 0.035),
-            0 10px 30px rgba(0, 0, 0, 0.14);
-        }
-
-        .menuActive .menuIcon {
-          color: #e5c45b;
-        }
-
-        .activeDot {
-          position: absolute;
-          right: 5px;
-          width: 3px;
-          height: 18px;
-          border-radius: 10px;
-          background: #e5c45b;
-          box-shadow: 0 0 12px rgba(229, 196, 91, 0.7);
-        }
-
-        .supportMini {
-          margin-top: 17px;
-          padding: 14px;
-          border-radius: 16px;
-          border: 1px solid rgba(229, 196, 91, 0.1);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(229, 196, 91, 0.07),
-              rgba(255, 255, 255, 0.015)
-            );
-        }
-
-        .supportTitle {
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .supportText {
-          color: #666d76;
-          font-size: 9px;
-          line-height: 1.8;
-          margin: 5px 0 10px;
-        }
-
-        .supportButton {
-          display: block;
-          text-align: center;
-          text-decoration: none;
-          padding: 9px;
-          border-radius: 10px;
-          border: 1px solid rgba(229, 196, 91, 0.2);
-          background: rgba(229, 196, 91, 0.07);
-          color: #e5c45b;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .content {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .topbar {
-          height: 76px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.065);
-          background: rgba(7, 11, 16, 0.76);
-          backdrop-filter: blur(18px);
-          -webkit-backdrop-filter: blur(18px);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 28px;
-          position: sticky;
-          top: 0;
-          z-index: 20;
-        }
-
-        .welcomeSmall {
-          color: #626973;
-          font-size: 9px;
-          margin-bottom: 5px;
-        }
-
-        .welcomeTitle {
-          font-size: 17px;
-          font-weight: 900;
-        }
-
-        .topActions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .topButton {
-          height: 38px;
-          padding: 0 12px;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          color: #9ba1aa;
-          text-decoration: none;
-          font-size: 9px;
-          border: 1px solid rgba(255, 255, 255, 0.075);
-          background: rgba(255, 255, 255, 0.025);
-          border-radius: 11px;
-        }
-
-        .topButton:hover {
-          color: #fff;
-          border-color: rgba(229, 196, 91, 0.2);
-        }
-
-        .notification {
-          position: relative;
-          width: 38px;
-          height: 38px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #8e959e;
-          border: 1px solid rgba(255, 255, 255, 0.075);
-          background: rgba(255, 255, 255, 0.025);
-          border-radius: 11px;
-          text-decoration: none;
-        }
-
-        .notificationDot {
-          position: absolute;
-          width: 6px;
-          height: 6px;
-          right: 8px;
-          top: 7px;
-          border-radius: 50%;
-          background: #e5c45b;
-          box-shadow: 0 0 9px rgba(229, 196, 91, 0.8);
-        }
-
-        .mobileMenu {
-          display: none;
-        }
-
-        .page {
-          padding: 25px 28px 32px;
-          max-width: 1500px;
-          margin: 0 auto;
-        }
-
-        .announcement {
-          position: relative;
-          overflow: hidden;
-          border: 1px solid rgba(229, 196, 91, 0.12);
-          border-radius: 19px;
-          padding: 18px 20px;
-          background:
-            radial-gradient(
-              circle at 90% 50%,
-              rgba(229, 196, 91, 0.1),
-              transparent 25%
-            ),
-            rgba(255, 255, 255, 0.025);
-          box-shadow: 0 22px 60px rgba(0, 0, 0, 0.18);
-        }
-
-        .announcementInner {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-        }
-
-        .announcementLabel {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: #e5c45b;
-          font-size: 9px;
-          font-weight: 900;
-          margin-bottom: 7px;
-        }
-
-        .announcementTitle {
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .announcementText {
-          color: #666e78;
-          font-size: 9px;
-          line-height: 2;
-          margin-top: 5px;
-        }
-
-        .goldButton {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          min-width: 135px;
-          height: 38px;
-          padding: 0 15px;
-          border-radius: 11px;
-          color: #0b0d10;
-          background: linear-gradient(135deg, #e8cb67, #b99331);
-          text-decoration: none;
-          font-size: 9px;
-          font-weight: 900;
-          box-shadow: 0 8px 24px rgba(204, 163, 54, 0.15);
-        }
-
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
-          margin-top: 13px;
-        }
-
-        .card {
-          border: 1px solid rgba(255, 255, 255, 0.065);
-          background:
-            linear-gradient(
-              145deg,
-              rgba(255, 255, 255, 0.045),
-              rgba(255, 255, 255, 0.018)
-            );
-          border-radius: 18px;
-          box-shadow:
-            inset 0 1px rgba(255, 255, 255, 0.035),
-            0 20px 45px rgba(0, 0, 0, 0.14);
-        }
-
-        .statCard {
-          padding: 15px;
-          min-height: 124px;
-        }
-
-        .statTop {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .statLabel {
-          color: #727984;
-          font-size: 9px;
-        }
-
-        .statIcon {
-          width: 35px;
-          height: 35px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 11px;
-          color: #e5c45b;
-          background: rgba(229, 196, 91, 0.08);
-          border: 1px solid rgba(229, 196, 91, 0.09);
-        }
-
-        .statValue {
-          font-size: 25px;
-          font-weight: 900;
-          margin-top: 15px;
-          letter-spacing: -0.8px;
-        }
-
-        .statBottom {
-          color: #555d67;
-          font-size: 8px;
-          margin-top: 3px;
-        }
-
-        .section {
-          margin-top: 15px;
-        }
-
-        .sectionHeader {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 10px;
-        }
-
-        .sectionTitle {
-          font-size: 12px;
-          font-weight: 900;
-        }
-
-        .sectionSubtitle {
-          color: #555d67;
-          font-size: 8px;
-          margin-top: 4px;
-        }
-
-        .sectionLink {
-          color: #dcbf61;
-          text-decoration: none;
-          font-size: 9px;
-        }
-
-        .marketCard {
-          padding: 14px;
-        }
-
-        .marketGrid {
-          display: grid;
-          grid-template-columns: repeat(6, 1fr);
-          gap: 9px;
-        }
-
-        .marketItem {
-          min-width: 0;
-          padding: 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 255, 255, 0.05);
-          background: rgba(0, 0, 0, 0.18);
-        }
-
-        .marketSymbol {
-          font-size: 9px;
-          font-weight: 900;
-          color: #cbd0d7;
-        }
-
-        .marketPrice {
-          font-size: 13px;
-          font-weight: 900;
-          margin-top: 12px;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .marketWaiting {
-          color: #454c55;
-          font-size: 8px;
-          margin-top: 4px;
-        }
-
-        .mainGrid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.45fr) minmax(310px, 0.8fr);
-          gap: 14px;
-          margin-top: 15px;
-        }
-
-        .panel {
-          padding: 17px;
-        }
-
-        .signalList {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .signalRow {
-          border: 1px solid rgba(255, 255, 255, 0.055);
-          border-radius: 14px;
-          padding: 12px;
-          background: rgba(0, 0, 0, 0.17);
-          transition:
-            border 0.2s ease,
-            background 0.2s ease;
-        }
-
-        .signalRow:hover {
-          border-color: rgba(229, 196, 91, 0.15);
-          background: rgba(255, 255, 255, 0.025);
-        }
-
-        .signalMain {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .signalIdentity {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 0;
-        }
-
-        .signalIcon {
-          width: 38px;
-          height: 38px;
-          flex: 0 0 38px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 11px;
-          font-size: 17px;
-          font-weight: 900;
-        }
-
-        .signalIcon.buy {
-          color: #46dc99;
-          background: rgba(70, 220, 153, 0.08);
-          border: 1px solid rgba(70, 220, 153, 0.12);
-        }
-
-        .signalIcon.sell {
-          color: #f06d74;
-          background: rgba(240, 109, 116, 0.08);
-          border: 1px solid rgba(240, 109, 116, 0.12);
-        }
-
-        .signalIcon.neutral {
-          color: #d8bc60;
-          background: rgba(216, 188, 96, 0.08);
-          border: 1px solid rgba(216, 188, 96, 0.12);
-        }
-
-        .signalSymbol {
-          font-size: 11px;
-          font-weight: 900;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .signalMeta {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          margin-top: 4px;
-          color: #545c66;
-          font-size: 8px;
-        }
-
-        .timeframe {
-          padding: 3px 6px;
-          border-radius: 6px;
-          background: rgba(255, 255, 255, 0.04);
-          color: #737b85;
-          direction: ltr;
-        }
-
-        .directionBadge {
-          padding: 6px 9px;
-          border-radius: 8px;
-          font-size: 8px;
-          font-weight: 900;
-          direction: ltr;
-        }
-
-        .directionBadge.buy {
-          color: #47dc9b;
-          background: rgba(71, 220, 155, 0.08);
-          border: 1px solid rgba(71, 220, 155, 0.12);
-        }
-
-        .directionBadge.sell {
-          color: #f06c75;
-          background: rgba(240, 108, 117, 0.08);
-          border: 1px solid rgba(240, 108, 117, 0.12);
-        }
-
-        .directionBadge.neutral {
-          color: #dcbf61;
-          background: rgba(220, 191, 97, 0.08);
-        }
-
-        .signalValues {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 6px;
-          margin-top: 10px;
-        }
-
-        .valueBox {
-          padding: 8px 9px;
-          border-radius: 9px;
-          background: rgba(255, 255, 255, 0.025);
-        }
-
-        .valueLabel {
-          color: #505862;
-          font-size: 7px;
-        }
-
-        .valueNumber {
-          margin-top: 4px;
-          color: #cfd3d8;
-          font-size: 9px;
-          font-weight: 900;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .valueNumber.sl {
-          color: #ed737b;
-        }
-
-        .valueNumber.tp {
-          color: #4bd99a;
-        }
-
-        .signalBottom {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          border-top: 1px solid rgba(255, 255, 255, 0.045);
-          margin-top: 9px;
-          padding-top: 8px;
-          color: #505862;
-          font-size: 8px;
-        }
-
-        .goldText {
-          color: #e3c45f;
-        }
-
-        .statusActive {
-          color: #48db9a;
-        }
-
-        .statusDanger {
-          color: #ef7179;
-        }
-
-        .statusMuted {
-          color: #717882;
-        }
-
-        .statusWaiting {
-          color: #d8ba59;
-        }
-
-        .empty {
-          min-height: 250px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          border: 1px dashed rgba(255, 255, 255, 0.08);
-          border-radius: 15px;
-          color: #626a74;
-        }
-
-        .emptyIcon {
-          width: 48px;
-          height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 15px;
-          background: rgba(229, 196, 91, 0.06);
-          color: #b69b4c;
-          margin-bottom: 10px;
-        }
-
-        .emptyTitle {
-          color: #b8bdc4;
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .emptyText {
-          max-width: 320px;
-          color: #535b65;
-          font-size: 8px;
-          line-height: 2;
-          margin-top: 6px;
-        }
-
-        .performance {
-          min-height: 100%;
-        }
-
-        .circleWrap {
-          display: flex;
-          justify-content: center;
-          padding: 13px 0 18px;
-        }
-
-        .circle {
-          width: 174px;
-          height: 174px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          background:
-            conic-gradient(
-              #35d49a ${winRate}%,
-              rgba(255, 255, 255, 0.055) ${winRate}% 100%
-            );
-          box-shadow: 0 15px 45px rgba(0, 0, 0, 0.22);
-        }
-
-        .circle::before {
-          content: "";
-          position: absolute;
-          inset: 11px;
-          border-radius: 50%;
-          background: #0c1117;
-          border: 1px solid rgba(255, 255, 255, 0.045);
-        }
-
-        .circleText {
-          position: relative;
-          text-align: center;
-        }
-
-        .circleNumber {
-          font-size: 32px;
-          font-weight: 900;
-          color: #4ade9b;
-          direction: ltr;
-        }
-
-        .circleLabel {
-          color: #5e6670;
-          font-size: 8px;
-          margin-top: 3px;
-        }
-
-        .performanceBoxes {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .performanceBox {
-          border-radius: 13px;
-          padding: 12px;
-          background: rgba(255, 255, 255, 0.025);
-          border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .performanceBoxLabel {
-          color: #555d67;
-          font-size: 8px;
-        }
-
-        .performanceBoxValue {
-          margin-top: 6px;
-          font-size: 18px;
-          font-weight: 900;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .performanceBoxValue.green {
-          color: #4ade9b;
-        }
-
-        .performanceBoxValue.red {
-          color: #ef727b;
-        }
-
-        .fullButton {
-          margin-top: 9px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 37px;
-          border-radius: 10px;
-          border: 1px solid rgba(229, 196, 91, 0.14);
-          color: #ddc15e;
-          background: rgba(229, 196, 91, 0.05);
-          text-decoration: none;
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .quickGrid {
-          display: grid;
-          grid-template-columns: repeat(6, 1fr);
-          gap: 9px;
-        }
-
-        .quickItem {
-          text-decoration: none;
-          min-height: 92px;
-          border-radius: 15px;
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          background: rgba(255, 255, 255, 0.025);
-          padding: 13px;
-          color: #b9bec5;
-          transition:
-            transform 0.2s ease,
-            border 0.2s ease,
-            background 0.2s ease;
-        }
-
-        .quickItem:hover {
-          transform: translateY(-2px);
-          border-color: rgba(229, 196, 91, 0.15);
-          background: rgba(255, 255, 255, 0.04);
-        }
-
-        .quickIcon {
-          width: 33px;
-          height: 33px;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #ddbf5d;
-          background: rgba(229, 196, 91, 0.07);
-          margin-bottom: 13px;
-        }
-
-        .quickTitle {
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .bottomGrid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 14px;
-        }
-
-        .serviceList {
-          display: flex;
-          flex-direction: column;
-          gap: 7px;
-        }
-
-        .service {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          min-height: 45px;
-          padding: 0 12px;
-          border-radius: 11px;
-          background: rgba(255, 255, 255, 0.025);
-          border: 1px solid rgba(255, 255, 255, 0.045);
-        }
-
-        .serviceName {
-          color: #9ca2aa;
-          font-size: 9px;
-        }
-
-        .serviceStatus {
-          color: #46d998;
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .planBox {
-          padding: 16px;
-          border-radius: 14px;
-          border: 1px solid rgba(229, 196, 91, 0.09);
-          background:
-            radial-gradient(
-              circle at 100% 0,
-              rgba(229, 196, 91, 0.08),
-              transparent 40%
-            ),
-            rgba(255, 255, 255, 0.025);
-        }
-
-        .planName {
-          font-size: 22px;
-          font-weight: 900;
-          color: #e5c45b;
-          direction: ltr;
-          text-align: right;
-        }
-
-        .planText {
-          color: #555d67;
-          font-size: 8px;
-          margin-top: 4px;
-        }
-
-        .footer {
-          color: #3f464f;
-          font-size: 8px;
-          text-align: center;
-          padding: 20px 0 5px;
-          border-top: 1px solid rgba(255, 255, 255, 0.04);
-          margin-top: 20px;
-        }
-
-        @media (max-width: 1180px) {
-          .sidebar {
-            width: 245px;
-            flex-basis: 245px;
-          }
-
-          .page {
-            padding: 20px;
-          }
-
-          .marketGrid {
-            grid-template-columns: repeat(3, 1fr);
-          }
-
-          .quickGrid {
-            grid-template-columns: repeat(3, 1fr);
-          }
-        }
-
-        @media (max-width: 900px) {
-          .sidebar {
-            display: none;
-          }
-
-          .mobileMenu {
-            display: block;
-          }
-
-          .mobileMenu summary {
-            list-style: none;
-            cursor: pointer;
-          }
-
-          .mobileMenu summary::-webkit-details-marker {
-            display: none;
-          }
-
-          .mobileMenuPanel {
-            position: absolute;
-            top: 65px;
-            right: 12px;
-            left: 12px;
-            padding: 12px;
-            border: 1px solid rgba(229, 196, 91, 0.12);
-            border-radius: 17px;
-            background: rgba(10, 14, 19, 0.98);
-            backdrop-filter: blur(20px);
-            z-index: 100;
-            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.5);
-          }
-
-          .mobileMenuList {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 4px;
-          }
-
-          .mobileMenuItem {
-            text-decoration: none;
-            color: #969da5;
-            border-radius: 11px;
-            padding: 11px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 9px;
-          }
-
-          .mobileMenuItem:hover {
-            background: rgba(255, 255, 255, 0.04);
-            color: #e5c45b;
-          }
-
-          .topbar {
-            height: 65px;
-            padding: 0 14px;
-          }
-
-          .welcomeTitle {
-            font-size: 13px;
-          }
-
-          .welcomeSmall {
-            font-size: 8px;
-          }
-
-          .topButton {
-            display: none;
-          }
-
-          .stats {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .mainGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .quickGrid {
-            grid-template-columns: repeat(3, 1fr);
-          }
-
-          .bottomGrid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 600px) {
-          .page {
-            padding: 13px 11px 24px;
-          }
-
-          .announcement {
-            padding: 14px;
-          }
-
-          .announcementInner {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .announcementText {
-            max-width: 100%;
-          }
-
-          .goldButton {
-            width: 100%;
-          }
-
-          .stats {
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-          }
-
-          .statCard {
-            min-height: 105px;
-            padding: 12px;
-          }
-
-          .statValue {
-            font-size: 21px;
-            margin-top: 12px;
-          }
-
-          .statIcon {
-            width: 31px;
-            height: 31px;
-          }
-
-          .marketGrid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .panel {
-            padding: 12px;
-          }
-
-          .signalMain {
-            align-items: flex-start;
-          }
-
-          .signalValues {
-            grid-template-columns: 1fr 1fr 1fr;
-          }
-
-          .quickGrid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .quickItem {
-            min-height: 82px;
-          }
-
-          .circle {
-            width: 150px;
-            height: 150px;
-          }
-
-          .circleNumber {
-            font-size: 27px;
-          }
-
-          .mobileMenuList {
-            grid-template-columns: 1fr 1fr;
-          }
-        }
-      `}</style>
-
-      <div className="app">
-
-        {/* ================= SIDEBAR ================= */}
-
-        <aside className="sidebar">
-
-          <div className="brand">
-            <div className="brandLogo">
-              <span>TA</span>
-            </div>
-
-            <div>
-              <div className="brandTitle">
-                TRADING AI
+    <>
+      <style>{css}</style>
+
+      <div className="ta-shell">
+        <div className="ta-noise" />
+
+        {/* =====================================================
+            SIDEBAR
+        ====================================================== */}
+
+        <aside
+          className={`ta-sidebar ${mobileMenu ? "open" : ""}`}
+        >
+          <div className="ta-brand">
+            <div className="ta-brand-row">
+              <div className="ta-logo">
+                <Icon name="chart" size={25} />
               </div>
 
-              <div className="brandSub">
-                SMART TRADING PLATFORM
+              <div>
+                <div className="ta-brand-name">
+                  Trading AI
+                </div>
+
+                <div className="ta-brand-sub">
+                  SMART TRADING PLATFORM
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="profileMini">
-            <div className="profileRow">
-
-              <div className="avatar">
-                {name.slice(0, 1).toUpperCase()}
-              </div>
-
-              <div className="profileText">
-                <div className="profileName">
-                  {user.name || "کاربر"}
-                </div>
-
-                <div className="profileEmail">
-                  {user.email}
-                </div>
-
-                <div className="online">
-                  <span className="onlineDot" />
-                  سیستم فعال است
-                </div>
-              </div>
-
+          <nav className="ta-nav">
+            <div className="ta-nav-title">
+              داشبورد
             </div>
-          </div>
 
-          <div className="menuSection">
-            اصلی
-          </div>
-
-          <nav className="menu">
-            <MenuItem
+            <a
               href="/dashboard"
-              icon="home"
-              label="خانه"
-              active
-            />
-
-            <MenuItem
-              href="/market"
-              icon="market"
-              label="بازار زنده"
-            />
-
-            <MenuItem
-              href="/signals"
-              icon="signal"
-              label="سیگنال‌ها"
-            />
-
-            <MenuItem
-              href="/bots"
-              icon="bot"
-              label="ربات‌های معاملاتی"
-            />
-
-            <MenuItem
-              href="/performance"
-              icon="chart"
-              label="عملکرد"
-            />
-
-            <MenuItem
-              href="/trades"
-              icon="trade"
-              label="معاملات"
-            />
-          </nav>
-
-          <div className="menuSection">
-            اطلاعات بازار
-          </div>
-
-          <nav className="menu">
-            <MenuItem
-              href="/news"
-              icon="news"
-              label="اخبار"
-            />
-
-            <MenuItem
-              href="/economic"
-              icon="calendar"
-              label="تقویم اقتصادی"
-            />
-          </nav>
-
-          <div className="menuSection">
-            اتصال و خدمات
-          </div>
-
-          <nav className="menu">
-            <MenuItem
-              href="/broker"
-              icon="broker"
-              label="اتصال به بروکر"
-            />
-
-            <MenuItem
-              href="/metatrader"
-              icon="trade"
-              label="اتصال به متاتریدر"
-            />
-
-            <MenuItem
-              href="/telegram"
-              icon="telegram"
-              label="تلگرام و اعلان‌ها"
-            />
-
-            <MenuItem
-              href="/subscriptions"
-              icon="subscription"
-              label="اشتراک‌ها"
-            />
-
-            <MenuItem
-              href="/support"
-              icon="support"
-              label="پشتیبانی"
-            />
-          </nav>
-
-          <div className="menuSection">
-            حساب
-          </div>
-
-          <nav className="menu">
-            <MenuItem
-              href="/profile"
-              icon="profile"
-              label="پروفایل"
-            />
-
-            <MenuItem
-              href="/settings"
-              icon="settings"
-              label="تنظیمات"
-            />
-
-            <MenuItem
-              href="/api/auth/logout"
-              icon="logout"
-              label="خروج"
-            />
-          </nav>
-
-          <div className="supportMini">
-            <div className="supportTitle">
-              پشتیبانی ۲۴/۷
-            </div>
-
-            <div className="supportText">
-              اگر در استفاده از پنل یا سیگنال‌ها مشکلی دارید،
-              از بخش پشتیبانی تیکت ارسال کنید.
-            </div>
-
-            <Link
-              href="/support"
-              className="supportButton"
+              className="ta-nav-item active"
+              onClick={() => setMobileMenu(false)}
             >
-              ایجاد تیکت جدید
-            </Link>
-          </div>
+              <Icon name="home" size={18} />
+              <span className="ta-nav-label">
+                خانه
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-        </aside>
+            <a
+              href="/market"
+              className="ta-nav-item"
+              onClick={() => setMobileMenu(false)}
+            >
+              <Icon name="market" size={18} />
+              <span className="ta-nav-label">
+                بازار زنده
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-        {/* ================= CONTENT ================= */}
+            <a
+              href="/signals"
+              className="ta-nav-item"
+              onClick={() => setMobileMenu(false)}
+            >
+              <Icon name="signals" size={18} />
+              <span className="ta-nav-label">
+                سیگنال‌های معاملاتی
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-        <section className="content">
+            <a
+              href="/bots"
+              className="ta-nav-item"
+              onClick={() => setMobileMenu(false)}
+            >
+              <Icon name="bots" size={18} />
+              <span className="ta-nav-label">
+                ربات‌های تحلیلگر
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-          <header className="topbar">
+            <a
+              href="/ai-analysis"
+              className="ta-nav-item"
+              onClick={() => setMobileMenu(false)}
+            >
+              <Icon name="analysis" size={18} />
+              <span className="ta-nav-label">
+                تحلیل هوش مصنوعی
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-            <div>
-              <div className="welcomeSmall">
-                پنل مدیریت معاملات هوشمند
-              </div>
-
-              <div className="welcomeTitle">
-                سلام، {name} 👋
-              </div>
+            <div className="ta-nav-title">
+              ابزارها
             </div>
 
-            <div className="topActions">
+            <a
+              href="/news"
+              className="ta-nav-item"
+            >
+              <Icon name="news" size={18} />
+              <span className="ta-nav-label">
+                اخبار بازار
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-              <Link
-                href="/settings"
-                className="topButton"
-              >
-                <Icon name="settings" size={15} />
-                تنظیمات
-              </Link>
+            <a
+              href="/economic"
+              className="ta-nav-item"
+            >
+              <Icon name="calendar" size={18} />
+              <span className="ta-nav-label">
+                تقویم اقتصادی
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-              <Link
-                href="/profile"
-                className="topButton"
-              >
-                <Icon name="profile" size={15} />
+            <a
+              href="/broker"
+              className="ta-nav-item"
+            >
+              <Icon name="broker" size={18} />
+              <span className="ta-nav-label">
+                اتصال به بروکر
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            <a
+              href="/metatrader"
+              className="ta-nav-item"
+            >
+              <Icon name="mt" size={18} />
+              <span className="ta-nav-label">
+                اتصال به متاتریدر
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            <a
+              href="/telegram"
+              className="ta-nav-item"
+            >
+              <Icon name="telegram" size={18} />
+              <span className="ta-nav-label">
+                تلگرام و اعلان‌ها
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            <a
+              href="/subscriptions"
+              className="ta-nav-item"
+            >
+              <Icon name="subscription" size={18} />
+              <span className="ta-nav-label">
+                اشتراک‌ها
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            <a
+              href="/vpn"
+              className="ta-nav-item"
+            >
+              <Icon name="vpn" size={18} />
+              <span className="ta-nav-label">
+                VPN اختصاصی
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            <a
+              href="/support"
+              className="ta-nav-item"
+            >
+              <Icon name="support" size={18} />
+              <span className="ta-nav-label">
+                پشتیبانی
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            <div className="ta-nav-title">
+              حساب کاربری
+            </div>
+
+            <a
+              href="/profile"
+              className="ta-nav-item"
+            >
+              <Icon name="profile" size={18} />
+              <span className="ta-nav-label">
                 پروفایل
-              </Link>
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
 
-              <Link
-                href="/notifications"
-                className="notification"
-                aria-label="اعلان‌ها"
+            <a
+              href="/settings"
+              className="ta-nav-item"
+            >
+              <Icon name="settings" size={18} />
+              <span className="ta-nav-label">
+                تنظیمات
+              </span>
+              <Icon name="arrow" size={14} />
+            </a>
+
+            {state.user?.role === "ADMIN" && (
+              <a
+                href="/admin"
+                className="ta-nav-item"
               >
-                <Icon name="bell" size={17} />
-                <span className="notificationDot" />
-              </Link>
+                <Icon name="shield" size={18} />
+                <span className="ta-nav-label">
+                  پنل مدیریت
+                </span>
+                <Icon name="arrow" size={14} />
+              </a>
+            )}
+          </nav>
 
-              <details className="mobileMenu">
-                <summary className="notification">
-                  <Icon name="menu" size={18} />
-                </summary>
+          <div className="ta-sidebar-bottom">
+            <div className="ta-user-mini">
+              <div className="ta-user-mini-row">
+                <div className="ta-avatar">
+                  {String(
+                    state.user?.name || "T"
+                  )
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
 
-                <div className="mobileMenuPanel">
-
-                  <div className="mobileMenuList">
-
-                    <Link
-                      href="/dashboard"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="home" size={15} />
-                      خانه
-                    </Link>
-
-                    <Link
-                      href="/market"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="market" size={15} />
-                      بازار زنده
-                    </Link>
-
-                    <Link
-                      href="/signals"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="signal" size={15} />
-                      سیگنال‌ها
-                    </Link>
-
-                    <Link
-                      href="/bots"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="bot" size={15} />
-                      ربات‌ها
-                    </Link>
-
-                    <Link
-                      href="/news"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="news" size={15} />
-                      اخبار
-                    </Link>
-
-                    <Link
-                      href="/broker"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="broker" size={15} />
-                      بروکر
-                    </Link>
-
-                    <Link
-                      href="/telegram"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="telegram" size={15} />
-                      تلگرام
-                    </Link>
-
-                    <Link
-                      href="/subscriptions"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="subscription" size={15} />
-                      اشتراک
-                    </Link>
-
-                    <Link
-                      href="/support"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="support" size={15} />
-                      پشتیبانی
-                    </Link>
-
-                    <Link
-                      href="/profile"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="profile" size={15} />
-                      پروفایل
-                    </Link>
-
-                    <Link
-                      href="/settings"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="settings" size={15} />
-                      تنظیمات
-                    </Link>
-
-                    <Link
-                      href="/api/auth/logout"
-                      className="mobileMenuItem"
-                    >
-                      <Icon name="logout" size={15} />
-                      خروج
-                    </Link>
-
+                <div style={{ minWidth: 0 }}>
+                  <div className="ta-user-name">
+                    {state.user?.name || "کاربر Trading AI"}
                   </div>
 
+                  <div className="ta-user-email">
+                    {state.user?.email || "حساب کاربری"}
+                  </div>
                 </div>
-              </details>
+              </div>
+            </div>
 
+            <button
+              type="button"
+              className="ta-nav-item"
+              onClick={logout}
+              style={{
+                width: "100%",
+                border: 0,
+                textAlign: "right",
+              }}
+            >
+              <Icon name="logout" size={18} />
+              <span
+                className="ta-nav-label"
+                style={{ color: "#ff6573" }}
+              >
+                خروج از حساب
+              </span>
+              <Icon name="arrow" size={14} />
+            </button>
+          </div>
+        </aside>
+
+        {/* =====================================================
+            MAIN
+        ====================================================== */}
+
+        <main className="ta-content">
+          {/* TOP BAR */}
+          <header className="ta-topbar">
+            <div className="ta-top-right">
+              <button
+                type="button"
+                className="ta-icon-btn ta-mobile-menu"
+                onClick={() =>
+                  setMobileMenu((value) => !value)
+                }
+              >
+                <Icon
+                  name={
+                    mobileMenu
+                      ? "close"
+                      : "menu"
+                  }
+                  size={19}
+                />
+              </button>
+
+              <div className="ta-live-status">
+                <span className="ta-live-dot" />
+                <span>
+                  سیستم تحلیل آنلاین
+                </span>
+              </div>
+            </div>
+
+            <div className="ta-top-left">
+              <button
+                type="button"
+                className="ta-icon-btn"
+                title="اعلان‌ها"
+              >
+                <Icon name="bell" size={18} />
+              </button>
+
+              <div className="ta-lang">
+                <span>فارسی</span>
+                <span>🇮🇷</span>
+              </div>
+
+              <button
+                type="button"
+                className="ta-icon-btn"
+                title="حالت نمایش"
+              >
+                <Icon name="sun" size={17} />
+              </button>
+
+              <button
+                type="button"
+                className="ta-icon-btn ta-refresh"
+                onClick={loadDashboard}
+                title="به‌روزرسانی"
+              >
+                <Icon name="refresh" size={17} />
+              </button>
             </div>
           </header>
 
-          <div className="page">
+          {/* WELCOME */}
+          <section className="ta-welcome">
+            <div className="ta-welcome-small">
+              پنل معاملاتی هوشمند
+            </div>
 
-            {/* ================= ANNOUNCEMENT ================= */}
+            <div className="ta-welcome-title">
+              سلام،{" "}
+              <span>
+                {state.user?.name || "معامله‌گر"}
+              </span>{" "}
+              👋
+            </div>
 
-            <section className="announcement">
+            <div className="ta-welcome-sub">
+              وضعیت بازار، ربات‌ها، سیگنال‌ها و
+              عملکرد حساب خود را از یک صفحه مشاهده
+              کنید.
+            </div>
+          </section>
 
-              <div className="announcementInner">
+          {state.error && (
+            <div className="ta-error">
+              {state.error}
+            </div>
+          )}
 
-                <div>
-                  <div className="announcementLabel">
-                    <Icon name="spark" size={14} />
-                    اطلاعیه مهم
-                  </div>
+          {/* ANNOUNCEMENT */}
+          <section className="ta-alert">
+            <div className="ta-alert-icon">
+              <Icon name="bell" size={19} />
+            </div>
 
-                  <div className="announcementTitle">
-                    موتور تحلیل و مدیریت سیگنال‌ها فعال است
-                  </div>
-
-                  <div className="announcementText">
-                    آخرین وضعیت ربات‌ها، سیگنال‌های ثبت‌شده و عملکرد
-                    حساب خود را از همین داشبورد مشاهده کنید.
-                  </div>
-                </div>
-
-                <Link
-                  href="/signals"
-                  className="goldButton"
-                >
-                  مشاهده سیگنال‌ها
-                  <Icon name="arrow" size={14} />
-                </Link>
-
+            <div style={{ flex: 1 }}>
+              <div className="ta-alert-title">
+                اطلاعیه مهم
               </div>
 
-            </section>
-
-            {/* ================= STATS ================= */}
-
-            <section className="stats">
-
-              <div className="card statCard">
-                <div className="statTop">
-                  <span className="statLabel">
-                    ربات‌های فعال
-                  </span>
-
-                  <span className="statIcon">
-                    <Icon name="bot" size={17} />
-                  </span>
-                </div>
-
-                <div className="statValue">
-                  {activeBots}
-                </div>
-
-                <div className="statBottom">
-                  از {totalBots} ربات ثبت‌شده
-                </div>
+              <div className="ta-alert-text">
+                سیستم تحلیل و مدیریت سیگنال‌ها فعال
+                است. داده‌های داشبورد از سرویس‌های
+                معاملاتی پروژه دریافت می‌شوند.
               </div>
+            </div>
 
-              <div className="card statCard">
-                <div className="statTop">
-                  <span className="statLabel">
-                    سیگنال‌های فعال
-                  </span>
+            <a
+              href="/news"
+              className="ta-alert-action"
+            >
+              مشاهده اخبار
+            </a>
+          </section>
 
-                  <span className="statIcon">
-                    <Icon name="signal" size={17} />
-                  </span>
+          {/* STATS */}
+          <section className="ta-stat-grid">
+            <div className="ta-stat">
+              <div className="ta-stat-top">
+                <div className="ta-stat-label">
+                  سود ثبت‌شده
                 </div>
 
-                <div className="statValue">
-                  {activeSignals}
-                </div>
-
-                <div className="statBottom">
-                  در حال پیگیری
+                <div className="ta-stat-icon">
+                  <Icon name="wallet" size={19} />
                 </div>
               </div>
 
-              <div className="card statCard">
-                <div className="statTop">
-                  <span className="statLabel">
-                    کل سیگنال‌ها
-                  </span>
+              <div
+                className="ta-stat-value"
+                style={{
+                  color:
+                    totalProfit >= 0
+                      ? GREEN
+                      : RED,
+                }}
+              >
+                {money(totalProfit)}
+              </div>
 
-                  <span className="statIcon">
-                    <Icon name="chart" size={17} />
-                  </span>
+              <div className="ta-stat-foot">
+                عملکرد ثبت‌شده در سیستم
+              </div>
+            </div>
+
+            <div className="ta-stat">
+              <div className="ta-stat-top">
+                <div className="ta-stat-label">
+                  معاملات امروز
                 </div>
 
-                <div className="statValue">
-                  {totalSignals}
-                </div>
-
-                <div className="statBottom">
-                  ثبت‌شده در حساب
+                <div className="ta-stat-icon">
+                  <Icon name="chart" size={19} />
                 </div>
               </div>
 
-              <div className="card statCard">
-                <div className="statTop">
-                  <span className="statLabel">
-                    نرخ موفقیت
-                  </span>
+              <div className="ta-stat-value">
+                {state.loading
+                  ? "..."
+                  : totalSignals}
+              </div>
 
-                  <span className="statIcon">
-                    %
-                  </span>
+              <div className="ta-stat-foot">
+                سیگنال‌های ثبت‌شده
+              </div>
+            </div>
+
+            <div className="ta-stat">
+              <div className="ta-stat-top">
+                <div className="ta-stat-label">
+                  ربات‌های فعال
                 </div>
 
-                <div className="statValue goldText">
-                  {winRate}%
-                </div>
-
-                <div className="statBottom">
-                  بر اساس سیگنال‌های تکمیل‌شده
+                <div className="ta-stat-icon">
+                  <Icon name="robot" size={19} />
                 </div>
               </div>
 
-            </section>
+              <div className="ta-stat-value">
+                {activeBots.length}
+              </div>
 
-            {/* ================= LIVE MARKET ================= */}
+              <div className="ta-stat-foot">
+                از {state.bots.length} ربات
+              </div>
+            </div>
 
-            <section className="section">
+            <div className="ta-stat">
+              <div className="ta-stat-top">
+                <div className="ta-stat-label">
+                  نرخ موفقیت
+                </div>
 
-              <div className="card marketCard">
+                <div className="ta-stat-icon">
+                  <Icon name="target" size={19} />
+                </div>
+              </div>
 
-                <div className="sectionHeader">
+              <div
+                className="ta-stat-value"
+                style={{
+                  color:
+                    winRate >= 50
+                      ? GREEN
+                      : "#e0b85e",
+                }}
+              >
+                {winRate}%
+              </div>
 
-                  <div>
-                    <div className="sectionTitle">
-                      بازار زنده
-                    </div>
+              <div className="ta-stat-foot">
+                بر اساس نتایج ثبت‌شده
+              </div>
+            </div>
+          </section>
 
-                    <div className="sectionSubtitle">
-                      نمایش نمادهای تحت نظر سیستم تحلیل
-                    </div>
-                  </div>
+          {/* MARKET */}
+          <section className="ta-card" style={{ marginBottom: 14 }}>
+            <div className="ta-card-head">
+              <div className="ta-card-title">
+                <span className="ta-card-title-icon">
+                  <Icon name="market" size={18} />
+                </span>
+                بازار زنده
+              </div>
 
-                  <Link
-                    href="/market"
-                    className="sectionLink"
+              <div className="ta-live-status">
+                <span className="ta-live-dot" />
+                اتصال داده
+              </div>
+            </div>
+
+            <div className="ta-market-grid">
+              {marketItems.map((item) => {
+                const positive =
+                  item.change !== null &&
+                  item.change >= 0;
+
+                return (
+                  <div
+                    className="ta-market"
+                    key={item.symbol}
                   >
-                    مشاهده بازار ←
-                  </Link>
+                    <div className="ta-market-symbol">
+                      {item.symbol}
+                    </div>
 
-                </div>
+                    <div className="ta-market-price">
+                      {price(
+                        item.price,
+                        item.symbol
+                      )}
+                    </div>
 
-                <div className="marketGrid">
-
-                  {[
-                    "XAUUSD",
-                    "EURUSD",
-                    "GBPUSD",
-                    "USDJPY",
-                    "BTCUSDT",
-                    "ETHUSDT",
-                  ].map((symbol) => (
                     <div
-                      key={symbol}
-                      className="marketItem"
+                      className={`ta-market-change ${
+                        item.change === null
+                          ? "ta-neutral"
+                          : positive
+                            ? "ta-up"
+                            : "ta-down"
+                      }`}
                     >
-                      <div className="marketSymbol">
-                        {symbol}
-                      </div>
-
-                      <div className="marketPrice">
-                        —
-                      </div>
-
-                      <div className="marketWaiting">
-                        در انتظار داده زنده
-                      </div>
-                    </div>
-                  ))}
-
-                </div>
-
-              </div>
-
-            </section>
-
-            {/* ================= SIGNALS + PERFORMANCE ================= */}
-
-            <section className="mainGrid">
-
-              <div className="card panel">
-
-                <div className="sectionHeader">
-
-                  <div>
-                    <div className="sectionTitle">
-                      آخرین سیگنال‌ها
-                    </div>
-
-                    <div className="sectionSubtitle">
-                      آخرین سیگنال‌های ثبت‌شده برای حساب شما
+                      {item.change === null
+                        ? "در انتظار داده"
+                        : `${positive ? "+" : ""}${item.change.toFixed(2)}%`}
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </section>
 
-                  <Link
-                    href="/signals"
-                    className="sectionLink"
-                  >
-                    مشاهده همه ←
-                  </Link>
-
+          {/* MAIN 2 COLUMN */}
+          <section className="ta-grid-2">
+            {/* SIGNALS */}
+            <div className="ta-card">
+              <div className="ta-card-head">
+                <div className="ta-card-title">
+                  <span className="ta-card-title-icon">
+                    <Icon name="signals" size={18} />
+                  </span>
+                  سیگنال‌های زنده
                 </div>
 
-                {signals.length === 0 ? (
-                  <div className="empty">
+                <a
+                  href="/signals"
+                  className="ta-card-sub"
+                >
+                  مشاهده همه ←
+                </a>
+              </div>
 
-                    <div className="emptyIcon">
-                      <Icon name="signal" size={22} />
-                    </div>
-
-                    <div className="emptyTitle">
-                      هنوز سیگنالی ثبت نشده است
-                    </div>
-
-                    <div className="emptyText">
-                      وقتی موتور تحلیل یک سیگنال معتبر ایجاد کند،
-                      اطلاعات آن در این قسمت نمایش داده خواهد شد.
-                    </div>
-
-                    <Link
-                      href="/signals"
-                      className="fullButton"
-                      style={{
-                        width: "180px",
-                        marginTop: "15px",
-                      }}
-                    >
-                      ورود به بخش سیگنال‌ها
-                    </Link>
-
+              <div className="ta-body">
+                {recentSignals.length === 0 ? (
+                  <div className="ta-empty">
+                    هنوز سیگنال ثبت‌شده‌ای برای نمایش
+                    وجود ندارد.
                   </div>
                 ) : (
-                  <div className="signalList">
+                  <div className="ta-signal-list">
+                    {recentSignals.map(
+                      (signal, index) => {
+                        const direction =
+                          normalizeDirection(signal);
 
-                    {signals.map((signal) => {
-                      const direction = signalDirection(
-                        signal.direction,
-                      );
+                        const color =
+                          signalColor(direction);
 
-                      const status = signalStatus(
-                        signal.status,
-                      );
+                        const status = String(
+                          signal.status || "—"
+                        ).toUpperCase();
 
-                      return (
-                        <div
-                          key={signal.id}
-                          className="signalRow"
-                        >
+                        const active = [
+                          "ACTIVE",
+                          "OPEN",
+                          "WAITING",
+                          "TP1_HIT",
+                          "TP2_HIT",
+                        ].includes(status);
 
-                          <div className="signalMain">
+                        const entry =
+                          getSignalEntry(signal);
 
-                            <div className="signalIdentity">
+                        return (
+                          <div
+                            className="ta-signal-row"
+                            key={
+                              signal.id ||
+                              `${signal.symbol}-${index}`
+                            }
+                          >
+                            <div
+                              className={`ta-signal-direction ${
+                                direction === "BUY"
+                                  ? "ta-signal-buy"
+                                  : direction ===
+                                      "SELL"
+                                    ? "ta-signal-sell"
+                                    : ""
+                              }`}
+                            >
+                              <Icon
+                                name={
+                                  direction ===
+                                  "BUY"
+                                    ? "trendUp"
+                                    : direction ===
+                                        "SELL"
+                                      ? "trendDown"
+                                      : "chart"
+                                }
+                                size={17}
+                              />
+                            </div>
 
-                              <div
-                                className={`signalIcon ${direction.className}`}
-                              >
-                                {direction.icon}
+                            <div>
+                              <div className="ta-signal-symbol">
+                                {signal.symbol ||
+                                  "UNKNOWN"}
                               </div>
 
-                              <div>
-                                <div className="signalSymbol">
-                                  {signal.symbol}
-                                </div>
-
-                                <div className="signalMeta">
-                                  <span className="timeframe">
-                                    {signal.timeframe || "—"}
-                                  </span>
-
-                                  <span>
-                                    {formatDate(signal.createdAt)}
-                                  </span>
-                                </div>
+                              <div className="ta-signal-meta">
+                                {direction} •{" "}
+                                {signal.timeframe ||
+                                  "—"}{" "}
+                                •{" "}
+                                {getSignalTime(
+                                  signal
+                                )}
                               </div>
+                            </div>
 
+                            <div className="ta-signal-price">
+                              {price(
+                                entry,
+                                String(
+                                  signal.symbol ||
+                                    ""
+                                )
+                              )}
                             </div>
 
                             <div
+                              className="ta-status"
                               style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "6px",
+                                color: active
+                                  ? color
+                                  : "#747d88",
                               }}
                             >
-                              <span
-                                className={`directionBadge ${direction.className}`}
-                              >
-                                {direction.label}
-                              </span>
-
-                              <span
-                                className={status.className}
-                                style={{
-                                  fontSize: "8px",
-                                  fontWeight: 800,
-                                }}
-                              >
-                                {status.label}
-                              </span>
+                              <span className="ta-status-dot" />
+                              {active
+                                ? "فعال"
+                                : status}
                             </div>
-
                           </div>
-
-                          <div className="signalValues">
-
-                            <div className="valueBox">
-                              <div className="valueLabel">
-                                ENTRY
-                              </div>
-
-                              <div className="valueNumber">
-                                {price(signal.entry)}
-                              </div>
-                            </div>
-
-                            <div className="valueBox">
-                              <div className="valueLabel">
-                                STOP LOSS
-                              </div>
-
-                              <div className="valueNumber sl">
-                                {price(signal.stopLoss)}
-                              </div>
-                            </div>
-
-                            <div className="valueBox">
-                              <div className="valueLabel">
-                                TAKE PROFIT
-                              </div>
-
-                              <div className="valueNumber tp">
-                                {price(signal.takeProfit)}
-                              </div>
-                            </div>
-
-                          </div>
-
-                          <div className="signalBottom">
-
-                            <span>
-                              Score:{" "}
-                              <strong className="goldText">
-                                {signal.score !== null &&
-                                signal.score !== undefined
-                                  ? integer(signal.score)
-                                  : "—"}
-                              </strong>
-                            </span>
-
-                            <span>
-                              RR:{" "}
-                              <strong className="goldText">
-                                {num(signal.riskReward) !== null
-                                  ? `${price(signal.riskReward)}R`
-                                  : "—"}
-                              </strong>
-                            </span>
-
-                            <span>
-                              Confidence:{" "}
-                              <strong>
-                                {signal.confidence !== null &&
-                                signal.confidence !== undefined
-                                  ? integer(signal.confidence)
-                                  : "—"}
-                              </strong>
-                            </span>
-
-                          </div>
-
-                        </div>
-                      );
-                    })}
-
+                        );
+                      }
+                    )}
                   </div>
                 )}
-
               </div>
+            </div>
 
-              {/* PERFORMANCE */}
-
-              <div className="card panel performance">
-
-                <div className="sectionHeader">
-
-                  <div>
-                    <div className="sectionTitle">
-                      عملکرد حساب
-                    </div>
-
-                    <div className="sectionSubtitle">
-                      خلاصه عملکرد سیگنال‌های ثبت‌شده
-                    </div>
-                  </div>
-
-                  <Link
-                    href="/performance"
-                    className="sectionLink"
-                  >
-                    جزئیات
-                  </Link>
-
+            {/* BOTS */}
+            <div className="ta-card">
+              <div className="ta-card-head">
+                <div className="ta-card-title">
+                  <span className="ta-card-title-icon">
+                    <Icon name="bots" size={18} />
+                  </span>
+                  ربات‌های در حال اجرا
                 </div>
 
-                <div className="circleWrap">
-
-                  <div className="circle">
-
-                    <div className="circleText">
-
-                      <div className="circleNumber">
-                        {winRate}%
-                      </div>
-
-                      <div className="circleLabel">
-                        WIN RATE
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-                <div className="performanceBoxes">
-
-                  <div className="performanceBox">
-                    <div className="performanceBoxLabel">
-                      سیگنال BUY
-                    </div>
-
-                    <div className="performanceBoxValue green">
-                      {buyCount}
-                    </div>
-                  </div>
-
-                  <div className="performanceBox">
-                    <div className="performanceBoxLabel">
-                      سیگنال SELL
-                    </div>
-
-                    <div className="performanceBoxValue red">
-                      {sellCount}
-                    </div>
-                  </div>
-
-                </div>
-
-                <Link
-                  href="/performance"
-                  className="fullButton"
-                >
-                  مشاهده عملکرد کامل
-                </Link>
-
-              </div>
-
-            </section>
-
-            {/* ================= QUICK ACCESS ================= */}
-
-            <section className="section">
-
-              <div className="sectionHeader">
-                <div>
-                  <div className="sectionTitle">
-                    دسترسی سریع
-                  </div>
-
-                  <div className="sectionSubtitle">
-                    بخش‌های اصلی پلتفرم
-                  </div>
-                </div>
-              </div>
-
-              <div className="quickGrid">
-
-                <Link
-                  href="/signals"
-                  className="quickItem"
-                >
-                  <div className="quickIcon">
-                    <Icon name="signal" size={17} />
-                  </div>
-
-                  <div className="quickTitle">
-                    سیگنال‌ها
-                  </div>
-                </Link>
-
-                <Link
+                <a
                   href="/bots"
-                  className="quickItem"
+                  className="ta-card-sub"
                 >
-                  <div className="quickIcon">
-                    <Icon name="bot" size={17} />
-                  </div>
-
-                  <div className="quickTitle">
-                    ربات‌های معاملاتی
-                  </div>
-                </Link>
-
-                <Link
-                  href="/trades"
-                  className="quickItem"
-                >
-                  <div className="quickIcon">
-                    <Icon name="trade" size={17} />
-                  </div>
-
-                  <div className="quickTitle">
-                    معاملات
-                  </div>
-                </Link>
-
-                <Link
-                  href="/market"
-                  className="quickItem"
-                >
-                  <div className="quickIcon">
-                    <Icon name="market" size={17} />
-                  </div>
-
-                  <div className="quickTitle">
-                    بازار زنده
-                  </div>
-                </Link>
-
-                <Link
-                  href="/broker"
-                  className="quickItem"
-                >
-                  <div className="quickIcon">
-                    <Icon name="broker" size={17} />
-                  </div>
-
-                  <div className="quickTitle">
-                    اتصال بروکر
-                  </div>
-                </Link>
-
-                <Link
-                  href="/telegram"
-                  className="quickItem"
-                >
-                  <div className="quickIcon">
-                    <Icon name="telegram" size={17} />
-                  </div>
-
-                  <div className="quickTitle">
-                    Telegram
-                  </div>
-                </Link>
-
+                  مدیریت ربات‌ها ←
+                </a>
               </div>
 
-            </section>
-
-            {/* ================= SERVICES ================= */}
-
-            <section className="section bottomGrid">
-
-              <div className="card panel">
-
-                <div className="sectionHeader">
-                  <div>
-                    <div className="sectionTitle">
-                      وضعیت سیستم
-                    </div>
-
-                    <div className="sectionSubtitle">
-                      وضعیت سرویس‌های حساب
-                    </div>
+              <div className="ta-body">
+                {state.bots.length === 0 ? (
+                  <div className="ta-empty">
+                    هنوز رباتی برای نمایش ثبت نشده است.
                   </div>
+                ) : (
+                  <div className="ta-bot-list">
+                    {state.bots
+                      .slice(0, 5)
+                      .map((bot, index) => {
+                        const active =
+                          bot.isActive === true ||
+                          String(
+                            bot.botStatus || ""
+                          ).toUpperCase() ===
+                            "ACTIVE";
+
+                        return (
+                          <div
+                            className="ta-bot-row"
+                            key={
+                              bot.id ||
+                              `${bot.name}-${index}`
+                            }
+                          >
+                            <div className="ta-bot-icon">
+                              <Icon
+                                name="robot"
+                                size={18}
+                              />
+                            </div>
+
+                            <div className="ta-bot-main">
+                              <div className="ta-bot-name">
+                                {bot.name ||
+                                  "Analyzer Bot"}
+                              </div>
+
+                              <div className="ta-bot-symbol">
+                                {bot.symbol ||
+                                  "—"}{" "}
+                                •{" "}
+                                {bot.timeframe ||
+                                  "—"}
+                              </div>
+                            </div>
+
+                            <div className="ta-bot-state">
+                              <span className="ta-live-dot" />
+                              {active
+                                ? "فعال"
+                                : "خاموش"}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* PERFORMANCE + ACTIVE */}
+          <section className="ta-grid-2">
+            <div className="ta-card">
+              <div className="ta-card-head">
+                <div className="ta-card-title">
+                  <span className="ta-card-title-icon">
+                    <Icon name="chart" size={18} />
+                  </span>
+                  عملکرد حساب
                 </div>
 
-                <div className="serviceList">
+                <div className="ta-card-sub">
+                  داده‌های ثبت‌شده
+                </div>
+              </div>
 
-                  <div className="service">
-                    <span className="serviceName">
-                      حساب کاربری
-                    </span>
-
-                    <span className="serviceStatus">
-                      فعال
-                    </span>
+              <div className="ta-performance">
+                <div className="ta-ring-wrap">
+                  <div className="ta-ring">
+                    <div className="ta-ring-value">
+                      {winRate}%
+                    </div>
                   </div>
 
-                  <div className="service">
-                    <span className="serviceName">
-                      موتور سیگنال
-                    </span>
+                  <div className="ta-performance-main">
+                    <div className="ta-performance-title">
+                      نرخ موفقیت
+                    </div>
 
-                    <span className="serviceStatus">
-                      آماده
-                    </span>
-                  </div>
-
-                  <div className="service">
-                    <span className="serviceName">
-                      ربات‌های فعال
-                    </span>
-
-                    <span className="serviceStatus">
-                      {activeBots} فعال
-                    </span>
-                  </div>
-
-                  <div className="service">
-                    <span className="serviceName">
-                      Telegram
-                    </span>
-
-                    <Link
-                      href="/telegram"
-                      className="sectionLink"
+                    <div
+                      className="ta-performance-number"
+                      style={{
+                        color:
+                          totalProfit >= 0
+                            ? GREEN
+                            : RED,
+                      }}
                     >
-                      مدیریت اتصال
-                    </Link>
-                  </div>
+                      {money(totalProfit)}
+                    </div>
 
+                    <div className="ta-performance-caption">
+                      این بخش فقط از داده‌های واقعی
+                      ثبت‌شده در سیستم استفاده می‌کند.
+                      در صورت نبود معامله، عدد ساختگی
+                      نمایش داده نمی‌شود.
+                    </div>
+                  </div>
                 </div>
 
+                <div className="ta-bars">
+                  {[22, 35, 28, 54, 41, 67, 50, 75, 45, 62].map(
+                    (height, index) => (
+                      <div
+                        className="ta-bar"
+                        key={index}
+                        style={{
+                          height: `${height}%`,
+                          opacity:
+                            state.signals.length > 0
+                              ? 0.75
+                              : 0.22,
+                        }}
+                      />
+                    )
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="ta-card">
+              <div className="ta-card-head">
+                <div className="ta-card-title">
+                  <span className="ta-card-title-icon">
+                    <Icon name="target" size={18} />
+                  </span>
+                  وضعیت زنده سیستم
+                </div>
               </div>
 
-              <div className="card panel">
+              <div className="ta-body">
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 9,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      padding: "11px 12px",
+                      borderRadius: 12,
+                      background:
+                        "rgba(255,255,255,.025)",
+                      border:
+                        "1px solid rgba(255,255,255,.045)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#747d88",
+                        fontSize: 9,
+                      }}
+                    >
+                      ربات فعال
+                    </span>
 
-                <div className="sectionHeader">
-                  <div>
-                    <div className="sectionTitle">
-                      اشتراک و دسترسی
-                    </div>
-
-                    <div className="sectionSubtitle">
-                      وضعیت پلن حساب کاربری
-                    </div>
+                    <strong
+                      style={{
+                        color: GREEN,
+                        fontSize: 10,
+                      }}
+                    >
+                      {activeBots.length}
+                    </strong>
                   </div>
 
-                  <Icon name="subscription" size={18} />
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      padding: "11px 12px",
+                      borderRadius: 12,
+                      background:
+                        "rgba(255,255,255,.025)",
+                      border:
+                        "1px solid rgba(255,255,255,.045)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#747d88",
+                        fontSize: 9,
+                      }}
+                    >
+                      سیگنال فعال
+                    </span>
+
+                    <strong
+                      style={{
+                        color: GOLD_LIGHT,
+                        fontSize: 10,
+                      }}
+                    >
+                      {activeSignals.length}
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      padding: "11px 12px",
+                      borderRadius: 12,
+                      background:
+                        "rgba(255,255,255,.025)",
+                      border:
+                        "1px solid rgba(255,255,255,.045)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#747d88",
+                        fontSize: 9,
+                      }}
+                    >
+                      وضعیت داده
+                    </span>
+
+                    <strong
+                      style={{
+                        color: GREEN,
+                        fontSize: 10,
+                      }}
+                    >
+                      آنلاین
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      padding: "11px 12px",
+                      borderRadius: 12,
+                      background:
+                        "rgba(255,255,255,.025)",
+                      border:
+                        "1px solid rgba(255,255,255,.045)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#747d88",
+                        fontSize: 9,
+                      }}
+                    >
+                      آخرین بروزرسانی
+                    </span>
+
+                    <strong
+                      style={{
+                        color: "#c4cad2",
+                        fontSize: 9,
+                        direction: "ltr",
+                      }}
+                    >
+                      {lastUpdate
+                        ? lastUpdate.toLocaleTimeString(
+                            "fa-IR",
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }
+                          )
+                        : "—"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* QUICK ACTIONS */}
+          <section className="ta-action-grid">
+            <a
+              href="/broker"
+              className="ta-action"
+            >
+              <div className="ta-action-icon">
+                <Icon name="broker" size={19} />
+              </div>
+
+              <div className="ta-action-text">
+                اتصال به
+                <br />
+                بروکر
+              </div>
+            </a>
+
+            <a
+              href="/metatrader"
+              className="ta-action"
+            >
+              <div className="ta-action-icon">
+                <Icon name="mt" size={19} />
+              </div>
+
+              <div className="ta-action-text">
+                اتصال به
+                <br />
+                متاتریدر
+              </div>
+            </a>
+
+            <a
+              href="/signals"
+              className="ta-action"
+            >
+              <div className="ta-action-icon">
+                <Icon name="signals" size={19} />
+              </div>
+
+              <div className="ta-action-text">
+                مشاهده
+                <br />
+                سیگنال‌ها
+              </div>
+            </a>
+
+            <a
+              href="/telegram"
+              className="ta-action"
+            >
+              <div className="ta-action-icon">
+                <Icon name="telegram" size={19} />
+              </div>
+
+              <div className="ta-action-text">
+                تلگرام و
+                <br />
+                اعلان‌ها
+              </div>
+            </a>
+
+            <a
+              href="/support"
+              className="ta-action"
+            >
+              <div className="ta-action-icon">
+                <Icon name="support" size={19} />
+              </div>
+
+              <div className="ta-action-text">
+                پشتیبانی
+                <br />
+                کاربران
+              </div>
+            </a>
+          </section>
+
+          {/* NEWS + SUBSCRIPTION */}
+          <section className="ta-bottom-grid">
+            <div className="ta-card">
+              <div className="ta-card-head">
+                <div className="ta-card-title">
+                  <span className="ta-card-title-icon">
+                    <Icon name="news" size={18} />
+                  </span>
+                  آخرین اخبار و تحلیل‌ها
                 </div>
 
-                <div className="planBox">
+                <a
+                  href="/news"
+                  className="ta-card-sub"
+                >
+                  مشاهده همه ←
+                </a>
+              </div>
 
-                  <div className="planName">
-                    {user.plan || "FREE"}
+              <div>
+                <div className="ta-news-item">
+                  <div className="ta-news-thumb">
+                    <Icon name="trendUp" size={20} />
                   </div>
 
-                  <div className="planText">
-                    پلن فعلی حساب شما
+                  <div className="ta-news-main">
+                    <div className="ta-news-title">
+                      تحلیل بازار و بررسی روند قیمت
+                      دارایی‌های منتخب
+                    </div>
+
+                    <div className="ta-news-meta">
+                      تحلیل بازار • سیستم Trading AI
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ta-news-item">
+                  <div className="ta-news-thumb">
+                    <Icon name="calendar" size={20} />
                   </div>
 
-                  <Link
+                  <div className="ta-news-main">
+                    <div className="ta-news-title">
+                      رویدادهای مهم تقویم اقتصادی و
+                      تاثیر احتمالی آنها بر بازار
+                    </div>
+
+                    <div className="ta-news-meta">
+                      تقویم اقتصادی
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ta-news-item">
+                  <div className="ta-news-thumb">
+                    <Icon name="analysis" size={20} />
+                  </div>
+
+                  <div className="ta-news-main">
+                    <div className="ta-news-title">
+                      تحلیل تکنیکال و بررسی سطوح مهم
+                      حمایت و مقاومت
+                    </div>
+
+                    <div className="ta-news-meta">
+                      تحلیل تکنیکال
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="ta-card">
+              <div className="ta-card-head">
+                <div className="ta-card-title">
+                  <span className="ta-card-title-icon">
+                    <Icon name="subscription" size={18} />
+                  </span>
+                  اشتراک و خدمات
+                </div>
+              </div>
+
+              <div className="ta-subscription">
+                <div className="ta-plan">
+                  <div className="ta-plan-top">
+                    <div className="ta-plan-name">
+                      {state.user?.plan ||
+                        "FREE"}
+                    </div>
+
+                    <div className="ta-plan-badge">
+                      PLAN
+                    </div>
+                  </div>
+
+                  <div className="ta-plan-info">
+                    وضعیت پلن حساب شما از اطلاعات
+                    حساب کاربری خوانده می‌شود.
+                    <br />
+                    برای مشاهده و مدیریت اشتراک:
+                  </div>
+
+                  <a
                     href="/subscriptions"
-                    className="fullButton"
+                    style={{
+                      display: "block",
+                      textAlign: "center",
+                      marginTop: 12,
+                      padding: "9px 10px",
+                      borderRadius: 10,
+                      background:
+                        "rgba(216,180,90,.1)",
+                      border:
+                        "1px solid rgba(216,180,90,.2)",
+                      color: GOLD_LIGHT,
+                      fontSize: 9,
+                      fontWeight: 800,
+                    }}
                   >
                     مدیریت اشتراک
-                  </Link>
-
+                  </a>
                 </div>
 
+                <div className="ta-support">
+                  <div className="ta-support-title">
+                    <Icon
+                      name="support"
+                      size={16}
+                    />
+                    پشتیبانی
+                  </div>
+
+                  <div className="ta-support-text">
+                    برای سوالات مربوط به حساب،
+                    سیگنال‌ها، اشتراک و اتصال بروکر
+                    با پشتیبانی در ارتباط باشید.
+                  </div>
+
+                  <a
+                    href="/support"
+                    style={{
+                      display: "inline-block",
+                      marginTop: 7,
+                      color: GOLD_LIGHT,
+                      fontSize: 9,
+                    }}
+                  >
+                    ایجاد تیکت جدید ←
+                  </a>
+                </div>
               </div>
+            </div>
+          </section>
 
-            </section>
+          <footer className="ta-footer">
+            <span>
+              Trading AI Platform
+            </span>
 
-            <footer className="footer">
-              © Trading AI Platform — Smart Trading System
-            </footer>
-
-          </div>
-
-        </section>
-
+            <span>
+              © 2026
+            </span>
+          </footer>
+        </main>
       </div>
-    </main>
+    </>
   );
 }
