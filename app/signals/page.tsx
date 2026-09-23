@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 
+type SideType = "BUY" | "SELL" | "WAIT";
+
 type SignalStatus =
   | "ACTIVE"
   | "WAITING"
@@ -14,6 +16,7 @@ type SignalStatus =
   | "TP2"
   | "TP3"
   | "STOP_LOSS"
+  | "SL"
   | "EXPIRED"
   | "CLOSED"
   | "WIN"
@@ -21,32 +24,15 @@ type SignalStatus =
   | "BREAKEVEN"
   | string;
 
-type SignalResult =
-  | "WIN"
-  | "LOSS"
-  | "BREAKEVEN"
-  | "OPEN"
-  | "PENDING"
-  | string;
-
 type Signal = {
   id: string;
 
   symbol: string;
   name: string;
-
-  market:
-    | "FOREX"
-    | "CRYPTO"
-    | "COMMODITY"
-    | string;
-
+  market: string;
   interval: string;
 
-  side:
-    | "BUY"
-    | "SELL"
-    | "WAIT";
+  side: SideType;
 
   price: number;
   entry: number;
@@ -62,14 +48,9 @@ type Signal = {
   confidence: number;
   strength: number;
 
-  trend:
-    | "BULLISH"
-    | "BEARISH"
-    | "NEUTRAL"
-    | string;
+  trend: string;
 
   rsi: number;
-
   ema20: number;
   ema50: number;
 
@@ -79,20 +60,19 @@ type Signal = {
 
   atr: number;
 
-  support1: number;
-  support2: number;
+  support1: number | null;
+  support2: number | null;
 
-  resistance1: number;
-  resistance2: number;
+  resistance1: number | null;
+  resistance2: number | null;
 
   candleTime: string;
   generatedAt: string;
 
   reasons: string[];
 
-  /* Optional fields from the real signal engine */
   status?: SignalStatus;
-  result?: SignalResult;
+  result?: string;
 
   telegramSent?: boolean;
 
@@ -109,11 +89,13 @@ type Signal = {
   stopLossHitAt?: string | null;
 
   realizedProfitLoss?: number | null;
-  riskUsd?: number | null;
 
+  riskUsd?: number | null;
   takeProfit1Usd?: number | null;
   takeProfit2Usd?: number | null;
   takeProfit3Usd?: number | null;
+
+  confirmations?: string[];
 };
 
 type APIResponse = {
@@ -123,7 +105,7 @@ type APIResponse = {
   generatedAt?: string;
   interval?: string;
 
-  signals?: Signal[];
+  signals?: unknown[];
 
   errors?: Array<{
     symbol: string;
@@ -137,8 +119,31 @@ type APIResponse = {
     wait: number;
   };
 
+  performance?: {
+    daily?: {
+      trades?: number;
+      wins?: number;
+      losses?: number;
+      profitLoss?: number;
+    };
+    weekly?: {
+      trades?: number;
+      wins?: number;
+      losses?: number;
+      profitLoss?: number;
+    };
+    monthly?: {
+      trades?: number;
+      wins?: number;
+      losses?: number;
+      profitLoss?: number;
+    };
+  };
+
   error?: string;
 };
+
+type FilterType = "ALL" | "BUY" | "SELL";
 
 const TIMEFRAMES = [
   {
@@ -163,8 +168,834 @@ const TIMEFRAMES = [
   },
 ];
 
+function isRecord(
+  value: unknown
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function toNumber(
+  value: unknown,
+  fallback: number | null = null
+): number | null {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value)
+  ) {
+    return value;
+  }
+
+  if (
+    typeof value === "string" &&
+    value.trim() !== ""
+  ) {
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+}
+
+function toStringValue(
+  value: unknown,
+  fallback = ""
+) {
+  if (
+    typeof value === "string" &&
+    value.trim()
+  ) {
+    return value;
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+
+  return fallback;
+}
+
+function pickNumber(
+  objects: unknown[],
+  keys: string[]
+) {
+  for (const object of objects) {
+    if (!isRecord(object)) {
+      continue;
+    }
+
+    for (const key of keys) {
+      const value = toNumber(
+        object[key]
+      );
+
+      if (
+        value !== null &&
+        Number.isFinite(value)
+      ) {
+        return value;
+      }
+    }
+  }
+
+  return null;
+}
+
+function pickString(
+  objects: unknown[],
+  keys: string[]
+) {
+  for (const object of objects) {
+    if (!isRecord(object)) {
+      continue;
+    }
+
+    for (const key of keys) {
+      const value =
+        toStringValue(object[key]);
+
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return "";
+}
+
+function pickBoolean(
+  objects: unknown[],
+  keys: string[]
+) {
+  for (const object of objects) {
+    if (!isRecord(object)) {
+      continue;
+    }
+
+    for (const key of keys) {
+      if (
+        typeof object[key] ===
+        "boolean"
+      ) {
+        return object[key] as boolean;
+      }
+    }
+  }
+
+  return false;
+}
+
+function pickDate(
+  objects: unknown[],
+  keys: string[]
+) {
+  for (const object of objects) {
+    if (!isRecord(object)) {
+      continue;
+    }
+
+    for (const key of keys) {
+      const value =
+        object[key];
+
+      if (
+        typeof value === "string" &&
+        value
+      ) {
+        return value;
+      }
+    }
+  }
+
+  return "";
+}
+
+function getNestedObjects(
+  raw: Record<string, unknown>
+) {
+  const list: unknown[] = [
+    raw,
+  ];
+
+  const possibleKeys = [
+    "metadata",
+    "risk",
+    "levels",
+    "state",
+    "indicators",
+    "analysis",
+    "technical",
+    "supportResistance",
+    "performance",
+  ];
+
+  for (const key of possibleKeys) {
+    const value = raw[key];
+
+    if (isRecord(value)) {
+      list.push(value);
+    }
+  }
+
+  if (isRecord(raw.metadata)) {
+    for (const key of [
+      "risk",
+      "levels",
+      "state",
+      "indicators",
+      "analysis",
+      "technical",
+      "supportResistance",
+      "performance",
+    ]) {
+      const value =
+        raw.metadata[key];
+
+      if (isRecord(value)) {
+        list.push(value);
+      }
+    }
+  }
+
+  return list;
+}
+
+function normalizeSignal(
+  input: unknown,
+  index: number
+): Signal | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const raw = input;
+
+  const nested =
+    getNestedObjects(raw);
+
+  const metadata =
+    isRecord(raw.metadata)
+      ? raw.metadata
+      : {};
+
+  const bot =
+    isRecord(raw.bot)
+      ? raw.bot
+      : {};
+
+  const symbol =
+    pickString(
+      [...nested, bot],
+      [
+        "symbol",
+        "pair",
+        "instrument",
+      ]
+    ) || "UNKNOWN";
+
+  const id =
+    pickString(
+      nested,
+      ["id"]
+    ) ||
+    `${symbol}-${index}-${Date.now()}`;
+
+  const sideRaw =
+    pickString(
+      nested,
+      [
+        "side",
+        "direction",
+        "signal",
+      ]
+    ).toUpperCase();
+
+  const side: SideType =
+    sideRaw === "BUY"
+      ? "BUY"
+      : sideRaw === "SELL"
+      ? "SELL"
+      : "WAIT";
+
+  const status =
+    pickString(
+      nested,
+      [
+        "status",
+        "signalStatus",
+      ]
+    ) || "ACTIVE";
+
+  const entry =
+    pickNumber(
+      nested,
+      [
+        "entry",
+        "entryPrice",
+        "entryLevel",
+        "openPrice",
+      ]
+    ) ?? 0;
+
+  const price =
+    pickNumber(
+      nested,
+      [
+        "price",
+        "currentPrice",
+        "marketPrice",
+        "lastPrice",
+      ]
+    ) ?? entry;
+
+  const stopLoss =
+    pickNumber(
+      nested,
+      [
+        "stopLoss",
+        "sl",
+        "stop",
+        "stopLossPrice",
+      ]
+    );
+
+  const tp1 =
+    pickNumber(
+      nested,
+      [
+        "takeProfit1",
+        "tp1",
+        "tp1Price",
+        "target1",
+      ]
+    );
+
+  const tp2 =
+    pickNumber(
+      nested,
+      [
+        "takeProfit2",
+        "tp2",
+        "tp2Price",
+        "target2",
+      ]
+    );
+
+  const tp3 =
+    pickNumber(
+      nested,
+      [
+        "takeProfit3",
+        "tp3",
+        "tp3Price",
+        "target3",
+        "takeProfit",
+        "takeProfitPrice",
+      ]
+    );
+
+  const confidence =
+    pickNumber(
+      nested,
+      [
+        "confidence",
+        "signalConfidence",
+        "score",
+      ]
+    ) ?? 0;
+
+  const strength =
+    pickNumber(
+      nested,
+      [
+        "strength",
+        "score",
+        "confidence",
+        "signalScore",
+      ]
+    ) ?? confidence;
+
+  const riskReward =
+    pickNumber(
+      nested,
+      [
+        "riskReward",
+        "rr",
+        "riskRewardRatio",
+      ]
+    );
+
+  const rsi =
+    pickNumber(
+      nested,
+      [
+        "rsi",
+        "RSI",
+      ]
+    ) ?? 0;
+
+  const ema20 =
+    pickNumber(
+      nested,
+      [
+        "ema20",
+        "EMA20",
+        "ema_20",
+      ]
+    ) ?? 0;
+
+  const ema50 =
+    pickNumber(
+      nested,
+      [
+        "ema50",
+        "EMA50",
+        "ema_50",
+      ]
+    ) ?? 0;
+
+  const macd =
+    pickNumber(
+      nested,
+      [
+        "macd",
+        "MACD",
+      ]
+    ) ?? 0;
+
+  const macdSignal =
+    pickNumber(
+      nested,
+      [
+        "macdSignal",
+        "MACDSignal",
+        "macd_signal",
+      ]
+    ) ?? 0;
+
+  const macdHistogram =
+    pickNumber(
+      nested,
+      [
+        "macdHistogram",
+        "MACDHistogram",
+        "histogram",
+      ]
+    ) ?? 0;
+
+  const atr =
+    pickNumber(
+      nested,
+      [
+        "atr",
+        "ATR",
+      ]
+    ) ?? 0;
+
+  const support1 =
+    pickNumber(
+      nested,
+      [
+        "support1",
+        "support",
+        "s1",
+      ]
+    );
+
+  const support2 =
+    pickNumber(
+      nested,
+      [
+        "support2",
+        "s2",
+      ]
+    );
+
+  const resistance1 =
+    pickNumber(
+      nested,
+      [
+        "resistance1",
+        "resistance",
+        "r1",
+      ]
+    );
+
+  const resistance2 =
+    pickNumber(
+      nested,
+      [
+        "resistance2",
+        "r2",
+      ]
+    );
+
+  const currentPrice =
+    pickNumber(
+      nested,
+      [
+        "currentPrice",
+        "livePrice",
+        "lastPrice",
+        "marketPrice",
+      ]
+    );
+
+  const riskUsd =
+    pickNumber(
+      nested,
+      [
+        "riskUsd",
+        "riskUSD",
+        "risk",
+        "stopLossUsd",
+      ]
+    );
+
+  const tp1Usd =
+    pickNumber(
+      nested,
+      [
+        "takeProfit1Usd",
+        "tp1Usd",
+        "tp1USD",
+      ]
+    );
+
+  const tp2Usd =
+    pickNumber(
+      nested,
+      [
+        "takeProfit2Usd",
+        "tp2Usd",
+        "tp2USD",
+      ]
+    );
+
+  const tp3Usd =
+    pickNumber(
+      nested,
+      [
+        "takeProfit3Usd",
+        "tp3Usd",
+        "tp3USD",
+      ]
+    );
+
+  const realizedProfitLoss =
+    pickNumber(
+      nested,
+      [
+        "realizedProfitLoss",
+        "profitLoss",
+        "pnl",
+        "realizedPnl",
+        "profit",
+      ]
+    );
+
+  const trend =
+    pickString(
+      nested,
+      [
+        "trend",
+        "directionTrend",
+        "marketTrend",
+      ]
+    ) || "NEUTRAL";
+
+  const market =
+    pickString(
+      [...nested, bot],
+      [
+        "market",
+        "marketType",
+        "type",
+      ]
+    ) || "FOREX";
+
+  const interval =
+    pickString(
+      [...nested, bot],
+      [
+        "interval",
+        "timeframe",
+        "timeFrame",
+      ]
+    ) || "15min";
+
+  const name =
+    pickString(
+      [...nested, bot],
+      [
+        "name",
+        "assetName",
+      ]
+    ) || symbol;
+
+  const createdAt =
+    pickDate(
+      nested,
+      [
+        "createdAt",
+        "generatedAt",
+      ]
+    );
+
+  const generatedAt =
+    pickDate(
+      nested,
+      [
+        "generatedAt",
+        "createdAt",
+      ]
+    ) ||
+    new Date().toISOString();
+
+  const candleTime =
+    pickDate(
+      nested,
+      [
+        "candleTime",
+        "timestamp",
+        "time",
+        "candleAt",
+      ]
+    ) || generatedAt;
+
+  const expiresAt =
+    pickDate(
+      nested,
+      [
+        "expiresAt",
+        "expiry",
+        "expiration",
+      ]
+    ) || null;
+
+  const closedAt =
+    pickDate(
+      nested,
+      [
+        "closedAt",
+        "completedAt",
+      ]
+    ) || null;
+
+  const lastCheckedAt =
+    pickDate(
+      nested,
+      [
+        "lastCheckedAt",
+        "checkedAt",
+        "updatedAt",
+      ]
+    ) || null;
+
+  const tp1HitAt =
+    pickDate(
+      nested,
+      [
+        "tp1HitAt",
+        "tp1At",
+        "takeProfit1HitAt",
+      ]
+    ) || null;
+
+  const tp2HitAt =
+    pickDate(
+      nested,
+      [
+        "tp2HitAt",
+        "tp2At",
+        "takeProfit2HitAt",
+      ]
+    ) || null;
+
+  const tp3HitAt =
+    pickDate(
+      nested,
+      [
+        "tp3HitAt",
+        "tp3At",
+        "takeProfit3HitAt",
+      ]
+    ) || null;
+
+  const stopLossHitAt =
+    pickDate(
+      nested,
+      [
+        "stopLossHitAt",
+        "slHitAt",
+        "stopAt",
+      ]
+    ) || null;
+
+  const telegramSent =
+    pickBoolean(
+      nested,
+      [
+        "telegramSent",
+        "telegramDelivered",
+      ]
+    );
+
+  let reasons: string[] = [];
+
+  const possibleReasons: unknown[] = [
+    raw.reasons,
+    metadata.reasons,
+    raw.confirmations,
+    metadata.confirmations,
+  ];
+
+  for (
+    const value of possibleReasons
+  ) {
+    if (
+      Array.isArray(value)
+    ) {
+      reasons = value
+        .filter(
+          (
+            item
+          ): item is string =>
+            typeof item ===
+            "string"
+        )
+        .map((item) =>
+          item.trim()
+        )
+        .filter(Boolean);
+
+      if (
+        reasons.length > 0
+      ) {
+        break;
+      }
+    }
+  }
+
+  const confirmations =
+    Array.isArray(
+      raw.confirmations
+    )
+      ? raw.confirmations
+          .filter(
+            (
+              item
+            ): item is string =>
+              typeof item ===
+              "string"
+          )
+      : [];
+
+  return {
+    id,
+
+    symbol,
+    name,
+    market,
+    interval,
+
+    side,
+
+    price,
+    entry,
+
+    stopLoss,
+
+    takeProfit1: tp1,
+    takeProfit2: tp2,
+    takeProfit3: tp3,
+
+    riskReward,
+
+    confidence,
+    strength,
+
+    trend,
+
+    rsi,
+    ema20,
+    ema50,
+
+    macd,
+    macdSignal,
+    macdHistogram,
+
+    atr,
+
+    support1,
+    support2,
+
+    resistance1,
+    resistance2,
+
+    candleTime,
+    generatedAt,
+
+    reasons,
+
+    status,
+    result:
+      pickString(
+        nested,
+        [
+          "result",
+          "tradeResult",
+        ]
+      ) || "OPEN",
+
+    telegramSent,
+
+    currentPrice:
+      currentPrice ??
+      price,
+
+    lastCheckedAt,
+
+    createdAt:
+      createdAt ||
+      generatedAt,
+
+    expiresAt,
+    closedAt,
+
+    tp1HitAt,
+    tp2HitAt,
+    tp3HitAt,
+    stopLossHitAt,
+
+    realizedProfitLoss,
+
+    riskUsd,
+    takeProfit1Usd:
+      tp1Usd,
+    takeProfit2Usd:
+      tp2Usd,
+    takeProfit3Usd:
+      tp3Usd,
+
+    confirmations,
+  };
+}
+
 function formatPrice(
-  value: number | null | undefined
+  value:
+    | number
+    | null
+    | undefined
 ) {
   if (
     value === null ||
@@ -174,37 +1005,46 @@ function formatPrice(
     return "—";
   }
 
-  if (value >= 10000) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 2,
-    });
-  }
-
   if (value >= 1000) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 2,
-    });
+    return value.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 2,
+      }
+    );
   }
 
   if (value >= 100) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 3,
-    });
+    return value.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 3,
+      }
+    );
   }
 
   if (value >= 10) {
-    return value.toLocaleString("en-US", {
-      maximumFractionDigits: 4,
-    });
+    return value.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 4,
+      }
+    );
   }
 
-  return value.toLocaleString("en-US", {
-    maximumFractionDigits: 6,
-  });
+  return value.toLocaleString(
+    "en-US",
+    {
+      maximumFractionDigits: 6,
+    }
+  );
 }
 
 function formatNumber(
-  value: number | null | undefined,
+  value:
+    | number
+    | null
+    | undefined,
   digits = 2
 ) {
   if (
@@ -215,9 +1055,14 @@ function formatNumber(
     return "—";
   }
 
-  return value.toLocaleString("en-US", {
-    maximumFractionDigits: digits,
-  });
+  return value.toLocaleString(
+    "en-US",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits:
+        digits,
+    }
+  );
 }
 
 function formatDate(
@@ -227,62 +1072,83 @@ function formatDate(
     return "—";
   }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return value;
   }
 
-  return date.toLocaleString("fa-IR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
+  return date.toLocaleString(
+    "fa-IR",
+    {
+      dateStyle: "short",
+      timeStyle: "short",
+    }
+  );
 }
 
-function symbolIcon(symbol: string) {
+function symbolIcon(
+  symbol: string
+) {
   const normalized =
-    symbol.toUpperCase();
+    symbol
+      .toUpperCase()
+      .replace(
+        /[\s_-]/g,
+        ""
+      );
 
   if (
-    normalized === "XAU/USD" ||
-    normalized.includes("XAU")
+    normalized.includes(
+      "XAU"
+    )
   ) {
     return "Au";
   }
 
   if (
-    normalized === "EUR/USD" ||
-    normalized.includes("EUR")
-  ) {
-    return "€";
-  }
-
-  if (
-    normalized === "GBP/USD" ||
-    normalized.includes("GBP")
-  ) {
-    return "£";
-  }
-
-  if (
-    normalized === "USD/JPY" ||
-    normalized.includes("JPY")
-  ) {
-    return "¥";
-  }
-
-  if (
-    normalized === "BTC/USD" ||
-    normalized.includes("BTC")
+    normalized.includes(
+      "BTC"
+    )
   ) {
     return "₿";
   }
 
   if (
-    normalized === "ETH/USD" ||
-    normalized.includes("ETH")
+    normalized.includes(
+      "ETH"
+    )
   ) {
     return "Ξ";
+  }
+
+  if (
+    normalized.includes(
+      "EUR"
+    )
+  ) {
+    return "€";
+  }
+
+  if (
+    normalized.includes(
+      "GBP"
+    )
+  ) {
+    return "£";
+  }
+
+  if (
+    normalized.includes(
+      "JPY"
+    )
+  ) {
+    return "¥";
   }
 
   return "◎";
@@ -291,15 +1157,24 @@ function symbolIcon(symbol: string) {
 function marketLabel(
   market: string
 ) {
-  if (market === "FOREX") {
+  const value =
+    market.toUpperCase();
+
+  if (
+    value === "FOREX"
+  ) {
     return "FOREX";
   }
 
-  if (market === "CRYPTO") {
+  if (
+    value === "CRYPTO"
+  ) {
     return "CRYPTO";
   }
 
-  if (market === "COMMODITY") {
+  if (
+    value === "COMMODITY"
+  ) {
     return "COMMODITY";
   }
 
@@ -311,8 +1186,9 @@ function timeframeLabel(
 ) {
   const item =
     TIMEFRAMES.find(
-      (item) =>
-        item.value === timeframe
+      (entry) =>
+        entry.value ===
+        timeframe
     );
 
   return (
@@ -322,13 +1198,20 @@ function timeframeLabel(
 }
 
 function trendLabel(
-  trend: Signal["trend"]
+  trend: string
 ) {
-  if (trend === "BULLISH") {
+  const value =
+    trend.toUpperCase();
+
+  if (
+    value === "BULLISH"
+  ) {
     return "صعودی";
   }
 
-  if (trend === "BEARISH") {
+  if (
+    value === "BEARISH"
+  ) {
     return "نزولی";
   }
 
@@ -365,12 +1248,11 @@ function statusLabel(
       "STOP_LOSS" ||
     status === "SL"
   ) {
-    return "حد ضرر";
+    return "حد ضرر فعال شد";
   }
 
   if (
-    status ===
-    "EXPIRED"
+    status === "EXPIRED"
   ) {
     return "منقضی شده";
   }
@@ -393,7 +1275,7 @@ function statusLabel(
     status ===
     "BREAKEVEN"
   ) {
-    return "سر‌به‌سر";
+    return "سر به سر";
   }
 
   if (
@@ -404,7 +1286,7 @@ function statusLabel(
     return "در انتظار";
   }
 
-  return "فعال";
+  return "سیگنال فعال";
 }
 
 function statusClass(
@@ -447,9 +1329,11 @@ function statusClass(
 function Side({
   side,
 }: {
-  side: Signal["side"];
+  side: SideType;
 }) {
-  if (side === "BUY") {
+  if (
+    side === "BUY"
+  ) {
     return (
       <span className="side side-buy">
         <span className="side-icon">
@@ -460,7 +1344,9 @@ function Side({
     );
   }
 
-  if (side === "SELL") {
+  if (
+    side === "SELL"
+  ) {
     return (
       <span className="side side-sell">
         <span className="side-icon">
@@ -514,11 +1400,19 @@ function TargetBox({
   value,
   tone,
   hit,
+  usd,
 }: {
   label: string;
-  value: number | null | undefined;
-  tone: "entry" | "sl" | "tp";
+  value:
+    | number
+    | null
+    | undefined;
+  tone:
+    | "entry"
+    | "sl"
+    | "tp";
   hit?: boolean;
+  usd?: number | null;
 }) {
   return (
     <div
@@ -543,6 +1437,48 @@ function TargetBox({
       <strong>
         {formatPrice(value)}
       </strong>
+
+      {usd !== null &&
+        usd !== undefined && (
+          <small>
+            ${formatNumber(
+              usd,
+              2
+            )}
+          </small>
+        )}
+    </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  tone = "",
+  subtitle,
+}: {
+  title: string;
+  value: string;
+  tone?: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="stat">
+      <span className="stat-label">
+        {title}
+      </span>
+
+      <strong
+        className={`stat-value ${tone}`}
+      >
+        {value}
+      </strong>
+
+      {subtitle && (
+        <small className="stat-subtitle">
+          {subtitle}
+        </small>
+      )}
     </div>
   );
 }
@@ -563,9 +1499,7 @@ export default function SignalsPage() {
     useState("15min");
 
   const [filter, setFilter] =
-    useState<
-      "ALL" | "BUY" | "SELL"
-    >("ALL");
+    useState<FilterType>("ALL");
 
   const [loading, setLoading] =
     useState(true);
@@ -586,6 +1520,11 @@ export default function SignalsPage() {
         error: string;
       }>
     >([]);
+
+  const [performance, setPerformance] =
+    useState<
+      APIResponse["performance"]
+    >();
 
   const loadSignals =
     useCallback(
@@ -638,7 +1577,9 @@ export default function SignalsPage() {
 
           try {
             data =
-              JSON.parse(text);
+              JSON.parse(
+                text
+              ) as APIResponse;
           } catch {
             throw new Error(
               "پاسخ API قابل خواندن نیست."
@@ -655,40 +1596,77 @@ export default function SignalsPage() {
             );
           }
 
-          const nextSignals =
-            data.signals || [];
+          const rawSignals =
+            Array.isArray(
+              data.signals
+            )
+              ? data.signals
+              : [];
+
+          const normalizedSignals =
+            rawSignals
+              .map(
+                (
+                  item,
+                  index
+                ) =>
+                  normalizeSignal(
+                    item,
+                    index
+                  )
+              )
+              .filter(
+                (
+                  item
+                ): item is Signal =>
+                  item !== null
+              );
 
           setSignals(
-            nextSignals
+            normalizedSignals
           );
 
-          setSummary(
+          const nextSummary =
             data.summary || {
               total:
-                nextSignals.length,
+                normalizedSignals.length,
+
               buy:
-                nextSignals.filter(
+                normalizedSignals.filter(
                   (item) =>
                     item.side ===
                     "BUY"
                 ).length,
+
               sell:
-                nextSignals.filter(
+                normalizedSignals.filter(
                   (item) =>
                     item.side ===
                     "SELL"
                 ).length,
+
               wait:
-                nextSignals.filter(
+                normalizedSignals.filter(
                   (item) =>
                     item.side ===
                     "WAIT"
                 ).length,
-            }
+            };
+
+          setSummary(
+            nextSummary
           );
 
           setApiErrors(
-            data.errors || []
+            Array.isArray(
+              data.errors
+            )
+              ? data.errors
+              : []
+          );
+
+          setPerformance(
+            data.performance
           );
 
           setLastUpdate(
@@ -734,27 +1712,21 @@ export default function SignalsPage() {
 
   const visibleSignals =
     useMemo(() => {
-      if (filter === "ALL") {
+      if (
+        filter === "ALL"
+      ) {
         return signals;
       }
 
       return signals.filter(
         (signal) =>
-          signal.side === filter
+          signal.side ===
+          filter
       );
     }, [
       signals,
       filter,
     ]);
-
-  const buyCount =
-    summary.buy;
-
-  const sellCount =
-    summary.sell;
-
-  const waitCount =
-    summary.wait;
 
   const activeCount =
     signals.filter(
@@ -776,6 +1748,26 @@ export default function SignalsPage() {
       }
     ).length;
 
+  const tpHitCount =
+    signals.filter(
+      (signal) =>
+        !!signal.tp1HitAt ||
+        !!signal.tp2HitAt ||
+        !!signal.tp3HitAt
+    ).length;
+
+  const totalRealized =
+    signals.reduce(
+      (
+        total,
+        signal
+      ) =>
+        total +
+        (signal.realizedProfitLoss ??
+          0),
+      0
+    );
+
   return (
     <main
       dir="rtl"
@@ -790,8 +1782,8 @@ export default function SignalsPage() {
         body {
           margin: 0;
           padding: 0;
-          background: #050505;
-          color: #f5f1e8;
+          background: #030303;
+          color: #f4efe3;
           font-family:
             Tahoma,
             Arial,
@@ -808,607 +1800,298 @@ export default function SignalsPage() {
         }
 
         button {
-          -webkit-tap-highlight-color:
-            transparent;
+          -webkit-tap-highlight-color: transparent;
         }
 
         .page {
           min-height: 100vh;
-
           overflow-x: hidden;
-
           background:
             radial-gradient(
               circle at 50% -10%,
-              rgba(
-                212,
-                175,
-                55,
-                0.14
-              ),
+              rgba(212, 175, 55, 0.14),
               transparent 30%
             ),
             radial-gradient(
-              circle at 100% 35%,
-              rgba(
-                212,
-                175,
-                55,
-                0.06
-              ),
-              transparent 25%
+              circle at 100% 30%,
+              rgba(212, 175, 55, 0.06),
+              transparent 24%
             ),
             linear-gradient(
               180deg,
               #090909 0%,
-              #050505 50%,
-              #030303 100%
+              #040404 55%,
+              #020202 100%
             );
         }
 
         .container {
-          width: min(
-            1480px,
-            calc(100% - 30px)
-          );
-
+          width: min(1480px, calc(100% - 28px));
           margin: 0 auto;
-
-          padding:
-            22px 0 70px;
+          padding: 18px 0 65px;
         }
 
         .topbar {
           position: relative;
-
-          min-height: 78px;
-
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
-          gap: 18px;
-
-          padding:
-            13px 16px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.2
-            );
-
-          border-radius:
-            22px;
-
+          justify-content: space-between;
+          gap: 15px;
+          min-height: 76px;
+          padding: 12px 15px;
+          border: 1px solid rgba(212, 175, 55, 0.2);
+          border-radius: 22px;
           background:
             linear-gradient(
               135deg,
-              rgba(
-                24,
-                22,
-                16,
-                0.96
-              ),
-              rgba(
-                8,
-                8,
-                8,
-                0.95
-              )
+              rgba(27, 25, 18, 0.96),
+              rgba(8, 8, 8, 0.96)
             );
-
-          backdrop-filter:
-            blur(22px);
-
+          backdrop-filter: blur(24px);
           box-shadow:
-            0 22px 80px
-            rgba(
-              0,
-              0,
-              0,
-              0.5
-            );
+            0 25px 80px rgba(0, 0, 0, 0.45);
         }
 
         .topbar::after {
           content: "";
-
           position: absolute;
-
-          left: 15%;
-
-          right: 15%;
-
+          left: 14%;
+          right: 14%;
           bottom: -1px;
-
           height: 1px;
-
           background:
             linear-gradient(
               90deg,
               transparent,
-              rgba(
-                212,
-                175,
-                55,
-                0.65
-              ),
+              rgba(212, 175, 55, 0.75),
               transparent
             );
         }
 
         .brand {
           display: flex;
-
           align-items: center;
-
           gap: 12px;
         }
 
         .brand-logo {
+          position: relative;
+          display: grid;
+          place-items: center;
           width: 52px;
           height: 52px;
-
-          display: grid;
-
-          place-items: center;
-
-          position: relative;
-
-          border-radius:
-            16px;
-
+          border-radius: 16px;
           color: #050505;
-
           font-size: 15px;
-
           font-weight: 1000;
-
           background:
             linear-gradient(
               135deg,
-              #fff1a8 0%,
-              #d4af37 38%,
-              #8e6815 100%
+              #fff2aa,
+              #d4af37 42%,
+              #896313
             );
-
           box-shadow:
-            0 0 30px
-            rgba(
-              212,
-              175,
-              55,
-              0.18
-            ),
-            inset 0 1px 0
-            rgba(
-              255,
-              255,
-              255,
-              0.5
-            );
+            0 0 32px rgba(212, 175, 55, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.55);
         }
 
         .brand-logo::before {
           content: "";
-
           position: absolute;
-
           inset: 4px;
-
-          border-radius:
-            12px;
-
-          border:
-            1px solid
-            rgba(
-              0,
-              0,
-              0,
-              0.25
-            );
+          border: 1px solid rgba(0, 0, 0, 0.28);
+          border-radius: 12px;
         }
 
         .brand-title {
           margin: 0;
-
+          color: #f8f1df;
           font-size: 18px;
-
-          color: #f6f1df;
-
-          letter-spacing:
-            0.2px;
         }
 
         .brand-subtitle {
-          margin:
-            5px 0 0;
-
-          color: #80765d;
-
+          margin: 5px 0 0;
+          color: #80755e;
           font-size: 9px;
-
-          letter-spacing:
-            1.1px;
-
-          text-transform:
-            uppercase;
+          letter-spacing: 1.2px;
+          text-transform: uppercase;
         }
 
         .live {
           display: inline-flex;
-
           align-items: center;
-
           gap: 8px;
-
-          padding:
-            9px 13px;
-
-          border-radius:
-            999px;
-
-          color: #b9f2c9;
-
+          padding: 9px 13px;
+          border: 1px solid rgba(73, 219, 139, 0.22);
+          border-radius: 999px;
+          color: #a8ebbf;
+          background: rgba(73, 219, 139, 0.05);
           font-size: 9px;
-
-          border:
-            1px solid
-            rgba(
-              73,
-              219,
-              139,
-              0.2
-            );
-
-          background:
-            rgba(
-              73,
-              219,
-              139,
-              0.05
-            );
+          white-space: nowrap;
         }
 
         .live-dot {
           width: 7px;
           height: 7px;
-
           border-radius: 50%;
-
-          background:
-            #63e89b;
-
-          box-shadow:
-            0 0 13px
-            rgba(
-              99,
-              232,
-              155,
-              0.9
-            );
+          background: #63e89b;
+          box-shadow: 0 0 13px rgba(99, 232, 155, 0.85);
         }
 
         .hero {
           position: relative;
-
-          margin-top: 15px;
-
-          padding:
-            34px 30px;
-
           overflow: hidden;
-
-          border-radius:
-            28px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.2
-            );
-
+          margin-top: 15px;
+          padding: 31px 28px;
+          border: 1px solid rgba(212, 175, 55, 0.2);
+          border-radius: 27px;
           background:
             linear-gradient(
               135deg,
-              rgba(
-                29,
-                26,
-                18,
-                0.96
-              ),
-              rgba(
-                10,
-                10,
-                10,
-                0.97
-              )
+              rgba(31, 28, 19, 0.97),
+              rgba(9, 9, 9, 0.98)
             );
-
           box-shadow:
-            0 25px 80px
-            rgba(
-              0,
-              0,
-              0,
-              0.4
-            );
+            0 25px 85px rgba(0, 0, 0, 0.4);
         }
 
         .hero::before {
           content: "";
-
           position: absolute;
-
-          width: 450px;
-          height: 450px;
-
-          top: -270px;
+          width: 470px;
+          height: 470px;
+          top: -280px;
           left: -120px;
-
           border-radius: 50%;
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.08
-            );
-
-          filter:
-            blur(65px);
+          background: rgba(212, 175, 55, 0.08);
+          filter: blur(65px);
         }
 
         .hero::after {
           content: "";
-
           position: absolute;
-
           right: -130px;
           bottom: -180px;
-
           width: 360px;
           height: 360px;
-
           border-radius: 50%;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.06
-            );
+          border: 1px solid rgba(212, 175, 55, 0.06);
         }
 
         .hero-content {
           position: relative;
-
           z-index: 2;
         }
 
         .eyebrow {
           display: inline-flex;
-
           align-items: center;
-
           gap: 8px;
-
-          color: #d4af37;
-
-          font-size: 9px;
-
-          font-weight: 900;
-
-          letter-spacing:
-            1.8px;
-
           margin-bottom: 11px;
+          color: #d4af37;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 1.8px;
         }
 
         .eyebrow::before {
           content: "";
-
-          width: 24px;
-
+          width: 25px;
           height: 1px;
-
-          background:
-            #d4af37;
+          background: #d4af37;
         }
 
         .hero h1 {
           margin: 0;
-
-          color: #f8f2df;
-
-          font-size:
-            clamp(
-              28px,
-              5vw,
-              46px
-            );
-
+          color: #faf3df;
+          font-size: clamp(28px, 5vw, 46px);
           line-height: 1.25;
-
           font-weight: 900;
         }
 
         .hero-description {
-          max-width: 900px;
-
-          margin:
-            14px 0 0;
-
-          color: #928a77;
-
+          max-width: 950px;
+          margin: 14px 0 0;
+          color: #918874;
           font-size: 12px;
-
-          line-height: 2.1;
+          line-height: 2.15;
         }
 
         .toolbar {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           flex-wrap: wrap;
-
           gap: 13px;
-
           margin-top: 25px;
         }
 
         .filters {
           display: flex;
-
-          gap: 7px;
-
           flex-wrap: wrap;
+          gap: 7px;
         }
 
         .filter {
-          min-width: 70px;
-
+          min-width: 72px;
+          padding: 10px 15px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 11px;
+          color: #817864;
+          background: rgba(255, 255, 255, 0.025);
           cursor: pointer;
-
-          padding:
-            10px 15px;
-
-          border-radius:
-            11px;
-
-          border:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.08
-            );
-
-          color: #837b69;
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.025
-            );
-
-          transition:
-            0.2s ease;
+          transition: 0.2s ease;
         }
 
         .filter:hover {
-          border-color:
-            rgba(
-              212,
-              175,
-              55,
-              0.3
-            );
-
           color: #d4af37;
+          border-color: rgba(212, 175, 55, 0.3);
         }
 
         .filter.active {
-          color: #0a0905;
-
-          border-color:
-            rgba(
-              212,
-              175,
-              55,
-              0.75
-            );
-
+          color: #080705;
+          border-color: rgba(212, 175, 55, 0.75);
           background:
             linear-gradient(
               135deg,
               #f4dc82,
               #d4af37,
-              #9d7519
+              #99701a
             );
-
           box-shadow:
-            0 7px 25px
-            rgba(
-              212,
-              175,
-              55,
-              0.13
-            );
+            0 8px 25px rgba(212, 175, 55, 0.14);
         }
 
         .actions {
           display: flex;
-
           gap: 8px;
         }
 
         .select,
         .refresh {
           min-height: 42px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.18
-            );
-
-          border-radius:
-            11px;
-
-          padding:
-            0 13px;
-
-          color: #e9dfc4;
-
-          background:
-            #0c0c0b;
-
+          padding: 0 13px;
+          border: 1px solid rgba(212, 175, 55, 0.2);
+          border-radius: 11px;
           outline: none;
         }
 
         .select {
-          min-width: 150px;
-
+          min-width: 155px;
+          color: #e9dfc4;
+          background: #0c0c0b;
           cursor: pointer;
         }
 
         .select option {
-          background: #11100d;
-
           color: #eee4c8;
+          background: #11100d;
         }
 
         .refresh {
-          cursor: pointer;
-
           color: #080705;
-
-          font-weight: 800;
-
+          font-weight: 900;
           background:
             linear-gradient(
               135deg,
@@ -1416,179 +2099,36 @@ export default function SignalsPage() {
               #d4af37,
               #99701a
             );
-
-          transition:
-            0.2s ease;
+          cursor: pointer;
+          transition: 0.2s ease;
         }
 
         .refresh:hover {
-          transform:
-            translateY(-1px);
-
+          transform: translateY(-1px);
           box-shadow:
-            0 8px 25px
-            rgba(
-              212,
-              175,
-              55,
-              0.16
-            );
+            0 8px 25px rgba(212, 175, 55, 0.17);
         }
 
         .refresh:disabled {
           opacity: 0.5;
-
-          cursor:
-            not-allowed;
-
-          transform:
-            none;
-        }
-
-        .stats {
-          display: grid;
-
-          grid-template-columns:
-            repeat(4, 1fr);
-
-          gap: 11px;
-
-          margin:
-            14px 0;
-        }
-
-        .stat {
-          position: relative;
-
-          overflow: hidden;
-
-          min-height: 105px;
-
-          padding:
-            18px;
-
-          border-radius:
-            19px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.11
-            );
-
-          background:
-            linear-gradient(
-              145deg,
-              rgba(
-                20,
-                19,
-                15,
-                0.94
-              ),
-              rgba(
-                8,
-                8,
-                8,
-                0.95
-              )
-            );
-
-          box-shadow:
-            0 15px 45px
-            rgba(
-              0,
-              0,
-              0,
-              0.25
-            );
-        }
-
-        .stat::after {
-          content: "";
-
-          position: absolute;
-
-          width: 80px;
-          height: 80px;
-
-          left: -35px;
-          bottom: -45px;
-
-          border-radius: 50%;
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.07
-            );
-
-          filter:
-            blur(10px);
-        }
-
-        .stat-label {
-          display: block;
-
-          color: #756d5b;
-
-          font-size: 9px;
-        }
-
-        .stat-value {
-          display: block;
-
-          margin-top: 8px;
-
-          font-size: 27px;
-
-          font-weight: 900;
-        }
-
-        .stat-value.gold {
-          color: #d4af37;
-        }
-
-        .stat-value.green {
-          color: #65e6a0;
-        }
-
-        .stat-value.red {
-          color: #ff7181;
-        }
-
-        .stat-value.gray {
-          color: #aaa18e;
+          cursor: not-allowed;
+          transform: none;
         }
 
         .engine-row {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
           gap: 10px;
-
-          margin:
-            12px 0;
+          margin: 13px 0;
         }
 
         .engine-status {
           display: inline-flex;
-
           align-items: center;
-
-          gap: 8px;
-
-          color: #bcb39f;
-
+          gap: 7px;
+          color: #aaa18f;
           font-size: 9px;
+          white-space: nowrap;
         }
 
         .engine-status strong {
@@ -1596,145 +2136,185 @@ export default function SignalsPage() {
         }
 
         .engine-line {
-          height: 1px;
-
           flex: 1;
-
+          height: 1px;
           background:
             linear-gradient(
               90deg,
               transparent,
-              rgba(
-                212,
-                175,
-                55,
-                0.2
-              ),
+              rgba(212, 175, 55, 0.2),
               transparent
             );
         }
 
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 11px;
+          margin: 13px 0;
+        }
+
+        .stat {
+          position: relative;
+          overflow: hidden;
+          min-height: 105px;
+          padding: 17px;
+          border: 1px solid rgba(212, 175, 55, 0.11);
+          border-radius: 18px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(20, 19, 15, 0.96),
+              rgba(7, 7, 7, 0.97)
+            );
+        }
+
+        .stat::after {
+          content: "";
+          position: absolute;
+          width: 85px;
+          height: 85px;
+          left: -38px;
+          bottom: -45px;
+          border-radius: 50%;
+          background: rgba(212, 175, 55, 0.07);
+          filter: blur(10px);
+        }
+
+        .stat-label {
+          display: block;
+          color: #746c5b;
+          font-size: 9px;
+        }
+
+        .stat-value {
+          display: block;
+          margin-top: 8px;
+          font-size: 27px;
+          font-weight: 1000;
+        }
+
+        .stat-subtitle {
+          display: block;
+          margin-top: 4px;
+          color: #625c4f;
+          font-size: 8px;
+        }
+
+        .gold {
+          color: #d4af37;
+        }
+
+        .green {
+          color: #65e6a0;
+        }
+
+        .red {
+          color: #ff7181;
+        }
+
+        .gray {
+          color: #aaa18e;
+        }
+
         .api-error-bar {
           margin-bottom: 13px;
-
-          padding:
-            11px 14px;
-
-          border-radius:
-            13px;
-
+          padding: 11px 14px;
+          border: 1px solid rgba(217, 116, 75, 0.18);
+          border-radius: 13px;
           color: #e8b9a4;
+          background: rgba(150, 63, 38, 0.08);
+          font-size: 9px;
+          line-height: 1.9;
+        }
 
-          border:
-            1px solid
-            rgba(
-              217,
-              116,
-              75,
-              0.18
-            );
+        .performance {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-bottom: 14px;
+        }
 
-          background:
-            rgba(
-              150,
-              63,
-              38,
-              0.08
-            );
+        .performance-card {
+          padding: 14px;
+          border: 1px solid rgba(212, 175, 55, 0.09);
+          border-radius: 15px;
+          background: rgba(255, 255, 255, 0.018);
+        }
 
+        .performance-card h4 {
+          margin: 0 0 10px;
+          color: #d4af37;
+          font-size: 10px;
+        }
+
+        .performance-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 6px;
+        }
+
+        .performance-item {
+          min-width: 0;
+          padding: 8px;
+          border-radius: 9px;
+          background: rgba(255, 255, 255, 0.025);
+        }
+
+        .performance-item span {
+          display: block;
+          color: #625c4f;
+          font-size: 7px;
+        }
+
+        .performance-item strong {
+          display: block;
+          margin-top: 4px;
+          color: #d9d0bc;
           font-size: 9px;
         }
 
         .cards {
           display: grid;
-
           grid-template-columns:
             repeat(
               auto-fit,
-              minmax(
-                360px,
-                1fr
-              )
+              minmax(365px, 1fr)
             );
-
           gap: 14px;
         }
 
         .card {
           position: relative;
-
           overflow: hidden;
-
-          padding:
-            19px;
-
-          border-radius:
-            23px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.14
-            );
-
+          padding: 19px;
+          border: 1px solid rgba(212, 175, 55, 0.14);
+          border-radius: 23px;
           background:
             linear-gradient(
               145deg,
-              rgba(
-                20,
-                19,
-                16,
-                0.98
-              ),
-              rgba(
-                8,
-                8,
-                8,
-                0.98
-              )
+              rgba(20, 19, 16, 0.98),
+              rgba(7, 7, 7, 0.99)
             );
-
           box-shadow:
-            0 20px 65px
-            rgba(
-              0,
-              0,
-              0,
-              0.35
-            );
-
+            0 20px 65px rgba(0, 0, 0, 0.35);
           transition:
             transform 0.2s ease,
             border-color 0.2s ease;
         }
 
         .card:hover {
-          transform:
-            translateY(-2px);
-
-          border-color:
-            rgba(
-              212,
-              175,
-              55,
-              0.28
-            );
+          transform: translateY(-2px);
+          border-color: rgba(212, 175, 55, 0.28);
         }
 
         .card::before {
           content: "";
-
           position: absolute;
-
           top: 0;
           left: 0;
           right: 0;
-
           height: 2px;
-
           background:
             linear-gradient(
               90deg,
@@ -1748,144 +2328,69 @@ export default function SignalsPage() {
 
         .card-head {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           gap: 10px;
         }
 
         .asset {
           display: flex;
-
           align-items: center;
-
           gap: 11px;
+          min-width: 0;
         }
 
         .asset-icon {
+          display: grid;
+          place-items: center;
+          flex: none;
           width: 48px;
           height: 48px;
-
-          display: grid;
-
-          place-items: center;
-
-          border-radius:
-            14px;
-
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 14px;
           color: #e7c85d;
-
-          font-size: 15px;
-
-          font-weight: 1000;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.3
-            );
-
           background:
             linear-gradient(
               135deg,
-              rgba(
-                212,
-                175,
-                55,
-                0.16
-              ),
-              rgba(
-                212,
-                175,
-                55,
-                0.03
-              )
+              rgba(212, 175, 55, 0.16),
+              rgba(212, 175, 55, 0.03)
             );
-
-          box-shadow:
-            inset 0 1px 0
-            rgba(
-              255,
-              255,
-              255,
-              0.08
-            );
+          font-size: 15px;
+          font-weight: 1000;
         }
 
         .asset-name {
           margin: 0;
-
           color: #f4eedf;
-
           font-size: 15px;
-
           font-weight: 900;
         }
 
         .asset-description {
           display: block;
-
           margin-top: 4px;
-
           color: #6f6757;
-
           font-size: 9px;
         }
 
         .market-badge {
           display: inline-flex;
-
           margin-top: 5px;
-
-          padding:
-            3px 7px;
-
-          border-radius:
-            999px;
-
+          padding: 3px 7px;
+          border: 1px solid rgba(212, 175, 55, 0.1);
+          border-radius: 999px;
           color: #a89b7b;
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.045
-            );
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.1
-            );
-
+          background: rgba(212, 175, 55, 0.045);
           font-size: 7px;
         }
 
         .side {
           display: inline-flex;
-
           align-items: center;
-
           gap: 5px;
-
-          padding:
-            8px 10px;
-
-          border-radius:
-            10px;
-
+          padding: 8px 10px;
+          border-radius: 10px;
           font-size: 10px;
-
           font-weight: 1000;
         }
 
@@ -1895,231 +2400,89 @@ export default function SignalsPage() {
 
         .side-buy {
           color: #65e6a0;
-
-          border:
-            1px solid
-            rgba(
-              65,
-              223,
-              147,
-              0.2
-            );
-
-          background:
-            rgba(
-              65,
-              223,
-              147,
-              0.06
-            );
+          border: 1px solid rgba(65, 223, 147, 0.2);
+          background: rgba(65, 223, 147, 0.06);
         }
 
         .side-sell {
           color: #ff7181;
-
-          border:
-            1px solid
-            rgba(
-              255,
-              84,
-              106,
-              0.2
-            );
-
-          background:
-            rgba(
-              255,
-              84,
-              106,
-              0.06
-            );
+          border: 1px solid rgba(255, 84, 106, 0.2);
+          background: rgba(255, 84, 106, 0.06);
         }
 
         .side-wait {
           color: #d4af37;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.2
-            );
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.05
-            );
+          border: 1px solid rgba(212, 175, 55, 0.2);
+          background: rgba(212, 175, 55, 0.05);
         }
 
         .status-row {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           gap: 8px;
-
           margin-top: 12px;
         }
 
         .status {
           display: inline-flex;
-
           align-items: center;
-
           gap: 6px;
-
-          padding:
-            6px 9px;
-
-          border-radius:
-            8px;
-
+          padding: 6px 9px;
+          border-radius: 8px;
           font-size: 8px;
-
           font-weight: 800;
         }
 
         .status-dot {
           width: 6px;
           height: 6px;
-
           border-radius: 50%;
         }
 
         .status-active {
           color: #e2bd4e;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.18
-            );
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.05
-            );
+          border: 1px solid rgba(212, 175, 55, 0.18);
+          background: rgba(212, 175, 55, 0.05);
         }
 
-        .status-active
-          .status-dot {
-          background:
-            #d4af37;
-
-          box-shadow:
-            0 0 8px
-            rgba(
-              212,
-              175,
-              55,
-              0.8
-            );
+        .status-active .status-dot {
+          background: #d4af37;
+          box-shadow: 0 0 8px rgba(212, 175, 55, 0.8);
         }
 
         .status-success {
           color: #65e6a0;
-
-          border:
-            1px solid
-            rgba(
-              65,
-              223,
-              147,
-              0.17
-            );
-
-          background:
-            rgba(
-              65,
-              223,
-              147,
-              0.05
-            );
+          border: 1px solid rgba(65, 223, 147, 0.17);
+          background: rgba(65, 223, 147, 0.05);
         }
 
-        .status-success
-          .status-dot {
-          background:
-            #65e6a0;
+        .status-success .status-dot {
+          background: #65e6a0;
         }
 
         .status-danger {
           color: #ff7181;
-
-          border:
-            1px solid
-            rgba(
-              255,
-              84,
-              106,
-              0.17
-            );
-
-          background:
-            rgba(
-              255,
-              84,
-              106,
-              0.05
-            );
+          border: 1px solid rgba(255, 84, 106, 0.17);
+          background: rgba(255, 84, 106, 0.05);
         }
 
-        .status-danger
-          .status-dot {
-          background:
-            #ff7181;
+        .status-danger .status-dot {
+          background: #ff7181;
         }
 
         .status-warning {
           color: #d4af37;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.17
-            );
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.05
-            );
+          border: 1px solid rgba(212, 175, 55, 0.17);
+          background: rgba(212, 175, 55, 0.05);
         }
 
-        .status-warning
-          .status-dot {
-          background:
-            #d4af37;
+        .status-warning .status-dot {
+          background: #d4af37;
         }
 
         .telegram {
-          display: inline-flex;
-
-          align-items: center;
-
-          gap: 6px;
-
-          color: #77705f;
-
+          color: #716a5b;
           font-size: 8px;
         }
 
@@ -2129,70 +2492,37 @@ export default function SignalsPage() {
 
         .main-price {
           display: flex;
-
-          align-items:
-            flex-end;
-
-          justify-content:
-            space-between;
-
+          align-items: flex-end;
+          justify-content: space-between;
           gap: 15px;
-
-          margin:
-            18px 0 14px;
-
-          padding-bottom:
-            14px;
-
-          border-bottom:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.07
-            );
+          margin: 18px 0 14px;
+          padding-bottom: 14px;
+          border-bottom: 1px solid rgba(212, 175, 55, 0.07);
         }
 
         .price-label {
           color: #716956;
-
           font-size: 8px;
         }
 
         .price {
           margin-top: 5px;
-
-          color: #f7f0df;
-
-          font-size: 27px;
-
-          font-weight: 1000;
-
-          letter-spacing:
-            -0.7px;
-        }
-
-        .price.gold {
           color: #e4c75c;
+          font-size: 27px;
+          font-weight: 1000;
+          letter-spacing: -0.7px;
         }
 
         .confidence {
-          width: 120px;
+          width: 125px;
         }
 
         .confidence-top {
           display: flex;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           gap: 8px;
-
           margin-bottom: 6px;
-
           color: #746c5c;
-
           font-size: 8px;
         }
 
@@ -2202,29 +2532,15 @@ export default function SignalsPage() {
 
         .progress {
           height: 5px;
-
           overflow: hidden;
-
-          border-radius:
-            999px;
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.06
-            );
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.06);
         }
 
         .progress span {
           display: block;
-
           height: 100%;
-
-          border-radius:
-            inherit;
-
+          border-radius: inherit;
           background:
             linear-gradient(
               90deg,
@@ -2232,109 +2548,59 @@ export default function SignalsPage() {
               #d4af37,
               #fff0a1
             );
-
-          box-shadow:
-            0 0 10px
-            rgba(
-              212,
-              175,
-              55,
-              0.25
-            );
+          transition: width 0.3s ease;
         }
 
         .target-grid {
           display: grid;
-
-          grid-template-columns:
-            repeat(5, 1fr);
-
+          grid-template-columns: repeat(5, 1fr);
           gap: 6px;
         }
 
         .target-box {
           min-width: 0;
-
-          padding:
-            10px 7px;
-
-          border-radius:
-            11px;
-
-          border:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.055
-            );
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.018
-            );
+          padding: 10px 7px;
+          border: 1px solid rgba(255, 255, 255, 0.055);
+          border-radius: 11px;
+          background: rgba(255, 255, 255, 0.018);
         }
 
         .target-head {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           gap: 3px;
-
           margin-bottom: 6px;
         }
 
-        .target-head span:first-child {
+        .target-head > span:first-child {
           color: #686052;
-
           font-size: 7px;
-
           white-space: nowrap;
         }
 
         .target-box strong {
           display: block;
-
           overflow: hidden;
-
-          text-overflow:
-            ellipsis;
-
-          white-space: nowrap;
-
+          color: #e8dfc8;
           font-size: 9px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .target-box small {
+          display: block;
+          margin-top: 4px;
+          color: #625c4f;
+          font-size: 7px;
         }
 
         .target-box.entry {
-          border-color:
-            rgba(
-              212,
-              175,
-              55,
-              0.13
-            );
-        }
-
-        .target-box.entry strong {
-          color: #e8dfc8;
+          border-color: rgba(212, 175, 55, 0.13);
         }
 
         .target-box.sl {
-          border-color:
-            rgba(
-              255,
-              84,
-              106,
-              0.13
-            );
+          border-color: rgba(255, 84, 106, 0.13);
         }
 
         .target-box.sl strong {
@@ -2342,13 +2608,7 @@ export default function SignalsPage() {
         }
 
         .target-box.tp {
-          border-color:
-            rgba(
-              65,
-              223,
-              147,
-              0.13
-            );
+          border-color: rgba(65, 223, 147, 0.13);
         }
 
         .target-box.tp strong {
@@ -2357,172 +2617,80 @@ export default function SignalsPage() {
 
         .target-hit {
           box-shadow:
-            inset 0 0 0 1px
-            rgba(
-              101,
-              230,
-              160,
-              0.1
-            );
+            inset 0 0 0 1px rgba(101, 230, 160, 0.13);
         }
 
         .hit-mark {
           color: #65e6a0;
-
           font-size: 9px;
         }
 
         .secondary-grid {
           display: grid;
-
-          grid-template-columns:
-            repeat(4, 1fr);
-
+          grid-template-columns: repeat(4, 1fr);
           gap: 6px;
-
           margin-top: 7px;
         }
 
         .metric {
           min-width: 0;
-
-          padding:
-            10px;
-
-          border-radius:
-            11px;
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.018
-            );
-
-          border:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.045
-            );
+          padding: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.045);
+          border-radius: 11px;
+          background: rgba(255, 255, 255, 0.018);
         }
 
         .metric-title {
           display: block;
-
           margin-bottom: 4px;
-
           color: #625c4f;
-
           font-size: 7px;
         }
 
         .metric-value {
           display: block;
-
           overflow: hidden;
-
-          text-overflow:
-            ellipsis;
-
-          white-space: nowrap;
-
           color: #cfc7b5;
-
           font-size: 9px;
-        }
-
-        .metric-value.gold {
-          color: #d4af37;
-        }
-
-        .metric-value.green {
-          color: #65e6a0;
-        }
-
-        .metric-value.red {
-          color: #ff7181;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .levels-box,
         .reason-box {
           margin-top: 9px;
-
-          padding:
-            12px;
-
-          border-radius:
-            14px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.07
-            );
-
-          background:
-            rgba(
-              0,
-              0,
-              0,
-              0.22
-            );
+          padding: 12px;
+          border: 1px solid rgba(212, 175, 55, 0.07);
+          border-radius: 14px;
+          background: rgba(0, 0, 0, 0.22);
         }
 
         .levels-title,
         .reason-title {
-          color: #827966;
-
-          font-size: 8px;
-
           margin-bottom: 8px;
-
+          color: #827966;
+          font-size: 8px;
           font-weight: 800;
         }
 
         .sr {
           display: grid;
-
-          grid-template-columns:
-            1fr 1fr;
-
+          grid-template-columns: 1fr 1fr;
           gap: 6px;
         }
 
         .sr-item {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           gap: 5px;
-
-          padding:
-            8px;
-
-          border-radius:
-            9px;
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.018
-            );
+          padding: 8px;
+          border-radius: 9px;
+          background: rgba(255, 255, 255, 0.018);
         }
 
         .sr-item span {
           color: #625d50;
-
           font-size: 7px;
         }
 
@@ -2540,18 +2708,11 @@ export default function SignalsPage() {
 
         .reason {
           display: flex;
-
-          align-items:
-            flex-start;
-
+          align-items: flex-start;
           gap: 7px;
-
           margin-top: 5px;
-
           color: #9d9686;
-
           font-size: 8px;
-
           line-height: 1.8;
         }
 
@@ -2560,133 +2721,79 @@ export default function SignalsPage() {
         }
 
         .reason-check {
-          flex: 0 0 auto;
-
+          flex: none;
           color: #d4af37;
-
           font-weight: 900;
+        }
+
+        .result {
+          margin-top: 9px;
+          padding: 11px;
+          border-radius: 12px;
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .result-profit {
+          color: #65e6a0;
+          border: 1px solid rgba(65, 223, 147, 0.13);
+          background: rgba(65, 223, 147, 0.04);
+        }
+
+        .result-loss {
+          color: #ff7181;
+          border: 1px solid rgba(255, 84, 106, 0.13);
+          background: rgba(255, 84, 106, 0.04);
         }
 
         .empty,
         .error {
-          padding:
-            60px 20px;
-
+          padding: 58px 20px;
           text-align: center;
-
-          border-radius:
-            22px;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.11
-            );
-
+          border: 1px solid rgba(212, 175, 55, 0.11);
+          border-radius: 22px;
           background:
             linear-gradient(
               145deg,
-              rgba(
-                20,
-                19,
-                15,
-                0.95
-              ),
-              rgba(
-                7,
-                7,
-                7,
-                0.96
-              )
+              rgba(20, 19, 15, 0.95),
+              rgba(7, 7, 7, 0.97)
             );
-
           color: #8d8574;
-
           font-size: 11px;
-
           line-height: 2;
         }
 
         .empty-title {
-          color: #d4af37;
-
-          font-size: 14px;
-
-          font-weight: 900;
-
           margin-bottom: 8px;
+          color: #d4af37;
+          font-size: 14px;
+          font-weight: 900;
         }
 
         .empty-icon {
+          display: grid;
+          place-items: center;
           width: 55px;
           height: 55px;
-
-          display: grid;
-
-          place-items: center;
-
-          margin:
-            0 auto 13px;
-
-          border-radius:
-            16px;
-
+          margin: 0 auto 13px;
+          border: 1px solid rgba(212, 175, 55, 0.18);
+          border-radius: 16px;
           color: #d4af37;
-
-          border:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.18
-            );
-
-          background:
-            rgba(
-              212,
-              175,
-              55,
-              0.04
-            );
-
+          background: rgba(212, 175, 55, 0.04);
           font-size: 21px;
         }
 
         .error {
           color: #e18b91;
-
-          border-color:
-            rgba(
-              255,
-              84,
-              106,
-              0.14
-            );
+          border-color: rgba(255, 84, 106, 0.14);
         }
 
         .retry {
           margin-top: 15px;
-
-          padding:
-            10px 19px;
-
+          padding: 10px 19px;
           border: 0;
-
-          border-radius:
-            10px;
-
-          cursor: pointer;
-
+          border-radius: 10px;
           color: #090806;
-
-          font-size: 10px;
-
-          font-weight: 900;
-
           background:
             linear-gradient(
               135deg,
@@ -2694,12 +2801,13 @@ export default function SignalsPage() {
               #d4af37,
               #99701a
             );
+          cursor: pointer;
+          font-size: 10px;
+          font-weight: 900;
         }
 
         .loading {
-          animation:
-            loadingPulse 1.4s
-            infinite;
+          animation: loadingPulse 1.4s infinite;
         }
 
         @keyframes loadingPulse {
@@ -2710,142 +2818,65 @@ export default function SignalsPage() {
 
         .footer {
           display: flex;
-
           align-items: center;
-
-          justify-content:
-            space-between;
-
+          justify-content: space-between;
           gap: 8px;
-
           margin-top: 12px;
-
           padding-top: 10px;
-
-          border-top:
-            1px solid
-            rgba(
-              212,
-              175,
-              55,
-              0.07
-            );
-
+          border-top: 1px solid rgba(212, 175, 55, 0.07);
           color: #625c4f;
-
           font-size: 7px;
+          line-height: 1.8;
         }
 
         .footer-right {
           display: flex;
-
           align-items: center;
-
           gap: 8px;
-
           flex-wrap: wrap;
-        }
-
-        .result-profit {
-          color: #65e6a0;
-        }
-
-        .result-loss {
-          color: #ff7181;
         }
 
         .source {
           margin-top: 24px;
-
-          text-align: center;
-
+          padding: 0 10px;
           color: #504b40;
-
+          text-align: center;
           font-size: 7px;
-
           line-height: 2;
-
-          padding:
-            0 10px;
         }
 
-        @media (max-width: 1000px) {
+        @media (max-width: 1050px) {
           .cards {
             grid-template-columns:
-              repeat(
-                2,
-                minmax(
-                  0,
-                  1fr
-                )
-              );
+              repeat(2, minmax(0, 1fr));
           }
 
           .target-grid {
-            grid-template-columns:
-              repeat(3, 1fr);
+            grid-template-columns: repeat(3, 1fr);
+          }
+
+          .target-box:nth-child(4) {
+            grid-column: span 1;
           }
 
           .secondary-grid {
-            grid-template-columns:
-              repeat(2, 1fr);
+            grid-template-columns: repeat(2, 1fr);
           }
         }
 
-        @media (max-width: 760px) {
+        @media (max-width: 800px) {
           .container {
-            width:
-              calc(100% - 16px);
-
-            padding:
-              8px 0 45px;
-          }
-
-          .topbar {
-            min-height: 68px;
-
-            border-radius:
-              18px;
-          }
-
-          .brand-logo {
-            width: 45px;
-            height: 45px;
-
-            border-radius:
-              14px;
-          }
-
-          .brand-title {
-            font-size: 15px;
-          }
-
-          .live {
-            padding:
-              7px 9px;
-
-            font-size: 8px;
+            width: calc(100% - 16px);
+            padding-top: 8px;
           }
 
           .hero {
-            padding:
-              25px 17px;
-
-            border-radius:
-              22px;
-          }
-
-          .hero h1 {
-            font-size: 29px;
-          }
-
-          .hero-description {
-            font-size: 10px;
+            padding: 25px 17px;
+            border-radius: 22px;
           }
 
           .toolbar {
-            align-items:
-              stretch;
+            align-items: stretch;
           }
 
           .filters {
@@ -2854,20 +2885,13 @@ export default function SignalsPage() {
 
           .filter {
             flex: 1;
-
             min-width: 0;
-
-            padding:
-              9px 7px;
-
-            font-size: 9px;
+            padding: 9px 7px;
           }
 
           .actions {
             width: 100%;
-
-            flex-direction:
-              column;
+            flex-direction: column;
           }
 
           .select,
@@ -2876,56 +2900,54 @@ export default function SignalsPage() {
           }
 
           .stats {
-            grid-template-columns:
-              repeat(2, 1fr);
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .performance {
+            grid-template-columns: 1fr;
           }
 
           .cards {
-            grid-template-columns:
-              1fr;
+            grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 480px) {
+        @media (max-width: 500px) {
           .topbar {
-            padding:
-              10px;
-          }
-
-          .brand-subtitle {
-            display: none;
+            padding: 10px;
+            border-radius: 18px;
           }
 
           .brand-logo {
-            width: 42px;
-            height: 42px;
-
-            border-radius:
-              13px;
+            width: 43px;
+            height: 43px;
+            border-radius: 13px;
           }
 
           .brand-title {
             font-size: 14px;
           }
 
+          .brand-subtitle {
+            display: none;
+          }
+
           .live {
-            padding:
-              6px 8px;
+            padding: 6px 8px;
+            font-size: 8px;
           }
 
           .hero h1 {
-            font-size: 26px;
+            font-size: 27px;
           }
 
-          .stats {
-            gap: 8px;
+          .hero-description {
+            font-size: 10px;
           }
 
           .stat {
             min-height: 91px;
-
-            padding:
-              14px;
+            padding: 14px;
           }
 
           .stat-value {
@@ -2933,34 +2955,21 @@ export default function SignalsPage() {
           }
 
           .card {
-            padding:
-              15px;
-
-            border-radius:
-              19px;
+            padding: 15px;
+            border-radius: 19px;
           }
 
           .target-grid {
-            grid-template-columns:
-              repeat(2, 1fr);
+            grid-template-columns: repeat(2, 1fr);
           }
 
           .target-box:last-child {
-            grid-column:
-              span 2;
-          }
-
-          .secondary-grid {
-            grid-template-columns:
-              repeat(2, 1fr);
+            grid-column: span 2;
           }
 
           .main-price {
-            align-items:
-              flex-start;
-
-            flex-direction:
-              column;
+            align-items: flex-start;
+            flex-direction: column;
           }
 
           .confidence {
@@ -2968,20 +2977,30 @@ export default function SignalsPage() {
           }
 
           .footer {
-            align-items:
-              flex-start;
-
-            flex-direction:
-              column;
+            align-items: flex-start;
+            flex-direction: column;
           }
 
-          .footer-right {
-            width: 100%;
+          .engine-row {
+            overflow: hidden;
+          }
+
+          .engine-line {
+            min-width: 30px;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            scroll-behavior: auto !important;
+            transition: none !important;
+            animation: none !important;
           }
         }
       `}</style>
 
       <div className="container">
+
         <header className="topbar">
           <div className="brand">
             <div className="brand-logo">
@@ -3001,13 +3020,13 @@ export default function SignalsPage() {
 
           <div className="live">
             <span className="live-dot" />
-
             موتور بازار فعال
           </div>
         </header>
 
         <section className="hero">
           <div className="hero-content">
+
             <div className="eyebrow">
               REAL MARKET SIGNAL ENGINE
             </div>
@@ -3019,18 +3038,20 @@ export default function SignalsPage() {
             </h1>
 
             <p className="hero-description">
-              این صفحه فقط داده‌ای را
-              نمایش می‌دهد که از موتور
-              تحلیل بازار دریافت شده است.
-              قیمت، Entry، Stop Loss،
-              TP1، TP2 و TP3 از داده
-              واقعی API دریافت می‌شوند و
-              Frontend هیچ سیگنال یا قیمت
-              ساختگی ایجاد نمی‌کند.
+              سیگنال‌های این صفحه از
+              موتور تحلیل Backend دریافت
+              می‌شوند. قیمت بازار، Entry،
+              Stop Loss، TP1، TP2 و TP3
+              از داده‌های واقعی محاسبه‌شده
+              توسط موتور سیگنال نمایش داده
+              می‌شوند. این رابط کاربری هیچ
+              سیگنال ساختگی تولید نمی‌کند.
             </p>
 
             <div className="toolbar">
+
               <div className="filters">
+
                 <button
                   type="button"
                   className={
@@ -3072,9 +3093,11 @@ export default function SignalsPage() {
                 >
                   SELL
                 </button>
+
               </div>
 
               <div className="actions">
+
                 <select
                   className="select"
                   value={timeframe}
@@ -3087,12 +3110,8 @@ export default function SignalsPage() {
                   {TIMEFRAMES.map(
                     (item) => (
                       <option
-                        key={
-                          item.value
-                        }
-                        value={
-                          item.value
-                        }
+                        key={item.value}
+                        value={item.value}
                       >
                         تایم‌فریم:{" "}
                         {item.label}
@@ -3107,20 +3126,20 @@ export default function SignalsPage() {
                   onClick={() =>
                     loadSignals(true)
                   }
-                  disabled={
-                    refreshing
-                  }
+                  disabled={refreshing}
                 >
                   {refreshing
                     ? "در حال تحلیل..."
                     : "↻ بروزرسانی بازار"}
                 </button>
+
               </div>
             </div>
           </div>
         </section>
 
         <div className="engine-row">
+
           <div className="engine-status">
             <span className="live-dot" />
 
@@ -3146,58 +3165,189 @@ export default function SignalsPage() {
               )}
             </strong>
           </div>
+
         </div>
 
         <section className="stats">
-          <div className="stat">
-            <span className="stat-label">
-              بازار / خروجی تحلیل
-            </span>
 
-            <strong className="stat-value gold">
-              {summary.total}
-            </strong>
-          </div>
+          <StatCard
+            title="خروجی موتور"
+            value={String(
+              summary.total
+            )}
+            tone="gold"
+            subtitle="Signal Engine"
+          />
 
-          <div className="stat">
-            <span className="stat-label">
-              BUY
-            </span>
+          <StatCard
+            title="BUY"
+            value={String(
+              summary.buy
+            )}
+            tone="green"
+            subtitle="سیگنال خرید"
+          />
 
-            <strong className="stat-value green">
-              {buyCount}
-            </strong>
-          </div>
+          <StatCard
+            title="SELL"
+            value={String(
+              summary.sell
+            )}
+            tone="red"
+            subtitle="سیگنال فروش"
+          />
 
-          <div className="stat">
-            <span className="stat-label">
-              SELL
-            </span>
+          <StatCard
+            title="فعال"
+            value={String(
+              activeCount
+            )}
+            tone="gray"
+            subtitle="Open / Active"
+          />
 
-            <strong className="stat-value red">
-              {sellCount}
-            </strong>
-          </div>
-
-          <div className="stat">
-            <span className="stat-label">
-              فعال
-            </span>
-
-            <strong className="stat-value gray">
-              {activeCount}
-            </strong>
-          </div>
         </section>
+
+        <section className="stats">
+
+          <StatCard
+            title="TP ثبت‌شده"
+            value={String(
+              tpHitCount
+            )}
+            tone="green"
+            subtitle="TP Events"
+          />
+
+          <StatCard
+            title="P/L فعلی"
+            value={`$${formatNumber(
+              totalRealized,
+              2
+            )}`}
+            tone={
+              totalRealized >= 0
+                ? "green"
+                : "red"
+            }
+            subtitle="نتایج ثبت‌شده"
+          />
+
+          <StatCard
+            title="آخرین بروزرسانی"
+            value={
+              lastUpdate
+                ? formatDate(
+                    lastUpdate
+                  )
+                : "—"
+            }
+            tone="gold"
+            subtitle="Market Refresh"
+          />
+
+          <StatCard
+            title="وضعیت"
+            value="LIVE"
+            tone="green"
+            subtitle="Backend Connected"
+          />
+
+        </section>
+
+        {performance && (
+          <section className="performance">
+
+            {(
+              [
+                [
+                  "امروز",
+                  performance.daily,
+                ],
+                [
+                  "این هفته",
+                  performance.weekly,
+                ],
+                [
+                  "این ماه",
+                  performance.monthly,
+                ],
+              ] as const
+            ).map(
+              ([
+                title,
+                data,
+              ]) => (
+                <div
+                  className="performance-card"
+                  key={title}
+                >
+                  <h4>
+                    عملکرد {title}
+                  </h4>
+
+                  <div className="performance-grid">
+
+                    <div className="performance-item">
+                      <span>
+                        معاملات
+                      </span>
+
+                      <strong>
+                        {data?.trades ??
+                          0}
+                      </strong>
+                    </div>
+
+                    <div className="performance-item">
+                      <span>
+                        برد
+                      </span>
+
+                      <strong className="green">
+                        {data?.wins ??
+                          0}
+                      </strong>
+                    </div>
+
+                    <div className="performance-item">
+                      <span>
+                        سود/زیان
+                      </span>
+
+                      <strong
+                        className={
+                          (data?.profitLoss ??
+                            0) >=
+                          0
+                            ? "green"
+                            : "red"
+                        }
+                      >
+                        $
+                        {formatNumber(
+                          data?.profitLoss ??
+                            0,
+                          2
+                        )}
+                      </strong>
+                    </div>
+
+                  </div>
+                </div>
+              )
+            )}
+
+          </section>
+        )}
 
         {apiErrors.length > 0 && (
           <div className="api-error-bar">
             <strong>
-              بعضی بازارها پاسخ
-              نداده‌اند:
+              بعضی بازارها پاسخ نداده‌اند:
             </strong>{" "}
             {apiErrors
-              .slice(0, 3)
+              .slice(0, 4)
               .map(
                 (item) =>
                   `${item.symbol}: ${item.error}`
@@ -3208,624 +3358,20 @@ export default function SignalsPage() {
 
         {loading ? (
           <div className="empty loading">
+
             <div className="empty-icon">
               ◌
             </div>
 
             <div className="empty-title">
-              در حال تحلیل بازار
+              در حال تحلیل واقعی بازار
             </div>
 
-            دریافت قیمت واقعی،
-            محاسبه اندیکاتورها و بررسی
-            شرایط سیگنال...
+            دریافت قیمت، کندل‌ها،
+            اندیکاتورها، ساختار بازار،
+            حمایت و مقاومت و شرایط
+            سیگنال...
+
           </div>
         ) : error ? (
           <div className="error">
-            <div className="empty-icon">
-              !
-            </div>
-
-            <div className="empty-title">
-              دریافت داده بازار ناموفق بود
-            </div>
-
-            <div>
-              {error}
-            </div>
-
-            <button
-              type="button"
-              className="retry"
-              onClick={() =>
-                loadSignals()
-              }
-            >
-              تلاش مجدد
-            </button>
-          </div>
-        ) : visibleSignals.length ===
-          0 ? (
-          <div className="empty">
-            <div className="empty-icon">
-              ◇
-            </div>
-
-            <div className="empty-title">
-              سیگنال معتبر فعالی وجود ندارد
-            </div>
-
-            <div>
-              در تایم‌فریم{" "}
-              <strong>
-                {timeframeLabel(
-                  timeframe
-                )}
-              </strong>{" "}
-              و فیلتر انتخاب‌شده،
-              موتور تحلیل در حال حاضر
-              شرایط لازم برای BUY یا SELL
-              را تأیید نکرده است.
-              <br />
-              سیستم برای پر کردن صفحه،
-              سیگنال ساختگی تولید نمی‌کند.
-            </div>
-          </div>
-        ) : (
-          <section className="cards">
-            {visibleSignals.map(
-              (signal) => (
-                <article
-                  className="card"
-                  key={signal.id}
-                >
-                  <div className="card-head">
-                    <div className="asset">
-                      <div className="asset-icon">
-                        {symbolIcon(
-                          signal.symbol
-                        )}
-                      </div>
-
-                      <div>
-                        <h3 className="asset-name">
-                          {signal.symbol}
-                        </h3>
-
-                        <span className="asset-description">
-                          {signal.name}
-                        </span>
-
-                        <span className="market-badge">
-                          {marketLabel(
-                            signal.market
-                          )}
-                        </span>
-                      </div>
-                    </div>
-
-                    <Side
-                      side={
-                        signal.side
-                      }
-                    />
-                  </div>
-
-                  <div className="status-row">
-                    <span
-                      className={`status ${statusClass(
-                        signal
-                      )}`}
-                    >
-                      <span className="status-dot" />
-
-                      {statusLabel(
-                        signal
-                      )}
-                    </span>
-
-                    <span
-                      className={
-                        signal.telegramSent
-                          ? "telegram sent"
-                          : "telegram"
-                      }
-                    >
-                      {signal.telegramSent
-                        ? "✓ ارسال به Telegram"
-                        : "○ Telegram"}
-                    </span>
-                  </div>
-
-                  <div className="main-price">
-                    <div>
-                      <div className="price-label">
-                        قیمت فعلی بازار
-                      </div>
-
-                      <div className="price gold">
-                        {formatPrice(
-                          signal.currentPrice ??
-                            signal.price
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="confidence">
-                      <div className="confidence-top">
-                        <span>
-                          قدرت سیگنال
-                        </span>
-
-                        <b>
-                          {formatNumber(
-                            signal.strength,
-                            0
-                          )}
-                          %
-                        </b>
-                      </div>
-
-                      <div className="progress">
-                        <span
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              Math.max(
-                                0,
-                                signal.strength ||
-                                  0
-                              )
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="target-grid">
-                    <TargetBox
-                      label="ENTRY"
-                      value={
-                        signal.entry
-                      }
-                      tone="entry"
-                    />
-
-                    <TargetBox
-                      label="SL"
-                      value={
-                        signal.stopLoss
-                      }
-                      tone="sl"
-                      hit={
-                        !!signal.stopLossHitAt
-                      }
-                    />
-
-                    <TargetBox
-                      label="TP1"
-                      value={
-                        signal.takeProfit1
-                      }
-                      tone="tp"
-                      hit={
-                        !!signal.tp1HitAt
-                      }
-                    />
-
-                    <TargetBox
-                      label="TP2"
-                      value={
-                        signal.takeProfit2
-                      }
-                      tone="tp"
-                      hit={
-                        !!signal.tp2HitAt
-                      }
-                    />
-
-                    <TargetBox
-                      label="TP3"
-                      value={
-                        signal.takeProfit3
-                      }
-                      tone="tp"
-                      hit={
-                        !!signal.tp3HitAt
-                      }
-                    />
-                  </div>
-
-                  <div className="secondary-grid">
-                    <Metric
-                      title="R:R"
-                      value={
-                        signal.riskReward
-                          ? `1:${formatNumber(
-                              signal.riskReward,
-                              2
-                            )}`
-                          : "—"
-                      }
-                      tone="gold"
-                    />
-
-                    <Metric
-                      title="CONFIDENCE"
-                      value={`${formatNumber(
-                        signal.confidence,
-                        0
-                      )}%`}
-                      tone="gold"
-                    />
-
-                    <Metric
-                      title="TREND"
-                      value={trendLabel(
-                        signal.trend
-                      )}
-                      tone={
-                        signal.trend ===
-                        "BULLISH"
-                          ? "green"
-                          : signal.trend ===
-                            "BEARISH"
-                          ? "red"
-                          : ""
-                      }
-                    />
-
-                    <Metric
-                      title="TIMEFRAME"
-                      value={timeframeLabel(
-                        signal.interval
-                      )}
-                    />
-                  </div>
-
-                  <div className="secondary-grid">
-                    <Metric
-                      title="RSI"
-                      value={formatNumber(
-                        signal.rsi,
-                        2
-                      )}
-                    />
-
-                    <Metric
-                      title="EMA 20"
-                      value={formatPrice(
-                        signal.ema20
-                      )}
-                    />
-
-                    <Metric
-                      title="EMA 50"
-                      value={formatPrice(
-                        signal.ema50
-                      )}
-                    />
-
-                    <Metric
-                      title="ATR"
-                      value={formatPrice(
-                        signal.atr
-                      )}
-                    />
-                  </div>
-
-                  <div className="secondary-grid">
-                    <Metric
-                      title="MACD"
-                      value={formatNumber(
-                        signal.macd,
-                        5
-                      )}
-                    />
-
-                    <Metric
-                      title="MACD SIGNAL"
-                      value={formatNumber(
-                        signal.macdSignal,
-                        5
-                      )}
-                    />
-
-                    <Metric
-                      title="HISTOGRAM"
-                      value={formatNumber(
-                        signal.macdHistogram,
-                        5
-                      )}
-                    />
-
-                    <Metric
-                      title="CURRENT"
-                      value={formatPrice(
-                        signal.currentPrice ??
-                          signal.price
-                      )}
-                    />
-                  </div>
-
-                  <div className="levels-box">
-                    <div className="levels-title">
-                      حمایت و مقاومت بازار
-                    </div>
-
-                    <div className="sr">
-                      <div className="sr-item">
-                        <span>
-                          مقاومت ۲
-                        </span>
-
-                        <strong className="resistance">
-                          {formatPrice(
-                            signal.resistance2
-                          )}
-                        </strong>
-                      </div>
-
-                      <div className="sr-item">
-                        <span>
-                          مقاومت ۱
-                        </span>
-
-                        <strong className="resistance">
-                          {formatPrice(
-                            signal.resistance1
-                          )}
-                        </strong>
-                      </div>
-
-                      <div className="sr-item">
-                        <span>
-                          حمایت ۱
-                        </span>
-
-                        <strong className="support">
-                          {formatPrice(
-                            signal.support1
-                          )}
-                        </strong>
-                      </div>
-
-                      <div className="sr-item">
-                        <span>
-                          حمایت ۲
-                        </span>
-
-                        <strong className="support">
-                          {formatPrice(
-                            signal.support2
-                          )}
-                        </strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="reason-box">
-                    <div className="reason-title">
-                      دلایل تأیید سیگنال
-                    </div>
-
-                    {signal.reasons &&
-                    signal.reasons.length >
-                      0 ? (
-                      signal.reasons
-                        .slice(
-                          0,
-                          6
-                        )
-                        .map(
-                          (
-                            reason,
-                            index
-                          ) => (
-                            <div
-                              className="reason"
-                              key={`${signal.id}-${index}`}
-                            >
-                              <span className="reason-check">
-                                ✓
-                              </span>
-
-                              <span>
-                                {reason}
-                              </span>
-                            </div>
-                          )
-                        )
-                    ) : (
-                      <div className="reason">
-                        <span className="reason-check">
-                          •
-                        </span>
-
-                        <span>
-                          اطلاعات تحلیل
-                          برای این سیگنال
-                          در API ثبت نشده
-                          است.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {(signal.riskUsd !==
-                    null &&
-                    signal.riskUsd !==
-                      undefined) ||
-                  (signal.realizedProfitLoss !==
-                    null &&
-                    signal.realizedProfitLoss !==
-                      undefined) ? (
-                    <div className="levels-box">
-                      <div className="levels-title">
-                        مدیریت مالی سیگنال
-                      </div>
-
-                      <div className="secondary-grid">
-                        <Metric
-                          title="RISK USD"
-                          value={
-                            signal.riskUsd !==
-                            null &&
-                            signal.riskUsd !==
-                              undefined
-                              ? `$${formatNumber(
-                                  signal.riskUsd,
-                                  2
-                                )}`
-                              : "—"
-                          }
-                          tone="red"
-                        />
-
-                        <Metric
-                          title="TP1 USD"
-                          value={
-                            signal.takeProfit1Usd !==
-                              null &&
-                            signal.takeProfit1Usd !==
-                              undefined
-                              ? `$${formatNumber(
-                                  signal.takeProfit1Usd,
-                                  2
-                                )}`
-                              : "—"
-                          }
-                          tone="green"
-                        />
-
-                        <Metric
-                          title="TP2 USD"
-                          value={
-                            signal.takeProfit2Usd !==
-                              null &&
-                            signal.takeProfit2Usd !==
-                              undefined
-                              ? `$${formatNumber(
-                                  signal.takeProfit2Usd,
-                                  2
-                                )}`
-                              : "—"
-                          }
-                          tone="green"
-                        />
-
-                        <Metric
-                          title="TP3 USD"
-                          value={
-                            signal.takeProfit3Usd !==
-                              null &&
-                            signal.takeProfit3Usd !==
-                              undefined
-                              ? `$${formatNumber(
-                                  signal.takeProfit3Usd,
-                                  2
-                                )}`
-                              : "—"
-                          }
-                          tone="green"
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="footer">
-                    <div className="footer-right">
-                      <span>
-                        ایجاد:{" "}
-                        {formatDate(
-                          signal.createdAt ||
-                            signal.generatedAt
-                        )}
-                      </span>
-
-                      <span>
-                        کندل:{" "}
-                        {formatDate(
-                          signal.candleTime
-                        )}
-                      </span>
-
-                      {signal.lastCheckedAt && (
-                        <span>
-                          بررسی:{" "}
-                          {formatDate(
-                            signal.lastCheckedAt
-                          )}
-                        </span>
-                      )}
-                    </div>
-
-                    <span>
-                      {signal.expiresAt
-                        ? `انقضا: ${formatDate(
-                            signal.expiresAt
-                          )}`
-                        : `بروزرسانی: ${formatDate(
-                            signal.generatedAt
-                          )}`}
-                    </span>
-                  </div>
-
-                  {signal.realizedProfitLoss !==
-                    null &&
-                    signal.realizedProfitLoss !==
-                      undefined && (
-                      <div
-                        className={
-                          signal.realizedProfitLoss >=
-                          0
-                            ? "result-profit"
-                            : "result-loss"
-                        }
-                        style={{
-                          marginTop: 9,
-                          fontSize: 9,
-                          fontWeight: 800,
-                        }}
-                      >
-                        نتیجه ثبت‌شده:{" "}
-                        {signal.realizedProfitLoss >=
-                        0
-                          ? "+"
-                          : ""}
-                        $
-                        {formatNumber(
-                          signal.realizedProfitLoss,
-                          2
-                        )}
-                      </div>
-                    )}
-                </article>
-              )
-            )}
-          </section>
-        )}
-
-        <div className="source">
-          منبع قیمت و بازار:
-          Twelve Data ·
-          نمایش فقط داده دریافت‌شده از
-          موتور تحلیل ·
-          بروزرسانی خودکار هر ۶۰ ثانیه
-          <br />
-          این صفحه قیمت، سیگنال یا نتیجه
-          ساختگی تولید نمی‌کند. نتیجه
-          معامله فقط زمانی نمایش داده
-          می‌شود که Backend آن را ثبت
-          کرده باشد.
-          {lastUpdate
-            ? ` · آخرین دریافت: ${formatDate(
-                lastUpdate
-              )}`
-            : ""}
-        </div>
-      </div>
-    </main>
-  );
-}
