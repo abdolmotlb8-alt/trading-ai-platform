@@ -10,30 +10,39 @@ export const revalidate = 0;
    XAUUSD AI ANALYSIS ENGINE
    =========================================================
 
-   معامله پایه:
-   Total lot: 0.10
+   TOTAL POSITION
+   ---------------
+   0.10 LOT
 
-   TP1:
-   0.04 lot
-   +$5 per 0.01 lot
-   => +$20
+   TP1
+   0.04 LOT
+   $5 per 0.01 LOT
+   = +$20
 
-   TP2:
-   0.03 lot
-   +$8 per 0.01 lot
-   => +$24
+   TP2
+   0.03 LOT
+   $8 per 0.01 LOT
+   = +$24
 
-   TP3:
-   0.03 lot
-   +$12 per 0.01 lot
-   => +$36
+   TP3
+   0.03 LOT
+   $12 per 0.01 LOT
+   = +$36
 
-   Full TP:
-   $20 + $24 + $36 = $80
+   FULL TP
+   -------
+   +$80
 
-   بعد از TP1:
-   0.06 lot باقی می‌ماند
-   Stop Loss -> Entry
+   AFTER TP1
+   ----------
+   0.04 LOT CLOSED
+   0.06 LOT REMAINS
+   SL -> ENTRY
+
+   INITIAL SL
+   ----------
+   -$4 TOTAL
+
    ========================================================= */
 
 
@@ -43,10 +52,14 @@ export const revalidate = 0;
 
 const SYMBOL = "XAUUSD";
 const TD_SYMBOL = "XAU/USD";
-const TD_BASE = "https://api.twelvedata.com";
-const NETARZ_BASE = "https://netarz.ir/api/fx/v1";
 
-const TOTAL_LOT = 0.10;
+const TWELVE_DATA_URL =
+  "https://api.twelvedata.com";
+
+const NETARZ_URL =
+  "https://netarz.ir/api/fx/v1";
+
+const TOTAL_LOT = 0.1;
 
 const TP1_LOT = 0.04;
 const TP2_LOT = 0.03;
@@ -57,22 +70,25 @@ const REMAINING_AFTER_TP1 = 0.06;
 const CONTRACT_SIZE = 100;
 
 /*
- * TP values are PER 0.01 LOT.
+ * Profit target PER 0.01 LOT.
  */
-const TP1_PER_001_LOT_USD = 5;
-const TP2_PER_001_LOT_USD = 8;
-const TP3_PER_001_LOT_USD = 12;
+
+const TP1_PER_001_USD = 5;
+const TP2_PER_001_USD = 8;
+const TP3_PER_001_USD = 12;
 
 /*
- * Therefore:
- *
- * TP1 = 5 * 4 = $20
- * TP2 = 8 * 3 = $24
- * TP3 = 12 * 3 = $36
+ * Actual profit of each partial close.
  */
-const TP1_TOTAL_USD = TP1_PER_001_LOT_USD * 4;
-const TP2_TOTAL_USD = TP2_PER_001_LOT_USD * 3;
-const TP3_TOTAL_USD = TP3_PER_001_LOT_USD * 3;
+
+const TP1_TOTAL_USD =
+  TP1_PER_001_USD * 4;
+
+const TP2_TOTAL_USD =
+  TP2_PER_001_USD * 3;
+
+const TP3_TOTAL_USD =
+  TP3_PER_001_USD * 3;
 
 const FULL_TP_USD =
   TP1_TOTAL_USD +
@@ -80,15 +96,21 @@ const FULL_TP_USD =
   TP3_TOTAL_USD;
 
 /*
- * Initial SL remains $4 TOTAL for 0.10 lot.
- *
- * 0.10 lot = 10 oz
- * $4 / 10 = $0.40 price movement
+ * Initial total stop.
  */
-const INITIAL_SL_TOTAL_USD = 4;
+
+const INITIAL_SL_USD = 4;
+
+/*
+ * Minimum signal requirements.
+ */
 
 const MIN_SCORE = 60;
 const MIN_CONFIRMATIONS = 2;
+
+/*
+ * Active statuses.
+ */
 
 const ACTIVE_STATUSES = [
   "WAITING",
@@ -97,28 +119,14 @@ const ACTIVE_STATUSES = [
   "TP2_HIT",
 ];
 
-const CLOSED_STATUSES = [
-  "SL_HIT",
-  "BREAKEVEN",
-  "TP3_HIT",
-  "CLOSED",
-];
-
 
 /* =========================================================
    TYPES
    ========================================================= */
 
-type Direction = "BUY" | "SELL";
-
-type Candle = {
-  datetime: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-};
+type Direction =
+  | "BUY"
+  | "SELL";
 
 type MarketSession =
   | "TOKYO"
@@ -135,8 +143,21 @@ type EventType =
   | "SL_HIT"
   | "BREAKEVEN_HIT";
 
+type Candle = {
+  datetime: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+};
+
 type TelegramState = {
-  status: "PENDING" | "SENT" | "FAILED";
+  status:
+    | "PENDING"
+    | "SENT"
+    | "FAILED";
+
   messageId?: number | null;
   sentAt?: string | null;
   error?: string | null;
@@ -205,9 +226,7 @@ type SignalMeta = {
   stopLoss: number;
 
   tp1: number;
-
   tp2: number;
-
   tp3: number;
 
   initialStopLoss: number;
@@ -217,9 +236,7 @@ type SignalMeta = {
   totalLot: number;
 
   tp1Lot: number;
-
   tp2Lot: number;
-
   tp3Lot: number;
 
   remainingLot: number;
@@ -235,41 +252,54 @@ type SignalMeta = {
   fullTpUsd: number;
 
   usdToToman: number | null;
+
   usdToTomanAsOf: string | null;
+
   usdToTomanDelayed: boolean;
+
   usdToTomanDelayedMinutes: number | null;
 
   lastPrice: number;
 
-  lastPriceSource?: string;
+  lastPriceSource: string | null;
 
   state: SignalState;
 
-  telegramInitial?: TelegramState;
+  telegramInitial: TelegramState | null;
 
-  createdAt?: string;
+  createdAt: string | null;
 
-  updatedAt?: string;
+  updatedAt: string | null;
 };
 
 
 /* =========================================================
-   BASIC HELPERS
+   HELPERS
    ========================================================= */
 
-function num(value: unknown, fallback = 0): number {
+function num(
+  value: unknown,
+  fallback = 0,
+): number {
   const n = Number(value);
 
-  if (!Number.isFinite(n)) {
-    return fallback;
-  }
-
-  return n;
+  return Number.isFinite(n)
+    ? n
+    : fallback;
 }
 
-function round(value: number, digits = 2): number {
-  const factor = Math.pow(10, digits);
-  return Math.round(value * factor) / factor;
+function round(
+  value: number,
+  digits = 2,
+): number {
+  const factor =
+    10 ** digits;
+
+  return (
+    Math.round(
+      value * factor,
+    ) / factor
+  );
 }
 
 function clamp(
@@ -277,95 +307,124 @@ function clamp(
   min: number,
   max: number,
 ): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function avg(values: number[]): number {
-  if (!values.length) return 0;
-
-  return (
-    values.reduce((sum, value) => sum + value, 0) /
-    values.length
+  return Math.min(
+    max,
+    Math.max(min, value),
   );
 }
 
-function esc(value: unknown): string {
+function avg(
+  values: number[],
+): number {
+  if (!values.length) {
+    return 0;
+  }
+
+  return (
+    values.reduce(
+      (a, b) => a + b,
+      0,
+    ) / values.length
+  );
+}
+
+function esc(
+  value: unknown,
+): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
 
-function normalizeSymbol(value: unknown): string {
-  return String(value ?? "")
-    .replace("/", "")
-    .replace("-", "")
-    .replace("_", "")
-    .toUpperCase();
-}
-
-function normalizeTimeframe(value: unknown): string {
-  const tf = String(value ?? "1min").toLowerCase();
-
-  if (tf === "1m") return "1min";
-  if (tf === "5m") return "5min";
-  if (tf === "15m") return "15min";
-  if (tf === "30m") return "30min";
-  if (tf === "1h") return "1h";
-  if (tf === "4h") return "4h";
-  if (tf === "1d") return "1day";
-
-  return tf;
-}
-
 function isoNow(): string {
   return new Date().toISOString();
 }
 
+function normalizeSymbol(
+  value: unknown,
+): string {
+  return String(value ?? "")
+    .replace(
+      /[\/_-]/g,
+      "",
+    )
+    .toUpperCase();
+}
+
+function normalizeTimeframe(
+  value: unknown,
+): string {
+  const tf =
+    String(value ?? "1min")
+      .toLowerCase();
+
+  const map: Record<
+    string,
+    string
+  > = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "1h": "1h",
+    "4h": "4h",
+    "1d": "1day",
+  };
+
+  return map[tf] || tf;
+}
+
 function iranTime(): string {
-  return new Intl.DateTimeFormat("fa-IR", {
-    timeZone: "Asia/Tehran",
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date());
+  return new Intl.DateTimeFormat(
+    "fa-IR",
+    {
+      timeZone:
+        "Asia/Tehran",
+      dateStyle: "short",
+      timeStyle: "medium",
+    },
+  ).format(new Date());
 }
 
 
 /* =========================================================
    MARKET SESSION
-   IMPORTANT:
-   This is NOT getSession().
-   Auth getSession() comes from "@/lib/session".
    ========================================================= */
 
-function getMarketSession(): MarketSession {
-  const now = new Date();
-
+function getMarketSession():
+  MarketSession {
   const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "UTC",
-      hour: "2-digit",
-      hour12: false,
-    }).format(now),
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: "UTC",
+        hour: "2-digit",
+        hour12: false,
+      },
+    ).format(new Date()),
   );
 
-  /*
-   * Approximate major forex/gold sessions in UTC.
-   */
-
   const tokyo =
-    hour >= 0 && hour < 8;
+    hour >= 0 &&
+    hour < 8;
 
   const london =
-    hour >= 7 && hour < 16;
+    hour >= 7 &&
+    hour < 16;
 
   const newYork =
-    hour >= 13 && hour < 22;
+    hour >= 13 &&
+    hour < 22;
 
   const sydney =
-    hour >= 21 || hour < 6;
+    hour >= 21 ||
+    hour < 6;
 
-  if (london && newYork) {
+  if (
+    london &&
+    newYork
+  ) {
     return "OVERLAP";
   }
 
@@ -390,14 +449,19 @@ function getMarketSession(): MarketSession {
 
 
 /* =========================================================
-   TWELVE DATA
+   TWELVE DATA REQUEST
    ========================================================= */
 
 async function tdRequest(
   endpoint: string,
-  params: Record<string, string>,
+  params: Record<
+    string,
+    string
+  >,
 ): Promise<any> {
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
+  const apiKey =
+    process.env
+      .TWELVE_DATA_API_KEY;
 
   if (!apiKey) {
     throw new Error(
@@ -405,20 +469,42 @@ async function tdRequest(
     );
   }
 
-  const url = new URL(`${TD_BASE}${endpoint}`);
+  const url =
+    new URL(
+      `${TWELVE_DATA_URL}${endpoint}`,
+    );
 
-  Object.entries({
+  const allParams = {
     ...params,
     apikey: apiKey,
-  }).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
-  });
+  };
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    cache: "no-store",
-    signal: AbortSignal.timeout(10000),
-  });
+  for (
+    const [
+      key,
+      value,
+    ] of Object.entries(
+      allParams,
+    )
+  ) {
+    url.searchParams.set(
+      key,
+      value,
+    );
+  }
+
+  const response =
+    await fetch(
+      url.toString(),
+      {
+        method: "GET",
+        cache: "no-store",
+        signal:
+          AbortSignal.timeout(
+            10000,
+          ),
+      },
+    );
 
   if (!response.ok) {
     throw new Error(
@@ -426,73 +512,23 @@ async function tdRequest(
     );
   }
 
-  const data = await response.json();
+  const data =
+    await response.json();
 
   if (
-    data?.status === "error" ||
-    data?.code === 400 ||
-    data?.message
+    data?.status ===
+      "error" ||
+    data?.code === 400
   ) {
     throw new Error(
       String(
         data?.message ||
-        data?.status ||
-        "Twelve Data error",
+          "Twelve Data error",
       ),
     );
   }
 
   return data;
-}
-
-
-/* =========================================================
-   LIVE PRICE
-   ========================================================= */
-
-async function getLivePrice(): Promise<{
-  price: number;
-  source: string;
-  datetime: string | null;
-}> {
-  try {
-    const data = await tdRequest("/price", {
-      symbol: TD_SYMBOL,
-      dp: "5",
-    });
-
-    const price = num(data?.price);
-
-    if (price > 0) {
-      return {
-        price,
-        source: "Twelve Data /price",
-        datetime: null,
-      };
-    }
-  } catch {
-    /*
-     * Fallback below.
-     */
-  }
-
-  const fallback = await getCandles(
-    TD_SYMBOL,
-    "1min",
-    2,
-  );
-
-  if (!fallback.length) {
-    throw new Error(
-      "Unable to obtain XAUUSD price",
-    );
-  }
-
-  return {
-    price: fallback[0].close,
-    source: "Twelve Data /time_series fallback",
-    datetime: fallback[0].datetime,
-  };
 }
 
 
@@ -505,36 +541,126 @@ async function getCandles(
   interval: string,
   outputsize = 220,
 ): Promise<Candle[]> {
-  const data = await tdRequest("/time_series", {
-    symbol,
-    interval: normalizeTimeframe(interval),
-    outputsize: String(outputsize),
-    order: "desc",
-    timezone: "UTC",
-  });
+  const data =
+    await tdRequest(
+      "/time_series",
+      {
+        symbol,
+        interval:
+          normalizeTimeframe(
+            interval,
+          ),
+        outputsize:
+          String(outputsize),
+        order: "desc",
+        timezone: "UTC",
+      },
+    );
 
-  if (!Array.isArray(data?.values)) {
+  if (
+    !Array.isArray(
+      data?.values,
+    )
+  ) {
     return [];
   }
 
   return data.values
-    .map((item: any): Candle => ({
-      datetime: String(item?.datetime ?? ""),
-      open: num(item?.open),
-      high: num(item?.high),
-      low: num(item?.low),
-      close: num(item?.close),
-      volume:
-        item?.volume == null
-          ? undefined
-          : num(item.volume),
-    }))
+    .map(
+      (item: any) => ({
+        datetime:
+          String(
+            item?.datetime ||
+              "",
+          ),
+
+        open:
+          num(item?.open),
+
+        high:
+          num(item?.high),
+
+        low:
+          num(item?.low),
+
+        close:
+          num(item?.close),
+
+        volume:
+          item?.volume == null
+            ? undefined
+            : num(
+                item.volume,
+              ),
+      }),
+    )
     .filter(
-      (candle: Candle) =>
-        candle.close > 0 &&
-        candle.high > 0 &&
-        candle.low > 0,
+      (c: Candle) =>
+        c.close > 0 &&
+        c.high > 0 &&
+        c.low > 0,
     );
+}
+
+
+/* =========================================================
+   LIVE XAUUSD PRICE
+   ========================================================= */
+
+async function getLivePrice(): Promise<{
+  price: number;
+  source: string;
+  datetime: string | null;
+}> {
+  try {
+    const data =
+      await tdRequest(
+        "/price",
+        {
+          symbol:
+            TD_SYMBOL,
+          dp: "5",
+        },
+      );
+
+    const price =
+      num(data?.price);
+
+    if (price > 0) {
+      return {
+        price,
+        source:
+          "Twelve Data /price",
+        datetime: null,
+      };
+    }
+  } catch {
+    /* fallback */
+  }
+
+  const candles =
+    await getCandles(
+      TD_SYMBOL,
+      "1min",
+      2,
+    );
+
+  if (!candles.length) {
+    throw new Error(
+      "XAUUSD price unavailable",
+    );
+  }
+
+  return {
+    price:
+      candles[0].close,
+
+    source:
+      "Twelve Data /time_series",
+
+    datetime:
+      candles[0].datetime,
+  };
 }
 
 
@@ -546,22 +672,36 @@ function ema(
   values: number[],
   period: number,
 ): number[] {
-  if (!values.length) return [];
+  if (!values.length) {
+    return [];
+  }
 
-  const multiplier = 2 / (period + 1);
+  const multiplier =
+    2 / (period + 1);
 
   const result: number[] = [];
 
-  let previous = values[0];
+  let previous =
+    values[0];
 
   result.push(previous);
 
-  for (let i = 1; i < values.length; i++) {
+  for (
+    let i = 1;
+    i < values.length;
+    i++
+  ) {
     previous =
-      (values[i] - previous) * multiplier +
+      (
+        values[i] -
+        previous
+      ) *
+        multiplier +
       previous;
 
-    result.push(previous);
+    result.push(
+      previous,
+    );
   }
 
   return result;
@@ -571,21 +711,32 @@ function rsi(
   values: number[],
   period = 14,
 ): number {
-  if (values.length <= period) {
+  if (
+    values.length <=
+    period
+  ) {
     return 50;
   }
 
   let gain = 0;
   let loss = 0;
 
-  for (let i = 1; i <= period; i++) {
+  for (
+    let i = 1;
+    i <= period;
+    i++
+  ) {
     const change =
-      values[i] - values[i - 1];
+      values[i] -
+      values[i - 1];
 
     if (change >= 0) {
       gain += change;
     } else {
-      loss += Math.abs(change);
+      loss +=
+        Math.abs(
+          change,
+        );
     }
   }
 
@@ -598,70 +749,55 @@ function rsi(
     i++
   ) {
     const change =
-      values[i] - values[i - 1];
+      values[i] -
+      values[i - 1];
 
     const currentGain =
-      change > 0 ? change : 0;
+      change > 0
+        ? change
+        : 0;
 
     const currentLoss =
-      change < 0 ? Math.abs(change) : 0;
+      change < 0
+        ? Math.abs(
+            change,
+          )
+        : 0;
 
     gain =
-      (gain * (period - 1) +
-        currentGain) /
-      period;
+      (
+        gain *
+          (period - 1) +
+        currentGain
+      ) / period;
 
     loss =
-      (loss * (period - 1) +
-        currentLoss) /
-      period;
+      (
+        loss *
+          (period - 1) +
+        currentLoss
+      ) / period;
   }
 
-  if (loss === 0) return 100;
-
-  const rs = gain / loss;
-
-  return 100 - 100 / (1 + rs);
-}
-
-function atr(
-  candles: Candle[],
-  period = 14,
-): number {
-  if (candles.length < period + 1) {
-    return 0;
+  if (loss === 0) {
+    return 100;
   }
 
-  const trs: number[] = [];
+  const rs =
+    gain / loss;
 
-  for (let i = 1; i < candles.length; i++) {
-    const current = candles[i];
-    const previous = candles[i - 1];
-
-    const tr = Math.max(
-      current.high - current.low,
-      Math.abs(
-        current.high - previous.close,
-      ),
-      Math.abs(
-        current.low - previous.close,
-      ),
-    );
-
-    trs.push(tr);
-  }
-
-  return avg(trs.slice(-period));
+  return (
+    100 -
+    100 / (1 + rs)
+  );
 }
 
 function macd(
   values: number[],
-): {
-  macd: number;
-  signal: number;
-  histogram: number;
-} {
-  if (values.length < 30) {
+) {
+  if (
+    values.length < 30
+  ) {
     return {
       macd: 0,
       signal: 0,
@@ -669,26 +805,33 @@ function macd(
     };
   }
 
-  const ema12 = ema(values, 12);
-  const ema26 = ema(values, 26);
+  const ema12 =
+    ema(values, 12);
 
-  const line = values.map(
-    (_, index) =>
-      ema12[index] - ema26[index],
-  );
+  const ema26 =
+    ema(values, 26);
 
-  const signalLine = ema(line, 9);
+  const line =
+    values.map(
+      (_, index) =>
+        ema12[index] -
+        ema26[index],
+    );
+
+  const signal =
+    ema(line, 9);
 
   const m =
-    line[line.length - 1] ?? 0;
+    line.at(-1) || 0;
 
   const s =
-    signalLine[signalLine.length - 1] ?? 0;
+    signal.at(-1) || 0;
 
   return {
     macd: m,
     signal: s,
-    histogram: m - s,
+    histogram:
+      m - s,
   };
 }
 
@@ -696,28 +839,29 @@ function averageVolume(
   candles: Candle[],
   period = 20,
 ): number {
-  const values = candles
-    .slice(-period)
-    .map((candle) =>
-      num(candle.volume),
-    )
-    .filter((value) => value > 0);
+  const values =
+    candles
+      .slice(-period)
+      .map((c) =>
+        num(c.volume),
+      )
+      .filter(
+        (v) => v > 0,
+      );
 
   return avg(values);
 }
 
 function candlePattern(
   candle: Candle,
-): {
-  bullish: boolean;
-  bearish: boolean;
-  name: string;
-} {
+) {
   const body =
-    candle.close - candle.open;
+    candle.close -
+    candle.open;
 
   const range =
-    candle.high - candle.low;
+    candle.high -
+    candle.low;
 
   if (range <= 0) {
     return {
@@ -728,7 +872,8 @@ function candlePattern(
   }
 
   const bodyRatio =
-    Math.abs(body) / range;
+    Math.abs(body) /
+    range;
 
   const upper =
     candle.high -
@@ -741,49 +886,58 @@ function candlePattern(
     Math.min(
       candle.open,
       candle.close,
-    ) - candle.low;
+    ) -
+    candle.low;
 
   if (
     body > 0 &&
-    bodyRatio > 0.55
+    bodyRatio >= 0.55
   ) {
     return {
       bullish: true,
       bearish: false,
-      name: "BULLISH_BODY",
+      name:
+        "BULLISH_BODY",
     };
   }
 
   if (
     body < 0 &&
-    bodyRatio > 0.55
+    bodyRatio >= 0.55
   ) {
     return {
       bullish: false,
       bearish: true,
-      name: "BEARISH_BODY",
+      name:
+        "BEARISH_BODY",
     };
   }
 
   if (
-    lower > Math.abs(body) * 1.5 &&
-    upper < range * 0.3
+    lower >
+      Math.abs(body) * 1.5 &&
+    upper <
+      range * 0.3
   ) {
     return {
       bullish: true,
       bearish: false,
-      name: "BULLISH_REJECTION",
+      name:
+        "BULLISH_REJECTION",
     };
   }
 
   if (
-    upper > Math.abs(body) * 1.5 &&
-    lower < range * 0.3
+    upper >
+      Math.abs(body) * 1.5 &&
+    lower <
+      range * 0.3
   ) {
     return {
       bullish: false,
       bearish: true,
-      name: "BEARISH_REJECTION",
+      name:
+        "BEARISH_REJECTION",
     };
   }
 
@@ -798,22 +952,32 @@ function recentHigh(
   candles: Candle[],
   count = 30,
 ): number {
-  return Math.max(
-    ...candles
+  const values =
+    candles
       .slice(-count)
-      .map((candle) => candle.high),
-  );
+      .map(
+        (c) => c.high,
+      );
+
+  return values.length
+    ? Math.max(...values)
+    : 0;
 }
 
 function recentLow(
   candles: Candle[],
   count = 30,
 ): number {
-  return Math.min(
-    ...candles
+  const values =
+    candles
       .slice(-count)
-      .map((candle) => candle.low),
-  );
+      .map(
+        (c) => c.low,
+      );
+
+  return values.length
+    ? Math.min(...values)
+    : 0;
 }
 
 
@@ -821,13 +985,7 @@ function recentLow(
    AI MARKET ANALYSIS
    ========================================================= */
 
-async function analyzeMarket(): Promise<{
-  direction: Direction | null;
-  score: number;
-  confirmations: number;
-  timeframe: string;
-  reasons: string[];
-}> {
+async function analyzeMarket() {
   const [
     m1,
     m5,
@@ -835,11 +993,35 @@ async function analyzeMarket(): Promise<{
     h1,
     h4,
   ] = await Promise.all([
-    getCandles(TD_SYMBOL, "1min", 220),
-    getCandles(TD_SYMBOL, "5min", 220),
-    getCandles(TD_SYMBOL, "15min", 220),
-    getCandles(TD_SYMBOL, "1h", 220),
-    getCandles(TD_SYMBOL, "4h", 220),
+    getCandles(
+      TD_SYMBOL,
+      "1min",
+      220,
+    ),
+
+    getCandles(
+      TD_SYMBOL,
+      "5min",
+      220,
+    ),
+
+    getCandles(
+      TD_SYMBOL,
+      "15min",
+      220,
+    ),
+
+    getCandles(
+      TD_SYMBOL,
+      "1h",
+      220,
+    ),
+
+    getCandles(
+      TD_SYMBOL,
+      "4h",
+      220,
+    ),
   ]);
 
   if (
@@ -849,78 +1031,76 @@ async function analyzeMarket(): Promise<{
     h1.length < 50
   ) {
     throw new Error(
-      "Not enough market candles for analysis",
+      "Not enough market data",
     );
   }
 
-  const closes1 = m1.map(
-    (c) => c.close,
-  );
+  const c1 =
+    m1.map(
+      (c) => c.close,
+    );
 
-  const closes5 = m5.map(
-    (c) => c.close,
-  );
+  const c5 =
+    m5.map(
+      (c) => c.close,
+    );
 
-  const closes15 = m15.map(
-    (c) => c.close,
-  );
+  const c15 =
+    m15.map(
+      (c) => c.close,
+    );
 
-  const closes1h = h1.map(
-    (c) => c.close,
-  );
+  const c1h =
+    h1.map(
+      (c) => c.close,
+    );
 
-  const closes4h = h4.map(
-    (c) => c.close,
-  );
+  const c4h =
+    h4.map(
+      (c) => c.close,
+    );
 
-  const emaFast1 =
-    ema(closes1, 20).at(-1) ?? 0;
+  const e1Fast =
+    ema(c1, 20).at(-1) || 0;
 
-  const emaSlow1 =
-    ema(closes1, 50).at(-1) ?? 0;
+  const e1Slow =
+    ema(c1, 50).at(-1) || 0;
 
-  const emaFast5 =
-    ema(closes5, 20).at(-1) ?? 0;
+  const e5Fast =
+    ema(c5, 20).at(-1) || 0;
 
-  const emaSlow5 =
-    ema(closes5, 50).at(-1) ?? 0;
+  const e5Slow =
+    ema(c5, 50).at(-1) || 0;
 
-  const emaFast15 =
-    ema(closes15, 20).at(-1) ?? 0;
+  const e15Fast =
+    ema(c15, 20).at(-1) || 0;
 
-  const emaSlow15 =
-    ema(closes15, 50).at(-1) ?? 0;
+  const e15Slow =
+    ema(c15, 50).at(-1) || 0;
 
-  const emaFast1h =
-    ema(closes1h, 20).at(-1) ?? 0;
+  const e1hFast =
+    ema(c1h, 20).at(-1) || 0;
 
-  const emaSlow1h =
-    ema(closes1h, 50).at(-1) ?? 0;
+  const e1hSlow =
+    ema(c1h, 50).at(-1) || 0;
 
-  const emaFast4h =
-    ema(closes4h, 20).at(-1) ?? 0;
+  const e4hFast =
+    ema(c4h, 20).at(-1) || 0;
 
-  const emaSlow4h =
-    ema(closes4h, 50).at(-1) ?? 0;
+  const e4hSlow =
+    ema(c4h, 50).at(-1) || 0;
 
-  const rsi1 = rsi(closes1);
-  const rsi5 = rsi(closes5);
-  const rsi15 = rsi(closes15);
+  const rsi5 =
+    rsi(c5);
 
-  const macd1 = macd(closes1);
-  const macd5 = macd(closes5);
+  const macd5 =
+    macd(c5);
 
   const last1 =
-    m1[m1.length - 1];
-
-  const last5 =
-    m5[m5.length - 1];
-
-  const last15 =
-    m15[m15.length - 1];
+    m1[0];
 
   const price =
-    last1.close;
+    last1?.close || 0;
 
   let buyVotes = 0;
   let sellVotes = 0;
@@ -928,87 +1108,111 @@ async function analyzeMarket(): Promise<{
   const reasons: string[] = [];
 
   /*
-   * 1. MTF trend
+   * H4
    */
 
   if (
-    emaFast4h > emaSlow4h
+    e4hFast >
+    e4hSlow
   ) {
     buyVotes++;
-    reasons.push(
-      "روند H4 صعودی است",
-    );
-  } else if (
-    emaFast4h < emaSlow4h
-  ) {
-    sellVotes++;
-    reasons.push(
-      "روند H4 نزولی است",
-    );
-  }
 
-  if (
-    emaFast1h > emaSlow1h
-  ) {
-    buyVotes++;
     reasons.push(
-      "روند H1 صعودی است",
+      "H4 trend bullish",
     );
   } else if (
-    emaFast1h < emaSlow1h
+    e4hFast <
+    e4hSlow
   ) {
     sellVotes++;
-    reasons.push(
-      "روند H1 نزولی است",
-    );
-  }
 
-  if (
-    emaFast15 > emaSlow15
-  ) {
-    buyVotes++;
     reasons.push(
-      "روند M15 صعودی است",
-    );
-  } else if (
-    emaFast15 < emaSlow15
-  ) {
-    sellVotes++;
-    reasons.push(
-      "روند M15 نزولی است",
+      "H4 trend bearish",
     );
   }
 
   /*
-   * 2. M5 trend
+   * H1
    */
 
   if (
-    emaFast5 > emaSlow5
+    e1hFast >
+    e1hSlow
+  ) {
+    buyVotes++;
+
+    reasons.push(
+      "H1 trend bullish",
+    );
+  } else if (
+    e1hFast <
+    e1hSlow
+  ) {
+    sellVotes++;
+
+    reasons.push(
+      "H1 trend bearish",
+    );
+  }
+
+  /*
+   * M15
+   */
+
+  if (
+    e15Fast >
+    e15Slow
+  ) {
+    buyVotes++;
+
+    reasons.push(
+      "M15 trend bullish",
+    );
+  } else if (
+    e15Fast <
+    e15Slow
+  ) {
+    sellVotes++;
+
+    reasons.push(
+      "M15 trend bearish",
+    );
+  }
+
+  /*
+   * M5
+   */
+
+  if (
+    e5Fast >
+    e5Slow
   ) {
     buyVotes++;
   } else if (
-    emaFast5 < emaSlow5
+    e5Fast <
+    e5Slow
   ) {
     sellVotes++;
   }
 
   /*
-   * 3. M1 momentum
+   * M1
    */
 
   if (
-    emaFast1 > emaSlow1
+    e1Fast >
+    e1Slow
   ) {
     buyVotes++;
   } else if (
-    emaFast1 < emaSlow1
+    e1Fast <
+    e1Slow
   ) {
     sellVotes++;
   }
 
   /*
-   * 4. RSI
+   * RSI
    */
 
   if (
@@ -1016,8 +1220,12 @@ async function analyzeMarket(): Promise<{
     rsi5 <= 72
   ) {
     buyVotes++;
+
     reasons.push(
-      `مومنتوم خرید M5 مناسب است RSI=${round(rsi5, 1)}`,
+      `M5 RSI bullish ${round(
+        rsi5,
+        1,
+      )}`,
     );
   }
 
@@ -1026,130 +1234,163 @@ async function analyzeMarket(): Promise<{
     rsi5 >= 28
   ) {
     sellVotes++;
+
     reasons.push(
-      `مومنتوم فروش M5 مناسب است RSI=${round(rsi5, 1)}`,
+      `M5 RSI bearish ${round(
+        rsi5,
+        1,
+      )}`,
     );
   }
 
   /*
-   * 5. MACD
+   * MACD
    */
 
   if (
     macd5.histogram > 0
   ) {
     buyVotes++;
+
     reasons.push(
-      "MACD M5 مومنتوم مثبت دارد",
+      "M5 MACD positive",
     );
-  } else if (
+  }
+
+  if (
     macd5.histogram < 0
   ) {
     sellVotes++;
+
     reasons.push(
-      "MACD M5 مومنتوم منفی دارد",
+      "M5 MACD negative",
     );
   }
 
   /*
-   * 6. Candle confirmation
+   * Candle
    */
 
   const pattern =
-    candlePattern(last1);
+    candlePattern(
+      last1,
+    );
 
   if (pattern.bullish) {
     buyVotes++;
+
     reasons.push(
-      `کندل M1 صعودی: ${pattern.name}`,
+      pattern.name,
     );
   }
 
   if (pattern.bearish) {
     sellVotes++;
+
     reasons.push(
-      `کندل M1 نزولی: ${pattern.name}`,
+      pattern.name,
     );
   }
 
   /*
-   * 7. Breakout / liquidity
+   * Support / Resistance
    */
 
   const resistance =
-    recentHigh(m15, 30);
+    recentHigh(
+      m15,
+      30,
+    );
 
   const support =
-    recentLow(m15, 30);
+    recentLow(
+      m15,
+      30,
+    );
 
   if (
-    price > resistance
+    price >
+    resistance
   ) {
     buyVotes++;
+
     reasons.push(
-      "قیمت مقاومت اخیر M15 را شکسته است",
+      "M15 resistance breakout",
     );
   }
 
   if (
-    price < support
+    price <
+    support
   ) {
     sellVotes++;
+
     reasons.push(
-      "قیمت حمایت اخیر M15 را شکسته است",
+      "M15 support breakdown",
     );
   }
 
   /*
-   * 8. Volume
+   * Volume
    */
 
   const avgVol =
-    averageVolume(m1, 20);
+    averageVolume(
+      m1,
+      20,
+    );
 
   const currentVol =
-    num(last1.volume);
+    num(
+      last1?.volume,
+    );
 
   if (
     avgVol > 0 &&
-    currentVol >= avgVol * 1.15
+    currentVol >=
+      avgVol * 1.15
   ) {
     if (
       last1.close >
       last1.open
     ) {
       buyVotes++;
+
       reasons.push(
-        "افزایش حجم همراه با حرکت صعودی",
+        "Volume confirms BUY",
       );
-    } else if (
+    }
+
+    if (
       last1.close <
       last1.open
     ) {
       sellVotes++;
+
       reasons.push(
-        "افزایش حجم همراه با حرکت نزولی",
+        "Volume confirms SELL",
       );
     }
   }
 
-  /*
-   * Final direction
-   */
-
-  let direction: Direction | null =
-    null;
+  let direction:
+    | Direction
+    | null = null;
 
   if (
-    buyVotes > sellVotes &&
-    buyVotes >= MIN_CONFIRMATIONS
+    buyVotes >
+      sellVotes &&
+    buyVotes >=
+      MIN_CONFIRMATIONS
   ) {
     direction = "BUY";
   }
 
   if (
-    sellVotes > buyVotes &&
-    sellVotes >= MIN_CONFIRMATIONS
+    sellVotes >
+      buyVotes &&
+    sellVotes >=
+      MIN_CONFIRMATIONS
   ) {
     direction = "SELL";
   }
@@ -1160,123 +1401,152 @@ async function analyzeMarket(): Promise<{
       sellVotes,
     );
 
-  /*
-   * Score intentionally not too strict.
-   */
-
-  const score = clamp(
-    50 + confirmations * 6,
-    0,
-    100,
-  );
-
-  /*
-   * Use M1 as execution timeframe.
-   */
+  const score =
+    clamp(
+      50 +
+        confirmations * 6,
+      0,
+      100,
+    );
 
   return {
     direction,
+
     score,
+
     confirmations,
-    timeframe: "1min",
-    reasons: reasons.slice(-10),
+
+    timeframe:
+      "1min",
+
+    reasons:
+      reasons.slice(
+        -10,
+      ),
   };
 }
 
 
 /* =========================================================
-   PRICE LEVEL CALCULATIONS
+   LEVEL CALCULATION
    ========================================================= */
-
-/*
- * XAUUSD:
- *
- * P/L = price movement × contract size × lot
- *
- * For 0.01 lot:
- * 1$ price movement = $1
- *
- * Therefore:
- *
- * TP1:
- * 5$ price movement
- *
- * TP2:
- * 8$ price movement
- *
- * TP3:
- * 12$ price movement
- */
 
 function calculateLevels(
   entry: number,
   direction: Direction,
-): {
-  stopLoss: number;
-  tp1: number;
-  tp2: number;
-  tp3: number;
-} {
+) {
+  /*
+   * XAUUSD standard contract:
+   *
+   * 1.00 lot = 100 oz
+   * 0.10 lot = 10 oz
+   * 0.01 lot = 1 oz
+   *
+   * Therefore:
+   *
+   * TP1:
+   * $5 / 1 oz = $5 price movement
+   *
+   * TP2:
+   * $8 / 1 oz = $8 movement
+   *
+   * TP3:
+   * $12 / 1 oz = $12 movement
+   *
+   * Initial SL:
+   * $4 / 10 oz = $0.40
+   */
+
   const slDistance =
-    INITIAL_SL_TOTAL_USD /
-    (CONTRACT_SIZE * TOTAL_LOT);
+    INITIAL_SL_USD /
+    (
+      CONTRACT_SIZE *
+      TOTAL_LOT
+    );
 
   const tp1Distance =
-    TP1_PER_001_LOT_USD /
-    (CONTRACT_SIZE * 0.01);
+    TP1_PER_001_USD /
+    (
+      CONTRACT_SIZE *
+      0.01
+    );
 
   const tp2Distance =
-    TP2_PER_001_LOT_USD /
-    (CONTRACT_SIZE * 0.01);
+    TP2_PER_001_USD /
+    (
+      CONTRACT_SIZE *
+      0.01
+    );
 
   const tp3Distance =
-    TP3_PER_001_LOT_USD /
-    (CONTRACT_SIZE * 0.01);
+    TP3_PER_001_USD /
+    (
+      CONTRACT_SIZE *
+      0.01
+    );
 
-  if (direction === "BUY") {
+  if (
+    direction === "BUY"
+  ) {
     return {
-      stopLoss: round(
-        entry - slDistance,
-        2,
-      ),
+      stopLoss:
+        round(
+          entry -
+            slDistance,
+          2,
+        ),
 
-      tp1: round(
-        entry + tp1Distance,
-        2,
-      ),
+      tp1:
+        round(
+          entry +
+            tp1Distance,
+          2,
+        ),
 
-      tp2: round(
-        entry + tp2Distance,
-        2,
-      ),
+      tp2:
+        round(
+          entry +
+            tp2Distance,
+          2,
+        ),
 
-      tp3: round(
-        entry + tp3Distance,
-        2,
-      ),
+      tp3:
+        round(
+          entry +
+            tp3Distance,
+          2,
+        ),
     };
   }
 
   return {
-    stopLoss: round(
-      entry + slDistance,
-      2,
-    ),
+    stopLoss:
+      round(
+        entry +
+          slDistance,
+        2,
+      ),
 
-    tp1: round(
-      entry - tp1Distance,
-      2,
-    ),
+    tp1:
+      round(
+        entry -
+          tp1Distance,
+        2,
+      ),
 
-    tp2: round(
-      entry - tp2Distance,
-      2,
-    ),
+    tp2:
+      round(
+        entry -
+          tp2Distance,
+        2,
+      ),
 
-    tp3: round(
-      entry - tp3Distance,
-      2,
-    ),
+    tp3:
+      round(
+        entry -
+          tp3Distance,
+        2,
+      ),
   };
 }
 
@@ -1285,15 +1555,10 @@ function calculateLevels(
    USD / TOMAN
    ========================================================= */
 
-async function getUsdToman(): Promise<{
-  rate: number | null;
-  asOf: string | null;
-  delayed: boolean;
-  delayedMinutes: number | null;
-  error: string | null;
-}> {
+async function getUsdToman() {
   const apiKey =
-    process.env.NETARZ_API_KEY;
+    process.env
+      .NETARZ_API_KEY;
 
   if (!apiKey) {
     return {
@@ -1307,20 +1572,26 @@ async function getUsdToman(): Promise<{
   }
 
   try {
-    const response = await fetch(
-      `${NETARZ_BASE}/rates/USD`,
-      {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          Authorization:
-            `Bearer ${apiKey}`,
-          Accept:
-            "application/json",
+    const response =
+      await fetch(
+        `${NETARZ_URL}/rates/USD`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization:
+              `Bearer ${apiKey}`,
+
+            Accept:
+              "application/json",
+          },
+
+          signal:
+            AbortSignal.timeout(
+              8000,
+            ),
         },
-        signal: AbortSignal.timeout(8000),
-      },
-    );
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -1328,40 +1599,49 @@ async function getUsdToman(): Promise<{
       );
     }
 
-    const json = await response.json();
+    const json =
+      await response.json();
 
     const rate =
       num(
         json?.data?.mid,
-        num(json?.meta?.usd_irt),
+        num(
+          json?.meta?.usd_irt,
+        ),
       );
 
     if (!rate) {
       throw new Error(
-        "NetArz returned no USD rate",
+        "USD rate unavailable",
       );
     }
 
-    const delayed =
-      Boolean(
-        json?.meta?.is_delayed,
-      );
-
-    const delayedMinutes =
-      json?.meta?.delayed_minutes == null
-        ? null
-        : num(
-            json.meta.delayed_minutes,
-          );
-
     return {
       rate,
+
       asOf:
         json?.meta?.as_of
-          ? String(json.meta.as_of)
+          ? String(
+              json.meta.as_of,
+            )
           : null,
-      delayed,
-      delayedMinutes,
+
+      delayed:
+        Boolean(
+          json?.meta
+            ?.is_delayed,
+        ),
+
+      delayedMinutes:
+        json?.meta
+          ?.delayed_minutes ==
+        null
+          ? null
+          : num(
+              json.meta
+                .delayed_minutes,
+            ),
+
       error: null,
     };
   } catch (error) {
@@ -1385,43 +1665,58 @@ async function getUsdToman(): Promise<{
 
 async function sendTelegram(
   text: string,
-): Promise<{
-  ok: boolean;
-  messageId?: number;
-  error?: string;
-}> {
+) {
   const token =
-    process.env.TELEGRAM_BOT_TOKEN;
+    process.env
+      .TELEGRAM_BOT_TOKEN;
 
   const chatId =
-    process.env.TELEGRAM_SIGNAL_CHAT_ID;
+    process.env
+      .TELEGRAM_SIGNAL_CHAT_ID;
 
-  if (!token || !chatId) {
+  if (
+    !token ||
+    !chatId
+  ) {
     return {
       ok: false,
       error:
-        "Telegram environment variables are missing",
+        "Telegram environment variables missing",
     };
   }
 
   try {
-    const response = await fetch(
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
+    const response =
+      await fetch(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              chat_id:
+                chatId,
+
+              text,
+
+              parse_mode:
+                "HTML",
+
+              disable_web_page_preview:
+                true,
+            }),
+
+          signal:
+            AbortSignal.timeout(
+              10000,
+            ),
         },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        }),
-        signal: AbortSignal.timeout(10000),
-      },
-    );
+      );
 
     const data =
       await response.json();
@@ -1432,269 +1727,39 @@ async function sendTelegram(
     ) {
       return {
         ok: false,
+
         error:
           String(
             data?.description ||
-            `Telegram HTTP ${response.status}`,
+              `Telegram HTTP ${response.status}`,
           ),
       };
     }
 
     return {
       ok: true,
+
       messageId:
         num(
-          data?.result?.message_id,
+          data?.result
+            ?.message_id,
         ),
     };
   } catch (error) {
     return {
       ok: false,
+
       error:
         error instanceof Error
           ? error.message
-          : "Telegram request failed",
+          : "Telegram failed",
     };
   }
 }
 
 
 /* =========================================================
-   TELEGRAM INITIAL SIGNAL
-   ========================================================= */
-
-function makeInitialTelegramText(
-  signalId: string,
-  meta: SignalMeta,
-): string {
-  const directionIcon =
-    meta.direction === "BUY"
-      ? "🟢"
-      : "🔴";
-
-  const strength =
-    meta.score >= 80 &&
-    meta.confirmations >= 6
-      ? "PROFESSIONAL"
-      : meta.score >= 70 &&
-          meta.confirmations >= 4
-        ? "MEDIUM"
-        : "WEAK";
-
-  return `
-<b>🤖 XAUUSD AI SIGNAL</b>
-
-${directionIcon} <b>${meta.direction}</b>
-<b>Strength:</b> ${strength}
-
-<b>Entry:</b> ${meta.entry.toFixed(2)}
-<b>SL:</b> ${meta.stopLoss.toFixed(2)}
-
-<b>TP1:</b> ${meta.tp1.toFixed(2)}
-<b>TP2:</b> ${meta.tp2.toFixed(2)}
-<b>TP3:</b> ${meta.tp3.toFixed(2)}
-
-<b>LOT:</b> 0.10
-
-━━━━━━━━━━━━━━
-
-<b>TP1 PLAN</b>
-0.04 LOT → +$20
-
-<b>TP2 PLAN</b>
-0.03 LOT → +$24
-
-<b>TP3 PLAN</b>
-0.03 LOT → +$36
-
-<b>MAX PROFIT:</b> +$80
-
-━━━━━━━━━━━━━━
-
-<b>After TP1:</b>
-0.06 LOT remains
-SL → ENTRY
-Profit protection activated.
-
-<b>Score:</b> ${meta.score}/100
-<b>Confirmations:</b> ${meta.confirmations}
-<b>Session:</b> ${esc(meta.session)}
-
-<b>Iran Time:</b> ${esc(iranTime())}
-
-━━━━━━━━━━━━━━
-
-⚠️ <b>این تحلیل هوش مصنوعی است و تضمین سود ندارد.</b>
-
-<b>ID:</b>
-<code>${esc(signalId)}</code>
-`.trim();
-}
-
-
-/* =========================================================
-   EVENT TELEGRAM
-   ========================================================= */
-
-function makeEventTelegramText(
-  signalId: string,
-  meta: SignalMeta,
-  event: EventRecord,
-): string {
-  const toman =
-    event.pnlToman == null
-      ? "نامشخص"
-      : `${round(
-          event.pnlToman,
-          0,
-        ).toLocaleString("en-US")} تومان`;
-
-  if (event.type === "TP1_HIT") {
-    return `
-<b>🎯 TP1 HIT</b>
-
-🟢 <b>XAUUSD ${meta.direction}</b>
-
-<b>Price:</b> ${event.price.toFixed(2)}
-
-<b>Closed:</b> 0.04 LOT
-<b>Profit:</b> +$20
-<b>تومان:</b> ${toman}
-
-━━━━━━━━━━━━━━
-
-🛡️ <b>RISK FREE ACTIVATED</b>
-
-Remaining:
-<b>0.06 LOT</b>
-
-Stop Loss:
-<b>ENTRY ${meta.entry.toFixed(2)}</b>
-
-اگر قیمت به Entry برگردد،
-سود TP1 حفظ می‌شود.
-
-<b>Signal ID:</b>
-<code>${esc(signalId)}</code>
-`.trim();
-  }
-
-  if (event.type === "BREAKEVEN_HIT") {
-    return `
-<b>🛡️ BREAK EVEN</b>
-
-<b>XAUUSD ${meta.direction}</b>
-
-<b>Price:</b> ${event.price.toFixed(2)}
-
-TP1 قبلاً فعال شده بود.
-
-<b>Protected Profit:</b>
-+$20
-
-Remaining:
-<b>0.06 LOT</b>
-
-Position at Entry closed.
-
-<b>Signal ID:</b>
-<code>${esc(signalId)}</code>
-`.trim();
-  }
-
-  if (event.type === "TP2_HIT") {
-    return `
-<b>🎯 TP2 HIT</b>
-
-🟢 <b>XAUUSD ${meta.direction}</b>
-
-<b>Price:</b> ${event.price.toFixed(2)}
-
-<b>Closed:</b> 0.03 LOT
-
-<b>TP2 Profit:</b>
-+$24
-
-<b>Total realized:</b>
-+$44
-
-Remaining:
-<b>0.03 LOT</b>
-
-TP3 هنوز فعال است.
-
-<b>Signal ID:</b>
-<code>${esc(signalId)}</code>
-`.trim();
-  }
-
-  if (event.type === "TP3_HIT") {
-    return `
-<b>🏆 TP3 HIT — TRADE COMPLETED</b>
-
-🟢 <b>XAUUSD ${meta.direction}</b>
-
-<b>Price:</b> ${event.price.toFixed(2)}
-
-<b>Closed:</b> 0.03 LOT
-
-<b>TP3 Profit:</b>
-+$36
-
-━━━━━━━━━━━━━━
-
-<b>FULL TP:</b>
-+$80
-
-<b>0.10 LOT → CLOSED</b>
-
-<b>Trade completed successfully.</b>
-
-<b>Signal ID:</b>
-<code>${esc(signalId)}</code>
-`.trim();
-  }
-
-  if (event.type === "SL_HIT") {
-    return `
-<b>🛑 STOP LOSS HIT</b>
-
-🔴 <b>XAUUSD ${meta.direction}</b>
-
-<b>Price:</b> ${event.price.toFixed(2)}
-
-<b>Closed Remaining:</b>
-${meta.remainingLot.toFixed(2)} LOT
-
-<b>Loss:</b>
--$4
-
-━━━━━━━━━━━━━━
-
-این پیام به معنی فعال شدن واقعی
-حد ضرر ثبت‌شده برای سیگنال است.
-
-<b>Iran Time:</b>
-${esc(iranTime())}
-
-<b>Signal ID:</b>
-<code>${esc(signalId)}</code>
-`.trim();
-  }
-
-  return `
-<b>📊 XAUUSD EVENT</b>
-
-${event.type}
-
-Price:
-${event.price.toFixed(2)}
-`.trim();
-}
-
-
-/* =========================================================
-   META NORMALIZATION
+   DEFAULT STATE
    ========================================================= */
 
 function createDefaultState(
@@ -1712,17 +1777,47 @@ function createDefaultState(
 
     closed: false,
 
-    currentStopLoss: stopLoss,
+    currentStopLoss:
+      stopLoss,
 
-    remainingLot: TOTAL_LOT,
+    remainingLot:
+      TOTAL_LOT,
 
     realizedPnlUsd: 0,
 
-    realizedPnlToman: null,
+    realizedPnlToman:
+      null,
 
     events: [],
   };
 }
+
+
+/* =========================================================
+   SAFE JSON
+   ========================================================= */
+
+function safeJson(
+  value: unknown,
+): any {
+  /*
+   * Converts undefined values away.
+   *
+   * This prevents Prisma JSON
+   * InputJsonValue problems.
+   */
+
+  return JSON.parse(
+    JSON.stringify(
+      value,
+    ),
+  );
+}
+
+
+/* =========================================================
+   NORMALIZE META
+   ========================================================= */
 
 function normalizeMeta(
   raw: unknown,
@@ -1730,23 +1825,31 @@ function normalizeMeta(
 ): SignalMeta | null {
   if (
     !raw ||
-    typeof raw !== "object"
+    typeof raw !==
+      "object"
   ) {
     return null;
   }
 
   const value =
-    raw as Record<string, any>;
+    raw as Record<
+      string,
+      any
+    >;
 
-  const direction =
-    value.direction === "SELL"
+  const direction:
+    Direction =
+    value.direction ===
+    "SELL"
       ? "SELL"
       : "BUY";
 
   const entry =
     num(
       value.entry,
-      num(signal?.entry),
+      num(
+        signal?.entry,
+      ),
     );
 
   if (!entry) {
@@ -1756,7 +1859,9 @@ function normalizeMeta(
   let stopLoss =
     num(
       value.stopLoss,
-      num(signal?.stopLoss),
+      num(
+        signal?.stopLoss,
+      ),
     );
 
   let tp1 =
@@ -1767,11 +1872,6 @@ function normalizeMeta(
 
   let tp3 =
     num(value.tp3);
-
-  /*
-   * Recovery for old signals whose metadata
-   * was incomplete.
-   */
 
   if (
     !stopLoss ||
@@ -1786,39 +1886,122 @@ function normalizeMeta(
       );
 
     stopLoss =
-      stopLoss || levels.stopLoss;
+      stopLoss ||
+      levels.stopLoss;
 
     tp1 =
-      tp1 || levels.tp1;
+      tp1 ||
+      levels.tp1;
 
     tp2 =
-      tp2 || levels.tp2;
+      tp2 ||
+      levels.tp2;
 
     tp3 =
-      tp3 || levels.tp3;
+      tp3 ||
+      levels.tp3;
   }
 
-  const state =
+  const rawState =
     value.state &&
-    typeof value.state === "object"
+    typeof value.state ===
+      "object"
       ? value.state
-      : createDefaultState(
-          stopLoss,
-        );
+      : null;
 
-  const events =
-    Array.isArray(state.events)
-      ? state.events
-      : [];
+  const defaultState =
+    createDefaultState(
+      stopLoss,
+    );
+
+  const state:
+    SignalState = {
+    tp1Hit:
+      Boolean(
+        rawState?.tp1Hit,
+      ),
+
+    tp2Hit:
+      Boolean(
+        rawState?.tp2Hit,
+      ),
+
+    tp3Hit:
+      Boolean(
+        rawState?.tp3Hit,
+      ),
+
+    slHit:
+      Boolean(
+        rawState?.slHit,
+      ),
+
+    breakevenHit:
+      Boolean(
+        rawState?.breakevenHit,
+      ),
+
+    breakEvenArmed:
+      Boolean(
+        rawState?.breakEvenArmed,
+      ),
+
+    closed:
+      Boolean(
+        rawState?.closed,
+      ),
+
+    currentStopLoss:
+      num(
+        rawState?.currentStopLoss,
+        defaultState.currentStopLoss,
+      ),
+
+    remainingLot:
+      num(
+        rawState?.remainingLot,
+        TOTAL_LOT,
+      ),
+
+    realizedPnlUsd:
+      num(
+        rawState?.realizedPnlUsd,
+      ),
+
+    realizedPnlToman:
+      rawState?.realizedPnlToman ==
+      null
+        ? null
+        : num(
+            rawState.realizedPnlToman,
+          ),
+
+    events:
+      Array.isArray(
+        rawState?.events,
+      )
+        ? rawState.events
+        : [],
+
+    lastCheckedAt:
+      rawState?.lastCheckedAt
+        ? String(
+            rawState.lastCheckedAt,
+          )
+        : undefined,
+  };
 
   return {
     version:
-      num(value.version, 2),
+      num(
+        value.version,
+        2,
+      ),
 
     symbol:
       String(
         value.symbol ||
-        SYMBOL,
+          SYMBOL,
       ),
 
     direction,
@@ -1826,7 +2009,7 @@ function normalizeMeta(
     timeframe:
       String(
         value.timeframe ||
-        "1min",
+          "1min",
       ),
 
     session:
@@ -1834,14 +2017,22 @@ function normalizeMeta(
       getMarketSession(),
 
     score:
-      num(value.score),
+      num(
+        value.score,
+      ),
 
     confirmations:
-      num(value.confirmations),
+      num(
+        value.confirmations,
+      ),
 
     reasons:
-      Array.isArray(value.reasons)
-        ? value.reasons.map(String)
+      Array.isArray(
+        value.reasons,
+      )
+        ? value.reasons.map(
+            String,
+          )
         : [],
 
     entry,
@@ -1849,9 +2040,7 @@ function normalizeMeta(
     stopLoss,
 
     tp1,
-
     tp2,
-
     tp3,
 
     initialStopLoss:
@@ -1863,8 +2052,7 @@ function normalizeMeta(
     currentStopLoss:
       num(
         value.currentStopLoss,
-        state.currentStopLoss ||
-          stopLoss,
+        state.currentStopLoss,
       ),
 
     totalLot:
@@ -1894,18 +2082,17 @@ function normalizeMeta(
     remainingLot:
       num(
         value.remainingLot,
-        state.remainingLot ||
-          TOTAL_LOT,
+        state.remainingLot,
       ),
 
     tp1Per001LotUsd:
-      TP1_PER_001_LOT_USD,
+      TP1_PER_001_USD,
 
     tp2Per001LotUsd:
-      TP2_PER_001_LOT_USD,
+      TP2_PER_001_USD,
 
     tp3Per001LotUsd:
-      TP3_PER_001_LOT_USD,
+      TP3_PER_001_USD,
 
     tp1TotalUsd:
       TP1_TOTAL_USD,
@@ -1920,7 +2107,8 @@ function normalizeMeta(
       FULL_TP_USD,
 
     usdToToman:
-      value.usdToToman == null
+      value.usdToToman ==
+      null
         ? null
         : num(
             value.usdToToman,
@@ -1957,72 +2145,30 @@ function normalizeMeta(
         ? String(
             value.lastPriceSource,
           )
-        : undefined,
+        : null,
 
-    state: {
-      tp1Hit:
-        Boolean(state.tp1Hit),
-
-      tp2Hit:
-        Boolean(state.tp2Hit),
-
-      tp3Hit:
-        Boolean(state.tp3Hit),
-
-      slHit:
-        Boolean(state.slHit),
-
-      breakevenHit:
-        Boolean(state.breakevenHit),
-
-      breakEvenArmed:
-        Boolean(
-          state.breakEvenArmed,
-        ),
-
-      closed:
-        Boolean(state.closed),
-
-      currentStopLoss:
-        num(
-          state.currentStopLoss,
-          stopLoss,
-        ),
-
-      remainingLot:
-        num(
-          state.remainingLot,
-          TOTAL_LOT,
-        ),
-
-      realizedPnlUsd:
-        num(
-          state.realizedPnlUsd,
-        ),
-
-      realizedPnlToman:
-        state.realizedPnlToman ==
-        null
-          ? null
-          : num(
-              state.realizedPnlToman,
-            ),
-
-      events:
-        events as EventRecord[],
-
-      lastCheckedAt:
-        state.lastCheckedAt,
-    },
+    state,
 
     telegramInitial:
-      value.telegramInitial,
+      value.telegramInitial &&
+      typeof value.telegramInitial ===
+        "object"
+        ? value.telegramInitial
+        : null,
 
     createdAt:
-      value.createdAt,
+      value.createdAt
+        ? String(
+            value.createdAt,
+          )
+        : null,
 
     updatedAt:
-      value.updatedAt,
+      value.updatedAt
+        ? String(
+            value.updatedAt,
+          )
+        : null,
   };
 }
 
@@ -2037,38 +2183,10 @@ function eventExists(
 ): boolean {
   return meta.state.events.some(
     (event) =>
-      event.type === type,
+      event.type ===
+      type,
   );
 }
-
-function eventId(
-  signalId: string,
-  type: EventType,
-): string {
-  return `${signalId}:${type}`;
-}
-
-function calculateEventToman(
-  usd: number,
-  rate: number | null,
-): number | null {
-  if (
-    rate == null ||
-    !Number.isFinite(rate)
-  ) {
-    return null;
-  }
-
-  return round(
-    usd * rate,
-    0,
-  );
-}
-
-
-/* =========================================================
-   EVENT CREATION
-   ========================================================= */
 
 function createEvent(
   signalId: string,
@@ -2078,10 +2196,8 @@ function createEvent(
   rate: number | null,
 ): EventRecord {
   return {
-    id: eventId(
-      signalId,
-      type,
-    ),
+    id:
+      `${signalId}:${type}`,
 
     type,
 
@@ -2089,70 +2205,366 @@ function createEvent(
       isoNow(),
 
     price:
-      round(price, 2),
+      round(
+        price,
+        2,
+      ),
 
     pnlUsd:
-      round(pnlUsd, 2),
+      round(
+        pnlUsd,
+        2,
+      ),
 
     pnlToman:
-      calculateEventToman(
-        pnlUsd,
-        rate,
-      ),
+      rate == null
+        ? null
+        : round(
+            pnlUsd *
+              rate,
+            0,
+          ),
 
     usdToToman:
       rate,
 
     telegram: {
-      status: "PENDING",
-      messageId: null,
-      sentAt: null,
-      error: null,
-      attempts: 0,
+      status:
+        "PENDING",
+
+      messageId:
+        null,
+
+      sentAt:
+        null,
+
+      error:
+        null,
+
+      attempts:
+        0,
     },
   };
 }
 
 
 /* =========================================================
-   PERSIST SIGNAL
+   TELEGRAM INITIAL MESSAGE
+   ========================================================= */
+
+function makeInitialTelegramText(
+  signalId: string,
+  meta: SignalMeta,
+): string {
+  const icon =
+    meta.direction ===
+    "BUY"
+      ? "🟢"
+      : "🔴";
+
+  let strength =
+    "WEAK";
+
+  if (
+    meta.score >= 80 &&
+    meta.confirmations >=
+      6
+  ) {
+    strength =
+      "PROFESSIONAL";
+  } else if (
+    meta.score >= 70 &&
+    meta.confirmations >=
+      4
+  ) {
+    strength =
+      "MEDIUM";
+  }
+
+  return `
+<b>🤖 XAUUSD AI SIGNAL</b>
+
+${icon} <b>${meta.direction}</b>
+<b>Strength:</b> ${strength}
+
+<b>Entry:</b> ${meta.entry.toFixed(2)}
+<b>SL:</b> ${meta.stopLoss.toFixed(2)}
+
+<b>TP1:</b> ${meta.tp1.toFixed(2)}
+<b>TP2:</b> ${meta.tp2.toFixed(2)}
+<b>TP3:</b> ${meta.tp3.toFixed(2)}
+
+━━━━━━━━━━━━━━
+
+<b>LOT:</b> 0.10
+
+<b>TP1</b>
+0.04 LOT → <b>+$20</b>
+
+<b>TP2</b>
+0.03 LOT → <b>+$24</b>
+
+<b>TP3</b>
+0.03 LOT → <b>+$36</b>
+
+<b>FULL TP:</b> +$80
+
+━━━━━━━━━━━━━━
+
+<b>After TP1:</b>
+
+0.04 LOT CLOSED
+0.06 LOT REMAINING
+
+🛡️ SL → ENTRY
+
+یعنی سود TP1 محافظت می‌شود.
+
+<b>Score:</b>
+${meta.score}/100
+
+<b>Confirmations:</b>
+${meta.confirmations}
+
+<b>Session:</b>
+${esc(meta.session)}
+
+<b>Iran Time:</b>
+${esc(iranTime())}
+
+━━━━━━━━━━━━━━
+
+⚠️ <b>این تحلیل هوش مصنوعی است و تضمین سود ندارد.</b>
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+}
+
+
+/* =========================================================
+   TELEGRAM EVENT MESSAGE
+   ========================================================= */
+
+function makeEventTelegramText(
+  signalId: string,
+  meta: SignalMeta,
+  event: EventRecord,
+): string {
+  if (
+    event.type ===
+    "TP1_HIT"
+  ) {
+    return `
+<b>🎯 TP1 HIT</b>
+
+🟢 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b>
+${event.price.toFixed(2)}
+
+<b>Closed:</b>
+0.04 LOT
+
+<b>TP1 PROFIT:</b>
++$20
+
+━━━━━━━━━━━━━━
+
+🛡️ <b>RISK FREE ACTIVATED</b>
+
+<b>Remaining:</b>
+0.06 LOT
+
+<b>SL MOVED TO ENTRY:</b>
+${meta.entry.toFixed(2)}
+
+اگر قیمت به Entry برگردد،
+سود +$20 حفظ می‌شود.
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (
+    event.type ===
+    "BREAKEVEN_HIT"
+  ) {
+    return `
+<b>🛡️ BREAK EVEN HIT</b>
+
+<b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b>
+${event.price.toFixed(2)}
+
+<b>TP1 PROFIT PROTECTED:</b>
++$20
+
+<b>Remaining position:</b>
+0.06 LOT
+
+<b>Status:</b>
+POSITION CLOSED AT ENTRY
+
+━━━━━━━━━━━━━━
+
+سود TP1 همچنان ثبت شده است.
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (
+    event.type ===
+    "TP2_HIT"
+  ) {
+    return `
+<b>🎯 TP2 HIT</b>
+
+🟢 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b>
+${event.price.toFixed(2)}
+
+<b>Closed:</b>
+0.03 LOT
+
+<b>TP2 PROFIT:</b>
++$24
+
+<b>Total Realized:</b>
++$44
+
+<b>Remaining:</b>
+0.03 LOT
+
+━━━━━━━━━━━━━━
+
+🎯 TP3 هنوز فعال است.
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (
+    event.type ===
+    "TP3_HIT"
+  ) {
+    return `
+<b>🏆 TP3 HIT</b>
+
+<b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b>
+${event.price.toFixed(2)}
+
+<b>Closed:</b>
+0.03 LOT
+
+<b>TP3 PROFIT:</b>
++$36
+
+━━━━━━━━━━━━━━
+
+<b>FULL TP:</b>
++$80
+
+<b>0.10 LOT CLOSED</b>
+
+🏆 <b>TRADE COMPLETED</b>
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  return `
+<b>🛑 STOP LOSS HIT</b>
+
+🔴 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b>
+${event.price.toFixed(2)}
+
+<b>Loss:</b>
+-$4
+
+<b>Remaining:</b>
+${meta.remainingLot.toFixed(2)} LOT
+
+━━━━━━━━━━━━━━
+
+<b>Initial SL was activated.</b>
+
+<b>Iran Time:</b>
+${esc(iranTime())}
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+}
+
+
+/* =========================================================
+   SAVE META
    ========================================================= */
 
 async function saveSignalMeta(
   signalId: string,
   meta: SignalMeta,
   status?: string,
-): Promise<void> {
-  const payload: any = {
-    metadata: meta,
+) {
+  /*
+   * IMPORTANT:
+   *
+   * JSON.parse(JSON.stringify(...))
+   * removes undefined values and gives
+   * Prisma a clean JSON object.
+   */
+
+  const cleanMetadata =
+    safeJson(meta);
+
+  const data: any = {
+    metadata:
+      cleanMetadata,
   };
 
   if (status) {
-    payload.status = status;
+    data.status =
+      status;
   }
 
-  await prisma.tradingSignal.update({
-    where: {
-      id: signalId,
+  await prisma.tradingSignal.update(
+    {
+      where: {
+        id: signalId,
+      },
+
+      data,
     },
-    data: payload,
-  });
+  );
 }
 
 
 /* =========================================================
-   DELIVER EVENT
+   SEND EVENT
    ========================================================= */
 
 async function deliverEvent(
   signal: any,
   meta: SignalMeta,
   event: EventRecord,
-): Promise<SignalMeta> {
+) {
   if (
-    event.telegram.status === "SENT"
+    event.telegram.status ===
+    "SENT"
   ) {
-    return meta;
+    return;
   }
 
   const text =
@@ -2163,7 +2575,9 @@ async function deliverEvent(
     );
 
   const result =
-    await sendTelegram(text);
+    await sendTelegram(
+      text,
+    );
 
   event.telegram.attempts =
     num(
@@ -2175,7 +2589,8 @@ async function deliverEvent(
       "SENT";
 
     event.telegram.messageId =
-      result.messageId ?? null;
+      result.messageId ??
+      null;
 
     event.telegram.sentAt =
       isoNow();
@@ -2187,22 +2602,20 @@ async function deliverEvent(
       "FAILED";
 
     event.telegram.error =
-      result.error ||
+      result.error ??
       "Telegram failed";
   }
-
-  return meta;
 }
 
 
 /* =========================================================
-   MONITOR ONE SIGNAL
+   MONITOR SIGNAL
    ========================================================= */
 
 async function monitorSignal(
   signal: any,
-): Promise<void> {
-  let meta =
+) {
+  const meta =
     normalizeMeta(
       signal.metadata,
       signal,
@@ -2224,7 +2637,9 @@ async function monitorSignal(
     candles,
   ] = await Promise.all([
     getLivePrice(),
+
     getUsdToman(),
+
     getCandles(
       TD_SYMBOL,
       "1min",
@@ -2260,79 +2675,80 @@ async function monitorSignal(
     isoNow();
 
   /*
-   * We use only candles that were created
-   * after the signal itself.
-   *
-   * This prevents an old candle's high/low
-   * from falsely triggering a brand-new signal.
+   * Filter candles so old candles
+   * don't trigger a new signal.
    */
 
-  const signalCreatedAt =
+  const createdAt =
     signal.createdAt
       ? new Date(
           signal.createdAt,
         ).getTime()
       : 0;
 
-  const usableCandles =
+  const usable =
     candles.filter(
-      (candle) => {
-        const candleTime =
-          new Date(
-            candle.datetime,
-          ).getTime();
-
-        if (!signalCreatedAt) {
+      (c) => {
+        if (!createdAt) {
           return true;
         }
 
+        const t =
+          new Date(
+            c.datetime,
+          ).getTime();
+
         return (
-          candleTime >=
-          signalCreatedAt -
-            60_000
+          t >=
+          createdAt - 60000
         );
       },
     );
 
   const candleHigh =
-    usableCandles.length
+    usable.length
       ? Math.max(
-          ...usableCandles.map(
+          ...usable.map(
             (c) => c.high,
           ),
         )
       : price;
 
   const candleLow =
-    usableCandles.length
+    usable.length
       ? Math.min(
-          ...usableCandles.map(
+          ...usable.map(
             (c) => c.low,
           ),
         )
       : price;
 
+  const isBuy =
+    meta.direction ===
+    "BUY";
+
   const hitHigh =
-    (level: number) =>
+    (
+      level: number,
+    ) =>
       price >= level ||
       candleHigh >= level;
 
   const hitLow =
-    (level: number) =>
+    (
+      level: number,
+    ) =>
       price <= level ||
       candleLow <= level;
 
-  const isBuy =
-    meta.direction === "BUY";
 
-  /*
-   * =======================================================
-   * CURRENT STOP
-   * =======================================================
-   */
+  /* =======================================================
+     CURRENT STOP
+     ======================================================= */
 
   const currentStop =
-    meta.state.breakEvenArmed
+    meta.state
+      .breakEvenArmed
       ? meta.entry
       : meta.initialStopLoss;
 
@@ -2342,47 +2758,30 @@ async function monitorSignal(
   meta.state.currentStopLoss =
     currentStop;
 
-  /*
-   * =======================================================
-   * STOP LOSS
-   *
-   * After TP1:
-   * SL = Entry
-   *
-   * Before TP1:
-   * SL = Initial SL
-   * =======================================================
-   */
+
+  /* =======================================================
+     STOP / BREAK EVEN
+     ======================================================= */
 
   const stopHit =
     isBuy
-      ? hitLow(currentStop)
-      : hitHigh(currentStop);
+      ? hitLow(
+          currentStop,
+        )
+      : hitHigh(
+          currentStop,
+        );
 
-  /*
-   * IMPORTANT:
-   *
-   * If TP1 is hit during this scan,
-   * we activate BE.
-   *
-   * If price is also already back at Entry,
-   * the next monitor cycle will register BE.
-   *
-   * This prevents double-processing one event.
-   */
-
-  if (
-    stopHit &&
-    !meta.state.tp3Hit
-  ) {
+  if (stopHit) {
     /*
-     * If TP1 has already happened,
-     * this is BREAK EVEN.
+     * BREAK EVEN
      */
 
     if (
-      meta.state.breakEvenArmed &&
-      !meta.state.breakevenHit
+      meta.state
+        .breakEvenArmed &&
+      !meta.state
+        .breakevenHit
     ) {
       if (
         !eventExists(
@@ -2403,27 +2802,34 @@ async function monitorSignal(
           event,
         );
 
-        meta.state.breakevenHit =
+        meta.state
+          .breakevenHit =
           true;
 
         meta.state.closed =
           true;
 
-        meta.state.remainingLot =
+        meta.state
+          .remainingLot =
           0;
 
-        meta.state.currentStopLoss =
+        meta.state
+          .currentStopLoss =
           meta.entry;
 
         meta.currentStopLoss =
           meta.entry;
 
-        meta.state.realizedPnlToman =
-          calculateEventToman(
-            meta.state
-              .realizedPnlUsd,
-            fx.rate,
-          );
+        meta.state
+          .realizedPnlToman =
+          fx.rate == null
+            ? null
+            : round(
+                meta.state
+                  .realizedPnlUsd *
+                  fx.rate,
+                0,
+              );
 
         await saveSignalMeta(
           signal.id,
@@ -2431,16 +2837,15 @@ async function monitorSignal(
           "BREAKEVEN",
         );
 
-        const updated =
-          await deliverEvent(
-            signal,
-            meta,
-            event,
-          );
+        await deliverEvent(
+          signal,
+          meta,
+          event,
+        );
 
         await saveSignalMeta(
           signal.id,
-          updated,
+          meta,
           "BREAKEVEN",
         );
       }
@@ -2449,7 +2854,7 @@ async function monitorSignal(
     }
 
     /*
-     * Initial SL.
+     * INITIAL STOP LOSS
      */
 
     if (
@@ -2466,7 +2871,7 @@ async function monitorSignal(
             signal.id,
             "SL_HIT",
             price,
-            -INITIAL_SL_TOTAL_USD,
+            -INITIAL_SL_USD,
             fx.rate,
           );
 
@@ -2480,29 +2885,36 @@ async function monitorSignal(
         meta.state.closed =
           true;
 
-        meta.state.remainingLot =
+        meta.state
+          .remainingLot =
           0;
 
-        meta.state.currentStopLoss =
+        meta.state
+          .currentStopLoss =
           meta.initialStopLoss;
 
         meta.currentStopLoss =
           meta.initialStopLoss;
 
-        meta.state.realizedPnlUsd =
+        meta.state
+          .realizedPnlUsd =
           round(
             meta.state
               .realizedPnlUsd -
-              INITIAL_SL_TOTAL_USD,
+              INITIAL_SL_USD,
             2,
           );
 
-        meta.state.realizedPnlToman =
-          calculateEventToman(
-            meta.state
-              .realizedPnlUsd,
-            fx.rate,
-          );
+        meta.state
+          .realizedPnlToman =
+          fx.rate == null
+            ? null
+            : round(
+                meta.state
+                  .realizedPnlUsd *
+                  fx.rate,
+                0,
+              );
 
         await saveSignalMeta(
           signal.id,
@@ -2510,16 +2922,15 @@ async function monitorSignal(
           "SL_HIT",
         );
 
-        const updated =
-          await deliverEvent(
-            signal,
-            meta,
-            event,
-          );
+        await deliverEvent(
+          signal,
+          meta,
+          event,
+        );
 
         await saveSignalMeta(
           signal.id,
-          updated,
+          meta,
           "SL_HIT",
         );
       }
@@ -2533,13 +2944,14 @@ async function monitorSignal(
      TP1
      ======================================================= */
 
+  const tp1Hit =
+    isBuy
+      ? hitHigh(meta.tp1)
+      : hitLow(meta.tp1);
+
   if (
     !meta.state.tp1Hit &&
-    (
-      isBuy
-        ? hitHigh(meta.tp1)
-        : hitLow(meta.tp1)
-    )
+    tp1Hit
   ) {
     if (
       !eventExists(
@@ -2560,38 +2972,36 @@ async function monitorSignal(
         event,
       );
 
+      /*
+       * Close 0.04
+       */
+
       meta.state.tp1Hit =
         true;
 
-      /*
-       * 0.04 lot is closed.
-       */
-
       meta.state.remainingLot =
-        round(
-          TOTAL_LOT -
-            TP1_LOT,
-          2,
-        );
+        REMAINING_AFTER_TP1;
 
       /*
-       * VERY IMPORTANT:
+       * PROFIT PROTECTION
        *
-       * Remaining = 0.06 lot
-       *
-       * Stop -> Entry
+       * 0.06 LOT remains.
+       * Stop -> Entry.
        */
 
-      meta.state.breakEvenArmed =
+      meta.state
+        .breakEvenArmed =
         true;
 
-      meta.state.currentStopLoss =
+      meta.state
+        .currentStopLoss =
         meta.entry;
 
       meta.currentStopLoss =
         meta.entry;
 
-      meta.state.realizedPnlUsd =
+      meta.state
+        .realizedPnlUsd =
         round(
           meta.state
             .realizedPnlUsd +
@@ -2599,16 +3009,16 @@ async function monitorSignal(
           2,
         );
 
-      meta.state.realizedPnlToman =
-        calculateEventToman(
-          meta.state
-            .realizedPnlUsd,
-          fx.rate,
-        );
-
-      /*
-       * Status changes to TP1_HIT.
-       */
+      meta.state
+        .realizedPnlToman =
+        fx.rate == null
+          ? null
+          : round(
+              meta.state
+                .realizedPnlUsd *
+                fx.rate,
+              0,
+            );
 
       await saveSignalMeta(
         signal.id,
@@ -2616,16 +3026,15 @@ async function monitorSignal(
         "TP1_HIT",
       );
 
-      const updated =
-        await deliverEvent(
-          signal,
-          meta,
-          event,
-        );
+      await deliverEvent(
+        signal,
+        meta,
+        event,
+      );
 
       await saveSignalMeta(
         signal.id,
-        updated,
+        meta,
         "TP1_HIT",
       );
     }
@@ -2638,14 +3047,15 @@ async function monitorSignal(
      TP2
      ======================================================= */
 
+  const tp2Hit =
+    isBuy
+      ? hitHigh(meta.tp2)
+      : hitLow(meta.tp2);
+
   if (
     meta.state.tp1Hit &&
     !meta.state.tp2Hit &&
-    (
-      isBuy
-        ? hitHigh(meta.tp2)
-        : hitLow(meta.tp2)
-    )
+    tp2Hit
   ) {
     if (
       !eventExists(
@@ -2670,15 +3080,15 @@ async function monitorSignal(
         true;
 
       /*
-       * 0.03 lot closes.
-       *
-       * 0.03 lot remains.
+       * 0.03 closed
+       * 0.03 remains
        */
 
       meta.state.remainingLot =
         TP3_LOT;
 
-      meta.state.realizedPnlUsd =
+      meta.state
+        .realizedPnlUsd =
         round(
           meta.state
             .realizedPnlUsd +
@@ -2686,12 +3096,16 @@ async function monitorSignal(
           2,
         );
 
-      meta.state.realizedPnlToman =
-        calculateEventToman(
-          meta.state
-            .realizedPnlUsd,
-          fx.rate,
-        );
+      meta.state
+        .realizedPnlToman =
+        fx.rate == null
+          ? null
+          : round(
+              meta.state
+                .realizedPnlUsd *
+                fx.rate,
+              0,
+            );
 
       await saveSignalMeta(
         signal.id,
@@ -2699,16 +3113,15 @@ async function monitorSignal(
         "TP2_HIT",
       );
 
-      const updated =
-        await deliverEvent(
-          signal,
-          meta,
-          event,
-        );
+      await deliverEvent(
+        signal,
+        meta,
+        event,
+      );
 
       await saveSignalMeta(
         signal.id,
-        updated,
+        meta,
         "TP2_HIT",
       );
     }
@@ -2721,15 +3134,16 @@ async function monitorSignal(
      TP3
      ======================================================= */
 
+  const tp3Hit =
+    isBuy
+      ? hitHigh(meta.tp3)
+      : hitLow(meta.tp3);
+
   if (
     meta.state.tp1Hit &&
     meta.state.tp2Hit &&
     !meta.state.tp3Hit &&
-    (
-      isBuy
-        ? hitHigh(meta.tp3)
-        : hitLow(meta.tp3)
-    )
+    tp3Hit
   ) {
     if (
       !eventExists(
@@ -2759,7 +3173,8 @@ async function monitorSignal(
       meta.state.closed =
         true;
 
-      meta.state.realizedPnlUsd =
+      meta.state
+        .realizedPnlUsd =
         round(
           meta.state
             .realizedPnlUsd +
@@ -2767,12 +3182,16 @@ async function monitorSignal(
           2,
         );
 
-      meta.state.realizedPnlToman =
-        calculateEventToman(
-          meta.state
-            .realizedPnlUsd,
-          fx.rate,
-        );
+      meta.state
+        .realizedPnlToman =
+        fx.rate == null
+          ? null
+          : round(
+              meta.state
+                .realizedPnlUsd *
+                fx.rate,
+              0,
+            );
 
       await saveSignalMeta(
         signal.id,
@@ -2780,16 +3199,15 @@ async function monitorSignal(
         "TP3_HIT",
       );
 
-      const updated =
-        await deliverEvent(
-          signal,
-          meta,
-          event,
-        );
+      await deliverEvent(
+        signal,
+        meta,
+        event,
+      );
 
       await saveSignalMeta(
         signal.id,
-        updated,
+        meta,
         "TP3_HIT",
       );
     }
@@ -2798,20 +3216,28 @@ async function monitorSignal(
 
 
 /* =========================================================
-   RETRY FAILED TELEGRAM EVENTS
+   RETRY FAILED EVENTS
    ========================================================= */
 
-async function retryFailedEvents():
-  Promise<void> {
+async function retryFailedEvents() {
   const signals =
-    await prisma.tradingSignal.findMany({
-      where: {
-        status: {
-          in: ACTIVE_STATUSES,
+    await prisma.tradingSignal.findMany(
+      {
+        where: {
+          status: {
+            in:
+              ACTIVE_STATUSES,
+          },
         },
+
+        orderBy: {
+          createdAt:
+            "asc",
+        },
+
+        take: 100,
       },
-      take: 100,
-    });
+    );
 
   for (
     const signal of signals
@@ -2822,43 +3248,44 @@ async function retryFailedEvents():
         signal,
       );
 
-    if (!meta) continue;
+    if (!meta) {
+      continue;
+    }
 
-    let changed = false;
+    let changed =
+      false;
 
     for (
-      const event of meta.state.events
+      const event of
+        meta.state.events
     ) {
       if (
-        event.telegram.status ===
+        event.telegram
+          .status !==
         "FAILED"
       ) {
-        const attempts =
-          num(
-            event.telegram.attempts,
-          );
-
-        /*
-         * Avoid endless hammering.
-         * Five attempts is enough for one cycle.
-         */
-
-        if (attempts >= 5) {
-          continue;
-        }
-
-        const updated =
-          await deliverEvent(
-            signal,
-            meta,
-            event,
-          );
-
-        meta.state.events =
-          updated.state.events;
-
-        changed = true;
+        continue;
       }
+
+      const attempts =
+        num(
+          event.telegram
+            .attempts,
+        );
+
+      if (
+        attempts >= 5
+      ) {
+        continue;
+      }
+
+      await deliverEvent(
+        signal,
+        meta,
+        event,
+      );
+
+      changed = true;
     }
 
     if (changed) {
@@ -2873,71 +3300,86 @@ async function retryFailedEvents():
 
 
 /* =========================================================
-   SCAN ONE USER
+   SCAN USER
    ========================================================= */
 
 async function scanUser(
   userId: string,
-): Promise<any> {
+) {
   const bots =
-    await prisma.tradingBot.findMany({
-      where: {
-        userId,
-        isActive: true,
+    await prisma.tradingBot.findMany(
+      {
+        where: {
+          userId,
+          isActive: true,
+        },
       },
-    });
+    );
 
   const goldBots =
     bots.filter(
-      (bot: any) =>
-        normalizeSymbol(
-          bot.symbol,
-        ) === SYMBOL ||
-        normalizeSymbol(
-          bot.symbol,
-        ) === "GOLD",
+      (bot: any) => {
+        const symbol =
+          normalizeSymbol(
+            bot.symbol,
+          );
+
+        return (
+          symbol ===
+            SYMBOL ||
+          symbol ===
+            "GOLD"
+        );
+      },
     );
 
   if (!goldBots.length) {
     return {
       created: false,
+
       reason:
         "No active XAUUSD bot",
     };
   }
 
   /*
-   * Do not create another signal while
-   * an existing one is active.
+   * Only one active signal
+   * at a time.
    */
 
   const existing =
-    await prisma.tradingSignal.findFirst({
-      where: {
-        userId,
-        symbol: SYMBOL,
-        status: {
-          in: ACTIVE_STATUSES,
+    await prisma.tradingSignal.findFirst(
+      {
+        where: {
+          userId,
+
+          symbol:
+            SYMBOL,
+
+          status: {
+            in:
+              ACTIVE_STATUSES,
+          },
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    );
 
   if (existing) {
     return {
       created: false,
+
       reason:
         "Active XAUUSD signal already exists",
+
       signalId:
         existing.id,
     };
   }
-
-  /*
-   * Analysis
-   */
 
   const analysis =
     await analyzeMarket();
@@ -2947,10 +3389,13 @@ async function scanUser(
   ) {
     return {
       created: false,
+
       reason:
         "No clear direction",
+
       score:
         analysis.score,
+
       confirmations:
         analysis.confirmations,
     };
@@ -2964,10 +3409,13 @@ async function scanUser(
   ) {
     return {
       created: false,
+
       reason:
         "Minimum confirmation not reached",
+
       score:
         analysis.score,
+
       confirmations:
         analysis.confirmations,
     };
@@ -2976,38 +3424,41 @@ async function scanUser(
   const bot =
     goldBots[0] as any;
 
-  /*
-   * Respect bot direction settings
-   * when those fields exist.
-   */
-
   if (
-    analysis.direction === "BUY" &&
-    bot.buyEnabled === false
+    analysis.direction ===
+      "BUY" &&
+    bot.buyEnabled ===
+      false
   ) {
     return {
       created: false,
+
       reason:
-        "BUY disabled by bot",
+        "BUY disabled",
     };
   }
 
   if (
-    analysis.direction === "SELL" &&
-    bot.sellEnabled === false
+    analysis.direction ===
+      "SELL" &&
+    bot.sellEnabled ===
+      false
   ) {
     return {
       created: false,
+
       reason:
-        "SELL disabled by bot",
+        "SELL disabled",
     };
   }
 
-  const live =
-    await getLivePrice();
-
-  const fx =
-    await getUsdToman();
+  const [
+    live,
+    fx,
+  ] = await Promise.all([
+    getLivePrice(),
+    getUsdToman(),
+  ]);
 
   const entry =
     round(
@@ -3021,171 +3472,168 @@ async function scanUser(
       analysis.direction,
     );
 
-  const session =
-    getMarketSession();
+  const meta: SignalMeta =
+    {
+      version: 3,
 
-  const state =
-    createDefaultState(
-      levels.stopLoss,
-    );
+      symbol:
+        SYMBOL,
 
-  const meta: SignalMeta = {
-    version: 2,
+      direction:
+        analysis.direction,
 
-    symbol: SYMBOL,
+      timeframe:
+        analysis.timeframe,
 
-    direction:
-      analysis.direction,
+      session:
+        getMarketSession(),
 
-    timeframe:
-      analysis.timeframe,
+      score:
+        analysis.score,
 
-    session,
+      confirmations:
+        analysis.confirmations,
 
-    score:
-      analysis.score,
+      reasons:
+        analysis.reasons,
 
-    confirmations:
-      analysis.confirmations,
+      entry,
 
-    reasons:
-      analysis.reasons,
+      stopLoss:
+        levels.stopLoss,
 
-    entry,
+      tp1:
+        levels.tp1,
 
-    stopLoss:
-      levels.stopLoss,
+      tp2:
+        levels.tp2,
 
-    tp1:
-      levels.tp1,
+      tp3:
+        levels.tp3,
 
-    tp2:
-      levels.tp2,
+      initialStopLoss:
+        levels.stopLoss,
 
-    tp3:
-      levels.tp3,
+      currentStopLoss:
+        levels.stopLoss,
 
-    initialStopLoss:
-      levels.stopLoss,
+      totalLot:
+        TOTAL_LOT,
 
-    currentStopLoss:
-      levels.stopLoss,
+      tp1Lot:
+        TP1_LOT,
 
-    totalLot:
-      TOTAL_LOT,
+      tp2Lot:
+        TP2_LOT,
 
-    tp1Lot:
-      TP1_LOT,
+      tp3Lot:
+        TP3_LOT,
 
-    tp2Lot:
-      TP2_LOT,
+      remainingLot:
+        TOTAL_LOT,
 
-    tp3Lot:
-      TP3_LOT,
+      tp1Per001LotUsd:
+        TP1_PER_001_USD,
 
-    remainingLot:
-      TOTAL_LOT,
+      tp2Per001LotUsd:
+        TP2_PER_001_USD,
 
-    tp1Per001LotUsd:
-      TP1_PER_001_LOT_USD,
+      tp3Per001LotUsd:
+        TP3_PER_001_USD,
 
-    tp2Per001LotUsd:
-      TP2_PER_001_LOT_USD,
+      tp1TotalUsd:
+        TP1_TOTAL_USD,
 
-    tp3Per001LotUsd:
-      TP3_PER_001_LOT_USD,
+      tp2TotalUsd:
+        TP2_TOTAL_USD,
 
-    tp1TotalUsd:
-      TP1_TOTAL_USD,
+      tp3TotalUsd:
+        TP3_TOTAL_USD,
 
-    tp2TotalUsd:
-      TP2_TOTAL_USD,
+      fullTpUsd:
+        FULL_TP_USD,
 
-    tp3TotalUsd:
-      TP3_TOTAL_USD,
+      usdToToman:
+        fx.rate,
 
-    fullTpUsd:
-      FULL_TP_USD,
+      usdToTomanAsOf:
+        fx.asOf,
 
-    usdToToman:
-      fx.rate,
+      usdToTomanDelayed:
+        fx.delayed,
 
-    usdToTomanAsOf:
-      fx.asOf,
+      usdToTomanDelayedMinutes:
+        fx.delayedMinutes,
 
-    usdToTomanDelayed:
-      fx.delayed,
+      lastPrice:
+        live.price,
 
-    usdToTomanDelayedMinutes:
-      fx.delayedMinutes,
+      lastPriceSource:
+        live.source,
 
-    lastPrice:
-      live.price,
+      state:
+        createDefaultState(
+          levels.stopLoss,
+        ),
 
-    lastPriceSource:
-      live.source,
+      telegramInitial:
+        null,
 
-    state,
+      createdAt:
+        isoNow(),
 
-    createdAt:
-      isoNow(),
-
-    updatedAt:
-      isoNow(),
-  };
+      updatedAt:
+        isoNow(),
+    };
 
   /*
-   * =======================================================
-   * CREATE DATABASE SIGNAL
+   * VERY IMPORTANT:
    *
-   * metadata is ALWAYS an object.
+   * safeJson(meta)
    *
-   * NEVER use:
-   * metadata: { not: null }
-   *
-   * because Prisma JSON filter rejects that form.
-   * =======================================================
+   * guarantees Prisma receives
+   * valid JSON.
    */
 
   const tradingSignal =
-    await (prisma.tradingSignal as any).create({
-      data: {
-        userId,
+    await (
+      prisma.tradingSignal as any
+    ).create(
+      {
+        data: {
+          userId,
 
-        botId:
-          bot.id,
+          botId:
+            bot.id,
 
-        symbol:
-          SYMBOL,
+          symbol:
+            SYMBOL,
 
-        direction:
-          analysis.direction,
+          direction:
+            analysis.direction,
 
-        timeframe:
-          analysis.timeframe,
+          timeframe:
+            analysis.timeframe,
 
-        entry,
+          entry,
 
-        stopLoss:
-          levels.stopLoss,
+          stopLoss:
+            levels.stopLoss,
 
-        takeProfit:
-          levels.tp3,
+          takeProfit:
+            levels.tp3,
 
-        status:
-          "ACTIVE",
+          status:
+            "ACTIVE",
 
-        metadata:
-          meta,
+          metadata:
+            safeJson(meta),
 
-        telegramSent:
-          false,
+          telegramSent:
+            false,
+        },
       },
-    });
-
-  /*
-   * Telegram initial signal
-   */
+    );
 
   const telegramText =
     makeInitialTelegramText(
@@ -3193,56 +3641,61 @@ async function scanUser(
       meta,
     );
 
-  const telegramResult =
+  const telegram =
     await sendTelegram(
       telegramText,
     );
 
-  meta.telegramInitial = {
-    status:
-      telegramResult.ok
-        ? "SENT"
-        : "FAILED",
+  meta.telegramInitial =
+    {
+      status:
+        telegram.ok
+          ? "SENT"
+          : "FAILED",
 
-    messageId:
-      telegramResult.messageId ??
-      null,
-
-    sentAt:
-      telegramResult.ok
-        ? isoNow()
-        : null,
-
-    error:
-      telegramResult.error ??
-      null,
-
-    attempts: 1,
-  };
-
-  await (prisma.tradingSignal as any).update({
-    where: {
-      id:
-        tradingSignal.id,
-    },
-
-    data: {
-      metadata:
-        meta,
-
-      telegramSent:
-        telegramResult.ok,
-
-      telegramMessageId:
-        telegramResult.messageId ??
+      messageId:
+        telegram.messageId ??
         null,
 
-      telegramSentAt:
-        telegramResult.ok
-          ? new Date()
+      sentAt:
+        telegram.ok
+          ? isoNow()
           : null,
+
+      error:
+        telegram.error ??
+        null,
+
+      attempts: 1,
+    };
+
+  await (
+    prisma.tradingSignal as any
+  ).update(
+    {
+      where: {
+        id:
+          tradingSignal.id,
+      },
+
+      data: {
+        metadata:
+          safeJson(meta),
+
+        telegramSent:
+          telegram.ok,
+
+        telegramMessageId:
+          telegram.messageId ??
+          null,
+
+        telegramSentAt:
+          telegram.ok
+            ? new Date()
+            : null,
+      },
     },
-  });
+  );
 
   return {
     created: true,
@@ -3274,36 +3727,38 @@ async function scanUser(
       analysis.confirmations,
 
     telegram:
-      telegramResult.ok,
+      telegram.ok,
 
     telegramError:
-      telegramResult.error ??
+      telegram.error ??
       null,
   };
 }
 
 
 /* =========================================================
-   MONITOR ALL ACTIVE SIGNALS
+   MONITOR ALL
    ========================================================= */
 
-async function monitorAllSignals():
-  Promise<{
-    checked: number;
-    errors: number;
-  }> {
+async function monitorAllSignals() {
   const signals =
-    await prisma.tradingSignal.findMany({
-      where: {
-        status: {
-          in: ACTIVE_STATUSES,
+    await prisma.tradingSignal.findMany(
+      {
+        where: {
+          status: {
+            in:
+              ACTIVE_STATUSES,
+          },
         },
+
+        orderBy: {
+          createdAt:
+            "asc",
+        },
+
+        take: 100,
       },
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 100,
-    });
+    );
 
   let checked = 0;
   let errors = 0;
@@ -3333,31 +3788,34 @@ async function monitorAllSignals():
    SCAN ALL USERS
    ========================================================= */
 
-async function scanAllUsers():
-  Promise<any[]> {
+async function scanAllUsers() {
   const bots =
-    await prisma.tradingBot.findMany({
-      where: {
-        isActive: true,
+    await prisma.tradingBot.findMany(
+      {
+        where: {
+          isActive: true,
+        },
+
+        select: {
+          userId: true,
+        },
       },
-      select: {
-        userId: true,
-      },
-    });
+    );
 
   const userIds =
     Array.from(
       new Set(
         bots
           .map(
-            (bot: any) =>
+            (bot) =>
               bot.userId,
           )
           .filter(Boolean),
       ),
     );
 
-  const results: any[] = [];
+  const results: any[] =
+    [];
 
   for (
     const userId of userIds
@@ -3370,14 +3828,18 @@ async function scanAllUsers():
 
       results.push({
         userId,
+
         ...result,
       });
     } catch (error) {
       results.push({
         userId,
+
         created: false,
+
         error:
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : "Scan failed",
       });
@@ -3400,14 +3862,25 @@ function validCronRequest(
       "cron",
     );
 
-  if (cron === "1") {
+  /*
+   * GitHub Actions currently calls:
+   *
+   * /api/ai-analysis?cron=1
+   */
+
+  if (
+    cron === "1"
+  ) {
     return true;
   }
 
   const expected =
-    process.env.SIGNALS_CRON_SECRET ||
-    process.env.AI_CRON_SECRET ||
-    process.env.NEWS_CRON_SECRET;
+    process.env
+      .SIGNALS_CRON_SECRET ||
+    process.env
+      .AI_CRON_SECRET ||
+    process.env
+      .NEWS_CRON_SECRET;
 
   if (!expected) {
     return false;
@@ -3426,7 +3899,8 @@ function validCronRequest(
 
   return Boolean(
     received &&
-    received === expected,
+      received ===
+        expected,
   );
 }
 
@@ -3446,28 +3920,22 @@ async function runServerEngine() {
       }
     | null = null;
 
-  let scan: any[] = [];
+  let scan: any[] =
+    [];
 
   let retryError:
     | string
     | null = null;
 
-  /*
-   * First retry old failed Telegram events.
-   */
-
   try {
     await retryFailedEvents();
   } catch (error) {
     retryError =
-      error instanceof Error
+      error instanceof
+      Error
         ? error.message
         : "Retry failed";
   }
-
-  /*
-   * Then monitor current positions.
-   */
 
   try {
     monitor =
@@ -3479,10 +3947,6 @@ async function runServerEngine() {
     };
   }
 
-  /*
-   * Then scan for new opportunities.
-   */
-
   try {
     scan =
       await scanAllUsers();
@@ -3490,26 +3954,20 @@ async function runServerEngine() {
     scan = [];
   }
 
-  /*
-   * Current market data.
-   */
-
   let live:
-    | {
-        price: number;
-        source: string;
-        datetime: string | null;
-      }
+    | Awaited<
+        ReturnType<
+          typeof getLivePrice
+        >
+      >
     | null = null;
 
   let fx:
-    | {
-        rate: number | null;
-        asOf: string | null;
-        delayed: boolean;
-        delayedMinutes: number | null;
-        error: string | null;
-      }
+    | Awaited<
+        ReturnType<
+          typeof getUsdToman
+        >
+      >
     | null = null;
 
   try {
@@ -3596,13 +4054,13 @@ async function runServerEngine() {
         TP3_LOT,
 
       tp1Per001LotUsd:
-        TP1_PER_001_LOT_USD,
+        TP1_PER_001_USD,
 
       tp2Per001LotUsd:
-        TP2_PER_001_LOT_USD,
+        TP2_PER_001_USD,
 
       tp3Per001LotUsd:
-        TP3_PER_001_LOT_USD,
+        TP3_PER_001_USD,
 
       tp1TotalUsd:
         TP1_TOTAL_USD,
@@ -3617,12 +4075,12 @@ async function runServerEngine() {
         FULL_TP_USD,
 
       initialSlUsd:
-        INITIAL_SL_TOTAL_USD,
+        INITIAL_SL_USD,
 
-      afterTp1RemainingLot:
+      remainingAfterTp1:
         REMAINING_AFTER_TP1,
 
-      afterTp1Stop:
+      stopAfterTp1:
         "ENTRY",
     },
   };
@@ -3637,20 +4095,24 @@ async function calculatePerformance(
   userId: string,
 ) {
   const signals =
-    await prisma.tradingSignal.findMany({
-      where: {
-        userId,
+    await prisma.tradingSignal.findMany(
+      {
+        where: {
+          userId,
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+
+        take: 500,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 500,
-    });
+    );
 
   let totalTrades = 0;
   let wins = 0;
   let losses = 0;
-
   let realizedUsd = 0;
 
   for (
@@ -3664,7 +4126,9 @@ async function calculatePerformance(
         signal,
       );
 
-    if (!meta) continue;
+    if (!meta) {
+      continue;
+    }
 
     realizedUsd +=
       num(
@@ -3673,9 +4137,9 @@ async function calculatePerformance(
       );
 
     if (
-      meta.state.tp3Hit ||
+      meta.state.tp1Hit ||
       meta.state.tp2Hit ||
-      meta.state.tp1Hit
+      meta.state.tp3Hit
     ) {
       wins++;
     } else if (
@@ -3691,8 +4155,10 @@ async function calculatePerformance(
   const winRate =
     completed > 0
       ? round(
-          (wins / completed) *
-            100,
+          (
+            wins /
+            completed
+          ) * 100,
           1,
         )
       : 0;
@@ -3725,7 +4191,9 @@ export async function GET(
   request: NextRequest,
 ) {
   /*
-   * Server engine / GitHub Actions.
+   * ===============================================
+   * CRON / SERVER ENGINE
+   * ===============================================
    */
 
   if (
@@ -3741,6 +4209,7 @@ export async function GET(
         result,
         {
           status: 200,
+
           headers: {
             "Cache-Control":
               "no-store, no-cache, must-revalidate",
@@ -3753,7 +4222,8 @@ export async function GET(
           ok: false,
 
           error:
-            error instanceof Error
+            error instanceof
+            Error
               ? error.message
               : "AI engine failed",
         },
@@ -3764,17 +4234,37 @@ export async function GET(
     }
   }
 
-  /*
-   * Normal authenticated dashboard request.
-   */
+
+  /* =====================================================
+     AUTHENTICATION
+     ===================================================== */
 
   const session =
     await getSession();
 
-  if (!session?.user) {
+  /*
+   * IMPORTANT:
+   *
+   * Your project's getSession()
+   * returns:
+   *
+   * {
+   *   id: string,
+   *   userId: string
+   * }
+   *
+   * NOT:
+   *
+   * session.user.id
+   */
+
+  if (
+    !session?.userId
+  ) {
     return NextResponse.json(
       {
         ok: false,
+
         error:
           "Unauthorized",
       },
@@ -3784,14 +4274,20 @@ export async function GET(
     );
   }
 
-  try {
-    const url =
-      request.nextUrl;
+  const userId =
+    session.userId;
 
+
+  /* =====================================================
+     DASHBOARD REQUEST
+     ===================================================== */
+
+  try {
     const shouldScan =
-      url.searchParams.get(
-        "scan",
-      ) === "1";
+      request.nextUrl
+        .searchParams.get(
+          "scan",
+        ) === "1";
 
     let scanResult:
       | any
@@ -3800,47 +4296,53 @@ export async function GET(
     if (shouldScan) {
       scanResult =
         await scanUser(
-          session.user.id,
+          userId,
         );
     }
 
     /*
-     * Always monitor active signals
-     * when dashboard is requested too.
+     * Monitor active signals
+     * during dashboard request.
      */
 
     try {
       await monitorAllSignals();
     } catch {
       /*
-       * Dashboard should still load
-       * even if monitoring has an
-       * external API problem.
+       * Don't break dashboard
+       * if monitoring fails.
        */
     }
 
     const signals =
-      await prisma.tradingSignal.findMany({
-        where: {
-          userId:
-            session.user.id,
+      await prisma.tradingSignal.findMany(
+        {
+          where: {
+            userId,
+          },
+
+          orderBy: {
+            createdAt:
+              "desc",
+          },
+
+          take: 100,
         },
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 100,
-      });
-
-    const live =
-      await getLivePrice();
-
-    const fx =
-      await getUsdToman();
-
-    const performance =
-      await calculatePerformance(
-        session.user.id,
       );
+
+    const [
+      live,
+      fx,
+      performance,
+    ] = await Promise.all([
+      getLivePrice(),
+
+      getUsdToman(),
+
+      calculatePerformance(
+        userId,
+      ),
+    ]);
 
     const formattedSignals =
       signals.map(
@@ -3950,13 +4452,13 @@ export async function GET(
             TP3_LOT,
 
           tp1Per001LotUsd:
-            TP1_PER_001_LOT_USD,
+            TP1_PER_001_USD,
 
           tp2Per001LotUsd:
-            TP2_PER_001_LOT_USD,
+            TP2_PER_001_USD,
 
           tp3Per001LotUsd:
-            TP3_PER_001_LOT_USD,
+            TP3_PER_001_USD,
 
           tp1TotalUsd:
             TP1_TOTAL_USD,
@@ -3971,7 +4473,7 @@ export async function GET(
             FULL_TP_USD,
 
           initialSlUsd:
-            INITIAL_SL_TOTAL_USD,
+            INITIAL_SL_USD,
 
           remainingAfterTp1:
             REMAINING_AFTER_TP1,
@@ -4003,7 +4505,8 @@ export async function GET(
         ok: false,
 
         error:
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : "AI analysis request failed",
       },
