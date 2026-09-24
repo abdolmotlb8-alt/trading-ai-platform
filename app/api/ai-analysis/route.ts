@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const SYMBOL = "XAU/USD";
 const DISPLAY_SYMBOL = "XAUUSD";
@@ -40,8 +41,9 @@ const SCORE_TO_SIGNAL = Number(
 
 const MIN_CONFIRMATIONS = 5;
 
-const PRICE_SNAPSHOT_MAX_AGE_MS =
-  Number(process.env.AI_PRICE_CACHE_MS || "120000");
+const PRICE_SNAPSHOT_MAX_AGE_MS = Number(
+  process.env.AI_PRICE_CACHE_MS || "120000"
+);
 
 type Candle = {
   datetime: string;
@@ -131,6 +133,7 @@ type RunMeta = {
 
   reason?: string;
   overview?: boolean;
+
   [key: string]: unknown;
 };
 
@@ -145,21 +148,33 @@ function env(name: string): string {
   return String(process.env[name] || "").trim();
 }
 
-function round(value: number, digits = 2): number {
-  if (!Number.isFinite(value)) return 0;
+function round(
+  value: number,
+  digits = 2
+): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
 
   const factor = 10 ** digits;
 
-  return Math.round(value * factor) / factor;
+  return (
+    Math.round(value * factor) / factor
+  );
 }
 
-function numberValue(value: unknown): number {
+function numberValue(
+  value: unknown
+): number {
   const n = Number(value);
 
   return Number.isFinite(n) ? n : 0;
 }
 
-function faNumber(value: number, digits = 2): string {
+function faNumber(
+  value: number,
+  digits = 2
+): string {
   return new Intl.NumberFormat("fa-IR", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -178,14 +193,9 @@ function tomans(value: number): string {
   return `${faNumber(value, 0)} تومان`;
 }
 
-function directionFa(direction?: string): string {
-  if (direction === "BUY") return "🟢 خرید";
-  if (direction === "SELL") return "🔴 فروش";
-
-  return "بدون معامله";
-}
-
-function sessionName(date = new Date()): string {
+function sessionName(
+  date = new Date()
+): string {
   const hour = date.getUTCHours();
 
   if (hour >= 22 || hour < 6) {
@@ -210,7 +220,9 @@ function sessionName(date = new Date()): string {
 function telegramConfig() {
   return {
     token: env("TELEGRAM_BOT_TOKEN"),
-    chatId: env("TELEGRAM_SIGNAL_CHAT_ID"),
+    chatId: env(
+      "TELEGRAM_SIGNAL_CHAT_ID"
+    ),
   };
 }
 
@@ -220,7 +232,10 @@ async function telegramRequest(
 ) {
   const config = telegramConfig();
 
-  if (!config.token || !config.chatId) {
+  if (
+    !config.token ||
+    !config.chatId
+  ) {
     throw new Error(
       "TELEGRAM_BOT_TOKEN یا TELEGRAM_SIGNAL_CHAT_ID تنظیم نشده است."
     );
@@ -240,7 +255,10 @@ async function telegramRequest(
 
   const data = await response.json();
 
-  if (!response.ok || data?.ok !== true) {
+  if (
+    !response.ok ||
+    data?.ok !== true
+  ) {
     throw new Error(
       `Telegram error: ${JSON.stringify(data)}`
     );
@@ -249,19 +267,26 @@ async function telegramRequest(
   return data;
 }
 
-async function sendTelegram(text: string) {
+async function sendTelegram(
+  text: string
+) {
   const config = telegramConfig();
 
-  return telegramRequest("sendMessage", {
-    chat_id: config.chatId,
-    text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  });
+  return telegramRequest(
+    "sendMessage",
+    {
+      chat_id: config.chatId,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }
+  );
 }
 
 function tdApiKey(): string {
-  const key = env("TWELVE_DATA_API_KEY");
+  const key = env(
+    "TWELVE_DATA_API_KEY"
+  );
 
   if (!key) {
     throw new Error(
@@ -276,21 +301,30 @@ async function td(
   endpoint: string,
   params: Record<string, string>
 ): Promise<any> {
-  const url = new URL(`${TWELVE_DATA_URL}/${endpoint}`);
+  const url = new URL(
+    `${TWELVE_DATA_URL}/${endpoint}`
+  );
 
   Object.entries({
     ...params,
     apikey: tdApiKey(),
   }).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
+    url.searchParams.set(
+      key,
+      value
+    );
   });
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    cache: "no-store",
-  });
+  const response = await fetch(
+    url.toString(),
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  );
 
-  const data = await response.json();
+  const data =
+    await response.json();
 
   if (!response.ok) {
     throw new Error(
@@ -304,7 +338,10 @@ async function td(
     data?.message
   ) {
     throw new Error(
-      `Twelve Data: ${data?.message || JSON.stringify(data)}`
+      `Twelve Data: ${
+        data?.message ||
+        JSON.stringify(data)
+      }`
     );
   }
 
@@ -315,13 +352,20 @@ async function candles(
   interval: string,
   outputsize = 120
 ): Promise<Candle[]> {
-  const data = await td("time_series", {
-    symbol: SYMBOL,
-    interval,
-    outputsize: String(outputsize),
-  });
+  const data = await td(
+    "time_series",
+    {
+      symbol: SYMBOL,
+      interval,
+      outputsize: String(
+        outputsize
+      ),
+    }
+  );
 
-  if (!Array.isArray(data?.values)) {
+  if (
+    !Array.isArray(data?.values)
+  ) {
     throw new Error(
       `داده کندل ${interval} از Twelve Data دریافت نشد.`
     );
@@ -329,12 +373,24 @@ async function candles(
 
   return data.values
     .map((item: any) => ({
-      datetime: String(item.datetime),
-      open: numberValue(item.open),
-      high: numberValue(item.high),
-      low: numberValue(item.low),
-      close: numberValue(item.close),
-      volume: numberValue(item.volume),
+      datetime: String(
+        item.datetime
+      ),
+      open: numberValue(
+        item.open
+      ),
+      high: numberValue(
+        item.high
+      ),
+      low: numberValue(
+        item.low
+      ),
+      close: numberValue(
+        item.close
+      ),
+      volume: numberValue(
+        item.volume
+      ),
     }))
     .filter(
       (c: Candle) =>
@@ -347,11 +403,16 @@ async function candles(
 }
 
 async function latestPrice(): Promise<number> {
-  const data = await td("price", {
-    symbol: SYMBOL,
-  });
+  const data = await td(
+    "price",
+    {
+      symbol: SYMBOL,
+    }
+  );
 
-  const price = numberValue(data?.price);
+  const price = numberValue(
+    data?.price
+  );
 
   if (price <= 0) {
     throw new Error(
@@ -367,12 +428,14 @@ async function latestPriceCached(): Promise<number> {
 
   if (
     priceCache &&
-    now - priceCache.fetchedAt < PRICE_SNAPSHOT_MAX_AGE_MS
+    now - priceCache.fetchedAt <
+      PRICE_SNAPSHOT_MAX_AGE_MS
   ) {
     return priceCache.price;
   }
 
-  const price = await latestPrice();
+  const price =
+    await latestPrice();
 
   priceCache = {
     price,
@@ -382,82 +445,174 @@ async function latestPriceCached(): Promise<number> {
   return price;
 }
 
-function sma(values: number[], period: number): number {
+function sma(
+  values: number[],
+  period: number
+): number {
   if (values.length < period) {
     return values.length
-      ? values.reduce((a, b) => a + b, 0) / values.length
+      ? values.reduce(
+          (a, b) => a + b,
+          0
+        ) / values.length
       : 0;
   }
 
-  const slice = values.slice(-period);
+  const slice =
+    values.slice(-period);
 
-  return slice.reduce((a, b) => a + b, 0) / slice.length;
+  return (
+    slice.reduce(
+      (a, b) => a + b,
+      0
+    ) / slice.length
+  );
 }
 
-function ema(values: number[], period: number): number {
-  if (!values.length) return 0;
+function ema(
+  values: number[],
+  period: number
+): number {
+  if (!values.length) {
+    return 0;
+  }
 
-  const multiplier = 2 / (period + 1);
+  const multiplier =
+    2 / (period + 1);
 
   let result = values[0];
 
-  for (let i = 1; i < values.length; i++) {
+  for (
+    let i = 1;
+    i < values.length;
+    i++
+  ) {
     result =
-      (values[i] - result) * multiplier + result;
+      (values[i] - result) *
+        multiplier +
+      result;
   }
 
   return result;
 }
 
-function rsi(values: number[], period = 14): number {
-  if (values.length <= period) return 50;
+function rsi(
+  values: number[],
+  period = 14
+): number {
+  if (
+    values.length <= period
+  ) {
+    return 50;
+  }
 
   let gains = 0;
   let losses = 0;
 
-  for (let i = 1; i <= period; i++) {
-    const diff = values[i] - values[i - 1];
+  for (
+    let i = 1;
+    i <= period;
+    i++
+  ) {
+    const diff =
+      values[i] -
+      values[i - 1];
 
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
+    if (diff >= 0) {
+      gains += diff;
+    } else {
+      losses += Math.abs(diff);
+    }
   }
 
-  let averageGain = gains / period;
-  let averageLoss = losses / period;
+  let averageGain =
+    gains / period;
 
-  for (let i = period + 1; i < values.length; i++) {
-    const diff = values[i] - values[i - 1];
+  let averageLoss =
+    losses / period;
 
-    const gain = Math.max(diff, 0);
-    const loss = Math.max(-diff, 0);
+  for (
+    let i = period + 1;
+    i < values.length;
+    i++
+  ) {
+    const diff =
+      values[i] -
+      values[i - 1];
+
+    const gain = Math.max(
+      diff,
+      0
+    );
+
+    const loss = Math.max(
+      -diff,
+      0
+    );
 
     averageGain =
-      (averageGain * (period - 1) + gain) / period;
+      (averageGain *
+        (period - 1) +
+        gain) /
+      period;
 
     averageLoss =
-      (averageLoss * (period - 1) + loss) / period;
+      (averageLoss *
+        (period - 1) +
+        loss) /
+      period;
   }
 
-  if (averageLoss === 0) return 100;
+  if (
+    averageLoss === 0
+  ) {
+    return 100;
+  }
 
-  const rs = averageGain / averageLoss;
+  const rs =
+    averageGain /
+    averageLoss;
 
-  return 100 - 100 / (1 + rs);
+  return (
+    100 -
+    100 / (1 + rs)
+  );
 }
 
-function atr(candlesData: Candle[], period = 14): number {
-  if (candlesData.length < 2) return 0;
+function atr(
+  candlesData: Candle[],
+  period = 14
+): number {
+  if (
+    candlesData.length < 2
+  ) {
+    return 0;
+  }
 
   const trs: number[] = [];
 
-  for (let i = 1; i < candlesData.length; i++) {
-    const current = candlesData[i];
-    const previous = candlesData[i - 1];
+  for (
+    let i = 1;
+    i < candlesData.length;
+    i++
+  ) {
+    const current =
+      candlesData[i];
+
+    const previous =
+      candlesData[i - 1];
 
     const tr = Math.max(
-      current.high - current.low,
-      Math.abs(current.high - previous.close),
-      Math.abs(current.low - previous.close)
+      current.high -
+        current.low,
+      Math.abs(
+        current.high -
+          previous.close
+      ),
+      Math.abs(
+        current.low -
+          previous.close
+      )
     );
 
     trs.push(tr);
@@ -467,10 +622,14 @@ function atr(candlesData: Candle[], period = 14): number {
 }
 
 function macd(values: number[]) {
-  const fast = ema(values, 12);
-  const slow = ema(values, 26);
+  const fast =
+    ema(values, 12);
 
-  const line = fast - slow;
+  const slow =
+    ema(values, 26);
+
+  const line =
+    fast - slow;
 
   return {
     line,
@@ -479,20 +638,36 @@ function macd(values: number[]) {
   };
 }
 
-function candleBias(data: Candle[]): string {
-  if (data.length < 3) return "NEUTRAL";
+function candleBias(
+  data: Candle[]
+): string {
+  if (data.length < 3) {
+    return "NEUTRAL";
+  }
 
-  const a = data[data.length - 1];
-  const b = data[data.length - 2];
+  const a =
+    data[data.length - 1];
 
-  const body = a.close - a.open;
-  const previousBody = b.close - b.open;
+  const b =
+    data[data.length - 2];
 
-  if (body > 0 && previousBody > 0) {
+  const body =
+    a.close - a.open;
+
+  const previousBody =
+    b.close - b.open;
+
+  if (
+    body > 0 &&
+    previousBody > 0
+  ) {
     return "BULLISH";
   }
 
-  if (body < 0 && previousBody < 0) {
+  if (
+    body < 0 &&
+    previousBody < 0
+  ) {
     return "BEARISH";
   }
 
@@ -513,7 +688,9 @@ function candleBias(data: Candle[]): string {
   return "NEUTRAL";
 }
 
-function swings(data: Candle[]) {
+function swings(
+  data: Candle[]
+) {
   if (!data.length) {
     return {
       support: 0,
@@ -521,15 +698,22 @@ function swings(data: Candle[]) {
     };
   }
 
-  const recent = data.slice(-60);
+  const recent =
+    data.slice(-60);
 
-  const support = Math.min(
-    ...recent.map((c) => c.low)
-  );
+  const support =
+    Math.min(
+      ...recent.map(
+        (c) => c.low
+      )
+    );
 
-  const resistance = Math.max(
-    ...recent.map((c) => c.high)
-  );
+  const resistance =
+    Math.max(
+      ...recent.map(
+        (c) => c.high
+      )
+    );
 
   return {
     support,
@@ -537,19 +721,35 @@ function swings(data: Candle[]) {
   };
 }
 
-function trendScore(data: Candle[]) {
-  const closes = data.map((c) => c.close);
+function trendScore(
+  data: Candle[]
+) {
+  const closes =
+    data.map(
+      (c) => c.close
+    );
 
-  const price = closes.at(-1) || 0;
+  const price =
+    closes.at(-1) || 0;
 
-  const ema20 = ema(closes, 20);
-  const ema50 = ema(closes, 50);
+  const ema20 =
+    ema(closes, 20);
 
-  const currentRsi = rsi(closes);
-  const currentMacd = macd(closes);
+  const ema50 =
+    ema(closes, 50);
+
+  const currentRsi =
+    rsi(closes);
+
+  const currentMacd =
+    macd(closes);
 
   let score = 0;
-  let direction: "BUY" | "SELL" | null = null;
+
+  let direction:
+    | "BUY"
+    | "SELL"
+    | null = null;
 
   if (
     price > ema20 &&
@@ -599,10 +799,17 @@ function analyzeMarket(
   h1: Candle[],
   currentPrice: number
 ): MarketAnalysis {
-  const t5 = trendScore(m5);
-  const t15 = trendScore(m15);
-  const t1h = trendScore(h1);
-  const t1 = trendScore(m1);
+  const t5 =
+    trendScore(m5);
+
+  const t15 =
+    trendScore(m15);
+
+  const t1h =
+    trendScore(h1);
+
+  const t1 =
+    trendScore(m1);
 
   const trends = [
     t5.direction,
@@ -610,56 +817,88 @@ function analyzeMarket(
     t1h.direction,
   ].filter(Boolean);
 
-  let direction: "BUY" | "SELL" | null = null;
+  let direction:
+    | "BUY"
+    | "SELL"
+    | null = null;
 
-  const buys = trends.filter((x) => x === "BUY").length;
-  const sells = trends.filter((x) => x === "SELL").length;
+  const buys =
+    trends.filter(
+      (x) => x === "BUY"
+    ).length;
 
-  if (buys >= 2) direction = "BUY";
-  if (sells >= 2) direction = "SELL";
+  const sells =
+    trends.filter(
+      (x) => x === "SELL"
+    ).length;
 
-  const m5Swings = swings(m5);
+  if (buys >= 2) {
+    direction = "BUY";
+  }
 
-  const support = m5Swings.support;
-  const resistance = m5Swings.resistance;
+  if (sells >= 2) {
+    direction = "SELL";
+  }
 
-  const atrValue = atr(m5);
+  const m5Swings =
+    swings(m5);
 
-  const latestM5 = m5.at(-1);
+  const support =
+    m5Swings.support;
 
-  const bias = candleBias(m5);
+  const resistance =
+    m5Swings.resistance;
 
-  const nearDistance = Math.max(
-    atrValue * 1.75,
-    4
-  );
+  const atrValue =
+    atr(m5);
+
+  const latestM5 =
+    m5.at(-1);
+
+  const bias =
+    candleBias(m5);
+
+  const nearDistance =
+    Math.max(
+      atrValue * 1.75,
+      4
+    );
 
   const nearSupport =
     currentPrice >= support &&
-    currentPrice - support <= nearDistance;
+    currentPrice - support <=
+      nearDistance;
 
   const nearResistance =
     currentPrice <= resistance &&
-    resistance - currentPrice <= nearDistance;
+    resistance - currentPrice <=
+      nearDistance;
 
   const nearLevel =
     direction === "BUY"
       ? nearSupport
       : direction === "SELL"
         ? nearResistance
-        : nearSupport || nearResistance;
+        : nearSupport ||
+          nearResistance;
 
-  const volumeAverage = sma(
-    m5.slice(-30).map((c) => c.volume),
-    20
-  );
+  const volumeAverage =
+    sma(
+      m5
+        .slice(-30)
+        .map(
+          (c) => c.volume
+        ),
+      20
+    );
 
   const volumeOk =
     volumeAverage > 0 &&
     (latestM5?.volume || 0) >=
       volumeAverage * 0.9;
 
-  const momentumRsi = t5.rsi;
+  const momentumRsi =
+    t5.rsi;
 
   const momentum =
     direction === "BUY"
@@ -681,18 +920,24 @@ function analyzeMarket(
 
   const emaOk =
     direction === "BUY"
-      ? t5.price > t5.ema20
+      ? t5.price >
+        t5.ema20
       : direction === "SELL"
-        ? t5.price < t5.ema20
+        ? t5.price <
+          t5.ema20
         : false;
 
   const candleOk =
     direction === "BUY"
-      ? bias === "BULLISH" ||
-        bias === "BULLISH_BREAK"
+      ? bias ===
+          "BULLISH" ||
+        bias ===
+          "BULLISH_BREAK"
       : direction === "SELL"
-        ? bias === "BEARISH" ||
-          bias === "BEARISH_BREAK"
+        ? bias ===
+            "BEARISH" ||
+          bias ===
+            "BEARISH_BREAK"
         : false;
 
   const mtfOk =
@@ -704,10 +949,12 @@ function analyzeMarket(
 
   const pullbackOk =
     direction === "BUY"
-      ? currentPrice >= t5.ema20 ||
+      ? currentPrice >=
+          t5.ema20 ||
         nearSupport
       : direction === "SELL"
-        ? currentPrice <= t5.ema20 ||
+        ? currentPrice <=
+            t5.ema20 ||
           nearResistance
         : false;
 
@@ -719,51 +966,65 @@ function analyzeMarket(
   let score = 0;
 
   if (direction) {
-    // 25 - multi timeframe direction
-    if (mtfOk) score += 25;
-
-    // 10 - M1 agrees
-    if (t1.direction === direction) {
-      score += 10;
+    if (mtfOk) {
+      score += 25;
     }
 
-    // 10 - 15m + 1h agree
     if (
-      t15.direction === direction &&
-      t1h.direction === direction
+      t1.direction ===
+      direction
     ) {
       score += 10;
     }
 
-    // 10 - structure / support resistance
-    if (nearLevel) score += 10;
+    if (
+      t15.direction ===
+        direction &&
+      t1h.direction ===
+        direction
+    ) {
+      score += 10;
+    }
 
-    // 10 - candle confirmation
-    if (candleOk) score += 10;
+    if (nearLevel) {
+      score += 10;
+    }
 
-    // 5 - volume
-    if (volumeOk) score += 5;
+    if (candleOk) {
+      score += 10;
+    }
 
-    // 10 - momentum
-    if (momentumOk) score += 10;
+    if (volumeOk) {
+      score += 5;
+    }
 
-    // 10 - EMA
-    if (emaOk) score += 10;
+    if (momentumOk) {
+      score += 10;
+    }
 
-    // 5 - structure exists
-    if (structureOk) score += 5;
+    if (emaOk) {
+      score += 10;
+    }
+
+    if (structureOk) {
+      score += 5;
+    }
   }
 
-  const finalScore = Math.min(
-    Math.round(score),
-    95
-  );
+  const finalScore =
+    Math.min(
+      Math.round(score),
+      95
+    );
 
   const confirmations = [
     mtfOk,
-    t1.direction === direction,
-    t15.direction === direction &&
-      t1h.direction === direction,
+    t1.direction ===
+      direction,
+    t15.direction ===
+        direction &&
+      t1h.direction ===
+        direction,
     nearLevel,
     candleOk,
     volumeOk,
@@ -796,40 +1057,104 @@ function analyzeMarket(
     pullbackOk,
     analysis: {
       m1: {
-        direction: t1.direction,
-        rsi: round(t1.rsi, 2),
-        ema20: round(t1.ema20, 2),
-        ema50: round(t1.ema50, 2),
+        direction:
+          t1.direction,
+        rsi: round(
+          t1.rsi,
+          2
+        ),
+        ema20: round(
+          t1.ema20,
+          2
+        ),
+        ema50: round(
+          t1.ema50,
+          2
+        ),
       },
+
       m5: {
-        direction: t5.direction,
-        rsi: round(t5.rsi, 2),
-        ema20: round(t5.ema20, 2),
-        ema50: round(t5.ema50, 2),
-        macd: round(t5.macd, 4),
+        direction:
+          t5.direction,
+        rsi: round(
+          t5.rsi,
+          2
+        ),
+        ema20: round(
+          t5.ema20,
+          2
+        ),
+        ema50: round(
+          t5.ema50,
+          2
+        ),
+        macd: round(
+          t5.macd,
+          4
+        ),
       },
+
       m15: {
-        direction: t15.direction,
-        rsi: round(t15.rsi, 2),
-        ema20: round(t15.ema20, 2),
-        ema50: round(t15.ema50, 2),
+        direction:
+          t15.direction,
+        rsi: round(
+          t15.rsi,
+          2
+        ),
+        ema20: round(
+          t15.ema20,
+          2
+        ),
+        ema50: round(
+          t15.ema50,
+          2
+        ),
       },
+
       h1: {
-        direction: t1h.direction,
-        rsi: round(t1h.rsi, 2),
-        ema20: round(t1h.ema20, 2),
-        ema50: round(t1h.ema50, 2),
+        direction:
+          t1h.direction,
+        rsi: round(
+          t1h.rsi,
+          2
+        ),
+        ema20: round(
+          t1h.ema20,
+          2
+        ),
+        ema50: round(
+          t1h.ema50,
+          2
+        ),
       },
-      support: round(support, 2),
-      resistance: round(resistance, 2),
-      atr: round(atrValue, 2),
-      currentPrice: round(currentPrice, 2),
+
+      support:
+        round(support, 2),
+
+      resistance:
+        round(
+          resistance,
+          2
+        ),
+
+      atr:
+        round(
+          atrValue,
+          2
+        ),
+
+      currentPrice:
+        round(
+          currentPrice,
+          2
+        ),
     },
   };
 }
 
 async function getUsdToTomanRate(): Promise<number> {
-  const apiKey = env("NETARZ_API_KEY");
+  const apiKey =
+    env("NETARZ_API_KEY");
 
   if (!apiKey) {
     throw new Error(
@@ -837,16 +1162,23 @@ async function getUsdToTomanRate(): Promise<number> {
     );
   }
 
-  const response = await fetch(NETARZ_URL, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
+  const response =
+    await fetch(
+      NETARZ_URL,
+      {
+        method: "GET",
+        headers: {
+          Authorization:
+            `Bearer ${apiKey}`,
+          Accept:
+            "application/json",
+        },
+        cache: "no-store",
+      }
+    );
 
-  const data = await response.json();
+  const data =
+    await response.json();
 
   if (!response.ok) {
     throw new Error(
@@ -854,20 +1186,26 @@ async function getUsdToTomanRate(): Promise<number> {
     );
   }
 
-  const rows = Array.isArray(data?.data)
-    ? data.data
-    : [];
+  const rows =
+    Array.isArray(data?.data)
+      ? data.data
+      : [];
 
-  const usdRow = rows.find(
-    (row: any) =>
-      String(row?.code || "").toUpperCase() === "USD"
-  );
+  const usdRow =
+    rows.find(
+      (row: any) =>
+        String(
+          row?.code || ""
+        ).toUpperCase() ===
+        "USD"
+    );
 
-  const rate = numberValue(
-    usdRow?.mid ??
-      data?.meta?.usd_irt ??
-      data?.usd_irt
-  );
+  const rate =
+    numberValue(
+      usdRow?.mid ??
+        data?.meta?.usd_irt ??
+        data?.usd_irt
+    );
 
   if (rate <= 0) {
     throw new Error(
@@ -879,45 +1217,66 @@ async function getUsdToTomanRate(): Promise<number> {
 }
 
 async function newsBlock() {
-  const minutes = Number(
-    process.env.AI_NEWS_BLOCK_MINUTES ||
-      DEFAULT_NEWS_MINUTES
-  );
+  const minutes =
+    Number(
+      process.env.AI_NEWS_BLOCK_MINUTES ||
+        DEFAULT_NEWS_MINUTES
+    );
 
-  const importance = Number(
-    process.env.AI_NEWS_BLOCK_IMPORTANCE ||
-      DEFAULT_NEWS_IMPORTANCE
-  );
+  const importance =
+    Number(
+      process.env.AI_NEWS_BLOCK_IMPORTANCE ||
+        DEFAULT_NEWS_IMPORTANCE
+    );
 
   try {
-    const now = new Date();
+    const now =
+      new Date();
 
-    const from = new Date(
-      now.getTime() - minutes * 60 * 1000
-    );
+    const from =
+      new Date(
+        now.getTime() -
+          minutes *
+            60 *
+            1000
+      );
 
-    const to = new Date(
-      now.getTime() + minutes * 60 * 1000
-    );
+    const to =
+      new Date(
+        now.getTime() +
+          minutes *
+            60 *
+            1000
+      );
 
-    const events = await prisma.economicEvent.findMany({
-      where: {
-        eventTime: {
-          gte: from,
-          lte: to,
-        },
-      },
-      orderBy: {
-        eventTime: "asc",
-      },
-    });
+    const events =
+      await prisma.economicEvent.findMany(
+        {
+          where: {
+            eventTime: {
+              gte: from,
+              lte: to,
+            },
+          },
 
-    const important = events.filter(
-      (event: any) =>
-        numberValue(event?.importance) >= importance
-    );
+          orderBy: {
+            eventTime:
+              "asc",
+          },
+        }
+      );
 
-    if (!important.length) {
+    const important =
+      events.filter(
+        (event: any) =>
+          numberValue(
+            event?.importance
+          ) >= importance
+      );
+
+    if (
+      !important.length
+    ) {
       return {
         blocked: false,
         events: [],
@@ -926,24 +1285,31 @@ async function newsBlock() {
 
     return {
       blocked: true,
-      events: important.map((event: any) => ({
-        title:
-          event?.title ||
-          event?.name ||
-          "Economic Event",
-        currency:
-          event?.currency ||
-          "",
-        importance:
-          numberValue(event?.importance),
-        eventTime:
-          event?.eventTime ||
-          null,
-      })),
+
+      events:
+        important.map(
+          (event: any) => ({
+            title:
+              event?.title ||
+              event?.name ||
+              "Economic Event",
+
+            currency:
+              event?.currency ||
+              "",
+
+            importance:
+              numberValue(
+                event?.importance
+              ),
+
+            eventTime:
+              event?.eventTime ||
+              null,
+          })
+        ),
     };
   } catch {
-    // News service failure must not silently destroy the trading engine.
-    // We continue without a block.
     return {
       blocked: false,
       events: [],
@@ -955,17 +1321,20 @@ function buildSignalTelegram(
   meta: RunMeta
 ): string {
   const direction =
-    meta.direction === "BUY"
+    meta.direction ===
+    "BUY"
       ? "🟢 BUY"
       : "🔴 SELL";
 
   const entryMin =
     meta.entryMin ??
-    ((meta.entry || 0) - ENTRY_TOLERANCE);
+    ((meta.entry || 0) -
+      ENTRY_TOLERANCE);
 
   const entryMax =
     meta.entryMax ??
-    ((meta.entry || 0) + ENTRY_TOLERANCE);
+    ((meta.entry || 0) +
+      ENTRY_TOLERANCE);
 
   return [
     "━━━━━━━━━━━━━━━━━━",
@@ -974,30 +1343,70 @@ function buildSignalTelegram(
     "",
     `🪙 نماد: <b>${DISPLAY_SYMBOL}</b>`,
     `📊 جهت: <b>${direction}</b>`,
-    `⏱ تایم‌فریم: <b>${meta.timeframe || "MTF"}</b>`,
-    `🌍 سشن: <b>${meta.session || "-"}</b>`,
+    `⏱ تایم‌فریم: <b>${
+      meta.timeframe || "MTF"
+    }</b>`,
+    `🌍 سشن: <b>${
+      meta.session || "-"
+    }</b>`,
     "",
-    `🎯 Entry: <b>${priceText(meta.entry || 0)}</b>`,
-    `📌 محدوده مجاز ورود: <b>${priceText(entryMin)} تا ${priceText(entryMax)}</b>`,
+    `🎯 Entry: <b>${priceText(
+      meta.entry || 0
+    )}</b>`,
+    `📌 محدوده مجاز ورود: <b>${priceText(
+      entryMin
+    )} تا ${priceText(
+      entryMax
+    )}</b>`,
     "",
-    `🛑 Stop Loss: <b>${priceText(meta.stopLoss || 0)}</b>`,
-    `🥇 TP1: <b>${priceText(meta.tp1 || 0)}</b>`,
-    `🥈 TP2: <b>${priceText(meta.tp2 || 0)}</b>`,
-    `🥉 TP3: <b>${priceText(meta.tp3 || 0)}</b>`,
+    `🛑 Stop Loss: <b>${priceText(
+      meta.stopLoss || 0
+    )}</b>`,
+    `🥇 TP1: <b>${priceText(
+      meta.tp1 || 0
+    )}</b>`,
+    `🥈 TP2: <b>${priceText(
+      meta.tp2 || 0
+    )}</b>`,
+    `🥉 TP3: <b>${priceText(
+      meta.tp3 || 0
+    )}</b>`,
     "",
-    `📦 حجم کل: <b>${meta.totalLot?.toFixed(2)} lot</b>`,
-    `• TP1: ${meta.tp1Lot?.toFixed(2)} lot`,
-    `• TP2: ${meta.tp2Lot?.toFixed(2)} lot`,
-    `• TP3: ${meta.tp3Lot?.toFixed(2)} lot`,
+    `📦 حجم کل: <b>${(
+      meta.totalLot || 0
+    ).toFixed(2)} lot</b>`,
+    `• TP1: ${(
+      meta.tp1Lot || 0
+    ).toFixed(2)} lot`,
+    `• TP2: ${(
+      meta.tp2Lot || 0
+    ).toFixed(2)} lot`,
+    `• TP3: ${(
+      meta.tp3Lot || 0
+    ).toFixed(2)} lot`,
     "",
-    `💰 ریسک اولیه: <b>${money(meta.riskUsd || 0)}</b>`,
-    `💵 TP1: <b>+${money(meta.tp1Usd || 0)}</b>`,
-    `💵 TP2: <b>+${money(meta.tp2Usd || 0)}</b>`,
-    `💵 TP3: <b>+${money(meta.tp3Usd || 0)}</b>`,
-    `💎 پتانسیل کل: <b>+${money(meta.totalPotentialUsd || 0)}</b>`,
+    `💰 ریسک اولیه: <b>${money(
+      meta.riskUsd || 0
+    )}</b>`,
+    `💵 TP1: <b>+${money(
+      meta.tp1Usd || 0
+    )}</b>`,
+    `💵 TP2: <b>+${money(
+      meta.tp2Usd || 0
+    )}</b>`,
+    `💵 TP3: <b>+${money(
+      meta.tp3Usd || 0
+    )}</b>`,
+    `💎 پتانسیل کل: <b>+${money(
+      meta.totalPotentialUsd || 0
+    )}</b>`,
     "",
-    `📈 Score: <b>${meta.score || 0}/100</b>`,
-    `✅ Confirmations: <b>${meta.confirmations || 0}</b>`,
+    `📈 Score: <b>${
+      meta.score || 0
+    }/100</b>`,
+    `✅ Confirmations: <b>${
+      meta.confirmations || 0
+    }</b>`,
     "",
     "⚠️ <b>محدوده ورود فقط Entry ± $1 است.</b>",
     "⚠️ خارج از این محدوده، ورود بر عهده کاربر است.",
@@ -1020,9 +1429,15 @@ function buildEventTelegram(
       "🥇 <b>TP1 HIT — XAUUSD</b>",
       "━━━━━━━━━━━━━━━━━━",
       "",
-      `💰 قیمت: <b>${priceText(price)}</b>`,
-      `💵 سود TP1: <b>+${money(pnlUsd)}</b>`,
-      `🇮🇷 سود تقریبی: <b>+${tomans(pnlToman)}</b>`,
+      `💰 قیمت: <b>${priceText(
+        price
+      )}</b>`,
+      `💵 سود TP1: <b>+${money(
+        pnlUsd
+      )}</b>`,
+      `🇮🇷 سود تقریبی: <b>+${tomans(
+        pnlToman
+      )}</b>`,
       "",
       "📦 مقدار بسته‌شده: <b>0.04 lot</b>",
       "🛡 پیشنهاد: حد ضرر باقی‌مانده به Entry منتقل شود.",
@@ -1038,9 +1453,15 @@ function buildEventTelegram(
       "🥈 <b>TP2 HIT — XAUUSD</b>",
       "━━━━━━━━━━━━━━━━━━",
       "",
-      `💰 قیمت: <b>${priceText(price)}</b>`,
-      `💵 سود TP2: <b>+${money(pnlUsd)}</b>`,
-      `🇮🇷 سود تقریبی: <b>+${tomans(pnlToman)}</b>`,
+      `💰 قیمت: <b>${priceText(
+        price
+      )}</b>`,
+      `💵 سود TP2: <b>+${money(
+        pnlUsd
+      )}</b>`,
+      `🇮🇷 سود تقریبی: <b>+${tomans(
+        pnlToman
+      )}</b>`,
       "",
       "📦 مقدار بسته‌شده: <b>0.03 lot</b>",
       "📌 حجم باقی‌مانده: <b>0.03 lot</b>",
@@ -1055,12 +1476,22 @@ function buildEventTelegram(
       "🥉 <b>TP3 HIT — TRADE COMPLETE</b>",
       "━━━━━━━━━━━━━━━━━━",
       "",
-      `💰 قیمت: <b>${priceText(price)}</b>`,
-      `💵 سود TP3: <b>+${money(pnlUsd)}</b>`,
-      `🇮🇷 سود تقریبی: <b>+${tomans(pnlToman)}</b>`,
+      `💰 قیمت: <b>${priceText(
+        price
+      )}</b>`,
+      `💵 سود TP3: <b>+${money(
+        pnlUsd
+      )}</b>`,
+      `🇮🇷 سود تقریبی: <b>+${tomans(
+        pnlToman
+      )}</b>`,
       "",
       "📦 مقدار بسته‌شده: <b>0.03 lot</b>",
-      `💎 مجموع سود برنامه: <b>+${money(TP1_USD + TP2_USD + TP3_USD)}</b>`,
+      `💎 مجموع سود برنامه: <b>+${money(
+        TP1_USD +
+          TP2_USD +
+          TP3_USD
+      )}</b>`,
       "",
       "✅ معامله طبق برنامه TP1 → TP2 → TP3 تکمیل شد.",
       "",
@@ -1074,7 +1505,9 @@ function buildEventTelegram(
       "🛡 <b>BREAK EVEN — XAUUSD</b>",
       "━━━━━━━━━━━━━━━━━━",
       "",
-      `💰 قیمت: <b>${priceText(price)}</b>`,
+      `💰 قیمت: <b>${priceText(
+        price
+      )}</b>`,
       "📌 قیمت به Entry برگشت.",
       "",
       "🟡 باقی‌مانده معامله در نقطه سر‌به‌سر بسته شد.",
@@ -1090,9 +1523,15 @@ function buildEventTelegram(
       "🛑 <b>STOP LOSS — XAUUSD</b>",
       "━━━━━━━━━━━━━━━━━━",
       "",
-      `💰 قیمت: <b>${priceText(price)}</b>`,
-      `💵 زیان برنامه‌ریزی‌شده: <b>-${money(Math.abs(pnlUsd))}</b>`,
-      `🇮🇷 معادل: <b>-${tomans(Math.abs(pnlToman))}</b>`,
+      `💰 قیمت: <b>${priceText(
+        price
+      )}</b>`,
+      `💵 زیان برنامه‌ریزی‌شده: <b>-${money(
+        Math.abs(pnlUsd)
+      )}</b>`,
+      `🇮🇷 معادل: <b>-${tomans(
+        Math.abs(pnlToman)
+      )}</b>`,
       "",
       "⚠️ معامله بسته شد و سیستم منتظر ستاپ جدید می‌ماند.",
       "",
@@ -1104,21 +1543,26 @@ function buildEventTelegram(
 }
 
 async function activeRun() {
-  return prisma.analysisRun.findFirst({
-    where: {
-      symbol: DISPLAY_SYMBOL,
-      status: {
-        in: [
-          "AI_PENDING",
-          "AI_TP1",
-          "AI_TP2",
-        ],
+  return prisma.analysisRun.findFirst(
+    {
+      where: {
+        symbol: DISPLAY_SYMBOL,
+
+        status: {
+          in: [
+            "AI_PENDING",
+            "AI_TP1",
+            "AI_TP2",
+          ],
+        },
       },
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+
+      orderBy: {
+        createdAt:
+          "desc",
+      },
+    }
+  );
 }
 
 function eventPnl(
@@ -1127,40 +1571,54 @@ function eventPnl(
 ) {
   if (type === "TP1") {
     return {
-      lotClosed: TP1_LOT,
-      pnlUsd: TP1_USD,
+      lotClosed:
+        TP1_LOT,
+      pnlUsd:
+        TP1_USD,
     };
   }
 
   if (type === "TP2") {
     return {
-      lotClosed: TP2_LOT,
-      pnlUsd: TP2_USD,
+      lotClosed:
+        TP2_LOT,
+      pnlUsd:
+        TP2_USD,
     };
   }
 
   if (type === "TP3") {
     return {
-      lotClosed: TP3_LOT,
-      pnlUsd: TP3_USD,
+      lotClosed:
+        TP3_LOT,
+      pnlUsd:
+        TP3_USD,
     };
   }
 
   if (type === "BE") {
-    const state = String(meta.state || "");
+    const state =
+      String(
+        meta.state || ""
+      );
 
     return {
       lotClosed:
         state === "AI_TP2"
           ? TP3_LOT
-          : TOTAL_LOT - TP1_LOT,
+          : TOTAL_LOT -
+            TP1_LOT,
+
       pnlUsd: 0,
     };
   }
 
   return {
-    lotClosed: TOTAL_LOT,
-    pnlUsd: -RISK_USD,
+    lotClosed:
+      TOTAL_LOT,
+
+    pnlUsd:
+      -RISK_USD,
   };
 }
 
@@ -1170,32 +1628,70 @@ async function pushTradeEvent(
   price: number
 ) {
   const meta =
-    (run.metadata || {}) as RunMeta;
+    (run.metadata ||
+      {}) as RunMeta;
 
-  const fx = await getUsdToTomanRate();
+  const fx =
+    await getUsdToTomanRate();
 
-  const pnl = eventPnl(type, meta);
+  const pnl =
+    eventPnl(
+      type,
+      meta
+    );
 
   const pnlToman =
     pnl.pnlUsd * fx;
 
-  const events = Array.isArray(meta.events)
-    ? [...meta.events]
-    : [];
+  const events =
+    Array.isArray(
+      meta.events
+    )
+      ? [...meta.events]
+      : [];
 
   events.push({
     type,
-    at: new Date().toISOString(),
-    price: round(price, 2),
-    lotClosed: pnl.lotClosed,
-    pnlUsd: round(pnl.pnlUsd, 2),
-    pnlToman: round(pnlToman, 0),
-    usdToToman: round(fx, 0),
+
+    at:
+      new Date().toISOString(),
+
+    price:
+      round(price, 2),
+
+    lotClosed:
+      pnl.lotClosed,
+
+    pnlUsd:
+      round(
+        pnl.pnlUsd,
+        2
+      ),
+
+    pnlToman:
+      round(
+        pnlToman,
+        0
+      ),
+
+    usdToToman:
+      round(
+        fx,
+        0
+      ),
   });
 
-  let status = "AI_PENDING";
-  let state = meta.state || "AI_PENDING";
-  let breakeven = Boolean(meta.breakeven);
+  let status =
+    "AI_PENDING";
+
+  let state =
+    meta.state ||
+    "AI_PENDING";
+
+  let breakeven =
+    Boolean(
+      meta.breakeven
+    );
 
   if (type === "TP1") {
     status = "AI_TP1";
@@ -1223,30 +1719,47 @@ async function pushTradeEvent(
     state = "AI_SL";
   }
 
-  const updatedMeta: RunMeta = {
-    ...meta,
-    state,
-    breakeven,
-    currentPrice: round(price, 2),
-    usdToToman: fx,
-    events,
-  };
+  const updatedMeta:
+    RunMeta = {
+      ...meta,
 
-  await prisma.analysisRun.update({
-    where: {
-      id: run.id,
-    },
-    data: {
-      status,
-      metadata: updatedMeta as any,
-      finishedAt:
-        type === "TP3" ||
-        type === "SL" ||
-        type === "BE"
-          ? new Date()
-          : run.finishedAt,
-    },
-  });
+      state,
+
+      breakeven,
+
+      currentPrice:
+        round(
+          price,
+          2
+        ),
+
+      usdToToman:
+        fx,
+
+      events,
+    };
+
+  await prisma.analysisRun.update(
+    {
+      where: {
+        id: run.id,
+      },
+
+      data: {
+        status,
+
+        metadata:
+          updatedMeta as any,
+
+        finishedAt:
+          type === "TP3" ||
+          type === "SL" ||
+          type === "BE"
+            ? new Date()
+            : run.finishedAt,
+      },
+    }
+  );
 
   const telegramText =
     buildEventTelegram(
@@ -1259,7 +1772,9 @@ async function pushTradeEvent(
 
   if (telegramText) {
     try {
-      await sendTelegram(telegramText);
+      await sendTelegram(
+        telegramText
+      );
     } catch (error) {
       console.error(
         "Telegram event delivery failed:",
@@ -1269,14 +1784,21 @@ async function pushTradeEvent(
   }
 }
 
-async function monitorOne(run: any) {
+async function monitorOne(
+  run: any
+) {
   const meta =
-    (run.metadata || {}) as RunMeta;
+    (run.metadata ||
+      {}) as RunMeta;
 
-  if (!meta.entry || !meta.direction) {
+  if (
+    !meta.entry ||
+    !meta.direction
+  ) {
     return {
       monitored: false,
-      reason: "invalid_run",
+      reason:
+        "invalid_run",
     };
   }
 
@@ -1287,95 +1809,137 @@ async function monitorOne(run: any) {
     meta.direction;
 
   const entry =
-    numberValue(meta.entry);
+    numberValue(
+      meta.entry
+    );
 
   const entryMin =
     numberValue(
       meta.entryMin ??
-        entry - ENTRY_TOLERANCE
+        entry -
+          ENTRY_TOLERANCE
     );
 
   const entryMax =
     numberValue(
       meta.entryMax ??
-        entry + ENTRY_TOLERANCE
+        entry +
+          ENTRY_TOLERANCE
     );
 
   let entryActivated =
-    Boolean(meta.entryActivated);
+    Boolean(
+      meta.entryActivated
+    );
 
-  /*
-   * IMPORTANT:
-   * The signal is valid only inside Entry ± $1.
-   * Outside this range the system does not claim
-   * the trade was entered.
-   */
   if (!entryActivated) {
     const insideEntryZone =
       price >= entryMin &&
       price <= entryMax;
 
-    if (!insideEntryZone) {
-      await prisma.analysisRun.update({
-        where: {
-          id: run.id,
-        },
-        data: {
-          metadata: {
-            ...meta,
-            currentPrice: round(price, 2),
-            entryMin,
-            entryMax,
-            entryActivated: false,
-          } as any,
-        },
-      });
+    if (
+      !insideEntryZone
+    ) {
+      await prisma.analysisRun.update(
+        {
+          where: {
+            id: run.id,
+          },
+
+          data: {
+            metadata: {
+              ...meta,
+
+              currentPrice:
+                round(
+                  price,
+                  2
+                ),
+
+              entryMin,
+
+              entryMax,
+
+              entryActivated:
+                false,
+            } as any,
+          },
+        }
+      );
 
       return {
         monitored: true,
         activated: false,
-        currentPrice: price,
+        currentPrice:
+          price,
       };
     }
 
-    entryActivated = true;
+    entryActivated =
+      true;
 
-    await prisma.analysisRun.update({
-      where: {
-        id: run.id,
-      },
-      data: {
-        metadata: {
-          ...meta,
-          currentPrice: round(price, 2),
-          entryMin,
-          entryMax,
-          entryActivated: true,
-        } as any,
-      },
-    });
+    await prisma.analysisRun.update(
+      {
+        where: {
+          id: run.id,
+        },
+
+        data: {
+          metadata: {
+            ...meta,
+
+            currentPrice:
+              round(
+                price,
+                2
+              ),
+
+            entryMin,
+
+            entryMax,
+
+            entryActivated:
+              true,
+          } as any,
+        },
+      }
+    );
   }
 
   const stopLoss =
-    numberValue(meta.stopLoss);
+    numberValue(
+      meta.stopLoss
+    );
 
   const tp1 =
-    numberValue(meta.tp1);
+    numberValue(
+      meta.tp1
+    );
 
   const tp2 =
-    numberValue(meta.tp2);
+    numberValue(
+      meta.tp2
+    );
 
   const tp3 =
-    numberValue(meta.tp3);
+    numberValue(
+      meta.tp3
+    );
 
   const state =
-    String(meta.state || run.status);
+    String(
+      meta.state ||
+        run.status
+    );
 
-  /*
-   * STOP LOSS
-   */
-  if (direction === "BUY") {
-    if (price <= stopLoss) {
+  if (
+    direction ===
+    "BUY"
+  ) {
+    if (
+      price <=
+      stopLoss
+    ) {
       await pushTradeEvent(
         run,
         "SL",
@@ -1389,7 +1953,10 @@ async function monitorOne(run: any) {
       };
     }
   } else {
-    if (price >= stopLoss) {
+    if (
+      price >=
+      stopLoss
+    ) {
       await pushTradeEvent(
         run,
         "SL",
@@ -1404,13 +1971,12 @@ async function monitorOne(run: any) {
     }
   }
 
-  /*
-   * TP1
-   */
   if (
-    state === "AI_PENDING" &&
+    state ===
+      "AI_PENDING" &&
     (
-      direction === "BUY"
+      direction ===
+      "BUY"
         ? price >= tp1
         : price <= tp1
     )
@@ -1428,15 +1994,12 @@ async function monitorOne(run: any) {
     };
   }
 
-  /*
-   * AFTER TP1:
-   * if price returns to Entry, remaining
-   * position is considered Break Even.
-   */
   if (
-    state === "AI_TP1" &&
+    state ===
+      "AI_TP1" &&
     (
-      direction === "BUY"
+      direction ===
+      "BUY"
         ? price <= entry
         : price >= entry
     )
@@ -1454,16 +2017,16 @@ async function monitorOne(run: any) {
     };
   }
 
-  /*
-   * TP2
-   */
   if (
     (
-      state === "AI_TP1" ||
-      state === "AI_BE"
+      state ===
+        "AI_TP1" ||
+      state ===
+        "AI_BE"
     ) &&
     (
-      direction === "BUY"
+      direction ===
+      "BUY"
         ? price >= tp2
         : price <= tp2
     )
@@ -1481,15 +2044,12 @@ async function monitorOne(run: any) {
     };
   }
 
-  /*
-   * AFTER TP2:
-   * if price returns to Entry, remaining
-   * position is considered Break Even.
-   */
   if (
-    state === "AI_TP2" &&
+    state ===
+      "AI_TP2" &&
     (
-      direction === "BUY"
+      direction ===
+      "BUY"
         ? price <= entry
         : price >= entry
     )
@@ -1507,16 +2067,16 @@ async function monitorOne(run: any) {
     };
   }
 
-  /*
-   * TP3
-   */
   if (
     (
-      state === "AI_TP2" ||
-      state === "AI_BE"
+      state ===
+        "AI_TP2" ||
+      state ===
+        "AI_BE"
     ) &&
     (
-      direction === "BUY"
+      direction ===
+      "BUY"
         ? price >= tp3
         : price <= tp3
     )
@@ -1534,18 +2094,27 @@ async function monitorOne(run: any) {
     };
   }
 
-  await prisma.analysisRun.update({
-    where: {
-      id: run.id,
-    },
-    data: {
-      metadata: {
-        ...meta,
-        currentPrice: round(price, 2),
-        entryActivated,
-      } as any,
-    },
-  });
+  await prisma.analysisRun.update(
+    {
+      where: {
+        id: run.id,
+      },
+
+      data: {
+        metadata: {
+          ...meta,
+
+          currentPrice:
+            round(
+              price,
+              2
+            ),
+
+          entryActivated,
+        } as any,
+      },
+    }
+  );
 
   return {
     monitored: true,
@@ -1557,15 +2126,15 @@ async function monitorOne(run: any) {
 function sessionEndReached(
   date = new Date()
 ): string | null {
-  const hour = date.getUTCHours();
-  const minute = date.getUTCMinutes();
+  const hour =
+    date.getUTCHours();
 
-  /*
-   * GitHub Actions may start a few minutes late,
-   * therefore we use a 15-minute window instead
-   * of requiring exactly minute 00.
-   */
-  if (minute >= 15) {
+  const minute =
+    date.getUTCMinutes();
+
+  if (
+    minute >= 15
+  ) {
     return null;
   }
 
@@ -1591,66 +2160,101 @@ function sessionEndReached(
 async function sessionReport(
   session: string
 ) {
-  const now = new Date();
+  const now =
+    new Date();
 
-  const start = new Date(
-    now.getTime() - 24 * 60 * 60 * 1000
-  );
+  const start =
+    new Date(
+      now.getTime() -
+        24 *
+          60 *
+          60 *
+          1000
+    );
 
   const rows =
-    await prisma.analysisRun.findMany({
-      where: {
-        symbol: DISPLAY_SYMBOL,
-        signalGenerated: true,
-        createdAt: {
-          gte: start,
+    await prisma.analysisRun.findMany(
+      {
+        where: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          signalGenerated:
+            true,
+
+          createdAt: {
+            gte: start,
+          },
         },
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 100,
-    });
+
+        orderBy: {
+          createdAt:
+            "asc",
+        },
+
+        take: 100,
+      }
+    );
 
   let totalPnlUsd = 0;
   let wins = 0;
   let losses = 0;
   let completed = 0;
 
-  for (const row of rows) {
+  for (
+    const row of rows
+  ) {
     const meta =
-      (row.metadata || {}) as RunMeta;
+      (row.metadata ||
+        {}) as RunMeta;
 
-    if (meta.session !== session) {
+    if (
+      meta.session !==
+      session
+    ) {
       continue;
     }
 
-    const events = Array.isArray(meta.events)
-      ? meta.events
-      : [];
+    const events =
+      Array.isArray(
+        meta.events
+      )
+        ? meta.events
+        : [];
 
     let tradePnl = 0;
 
-    for (const event of events) {
-      tradePnl += numberValue(
-        event.pnlUsd
-      );
+    for (
+      const event of events
+    ) {
+      tradePnl +=
+        numberValue(
+          event.pnlUsd
+        );
     }
 
-    totalPnlUsd += tradePnl;
+    totalPnlUsd +=
+      tradePnl;
 
-    if (tradePnl > 0) {
+    if (
+      tradePnl > 0
+    ) {
       wins++;
     }
 
-    if (tradePnl < 0) {
+    if (
+      tradePnl < 0
+    ) {
       losses++;
     }
 
     if (
-      row.status === "AI_TP3" ||
-      row.status === "AI_SL" ||
-      row.status === "AI_BE"
+      row.status ===
+        "AI_TP3" ||
+      row.status ===
+        "AI_SL" ||
+      row.status ===
+        "AI_BE"
     ) {
       completed++;
     }
@@ -1672,15 +2276,34 @@ async function sessionReport(
     `❌ معاملات منفی: <b>${losses}</b>`,
     `📌 بسته‌شده: <b>${completed}</b>`,
     "",
-    `💵 P/L: <b>${totalPnlUsd >= 0 ? "+" : ""}${money(totalPnlUsd)}</b>`,
-    `🇮🇷 تومان: <b>${totalPnlToman >= 0 ? "+" : "-"}${tomans(Math.abs(totalPnlToman))}</b>`,
-    `💱 USD: <b>${faNumber(fx, 0)}</b>`,
+    `💵 P/L: <b>${
+      totalPnlUsd >= 0
+        ? "+"
+        : ""
+    }${money(
+      totalPnlUsd
+    )}</b>`,
+    `🇮🇷 تومان: <b>${
+      totalPnlToman >= 0
+        ? "+"
+        : "-"
+    }${tomans(
+      Math.abs(
+        totalPnlToman
+      )
+    )}</b>`,
+    `💱 USD: <b>${faNumber(
+      fx,
+      0
+    )}</b>`,
     "",
     "━━━━━━━━━━━━━━━━━━",
   ].join("\n");
 
   try {
-    await sendTelegram(text);
+    await sendTelegram(
+      text
+    );
   } catch (error) {
     console.error(
       "Session report Telegram error:",
@@ -1688,30 +2311,52 @@ async function sessionReport(
     );
   }
 
-  await prisma.analysisRun.create({
-    data: {
-      symbol: DISPLAY_SYMBOL,
-      timeframe: "SESSION",
-      status: "SESSION_REPORT",
-      signalGenerated: false,
-      metadata: {
-        kind: "SESSION_REPORT",
-        session,
-        totalPnlUsd: round(
-          totalPnlUsd,
-          2
-        ),
-        totalPnlToman: round(
-          totalPnlToman,
-          0
-        ),
-        usdToToman: round(fx, 0),
-        wins,
-        losses,
-        completed,
-      } as any,
-    },
-  });
+  await prisma.analysisRun.create(
+    {
+      data: {
+        symbol:
+          DISPLAY_SYMBOL,
+
+        timeframe:
+          "SESSION",
+
+        status:
+          "SESSION_REPORT",
+
+        signalGenerated:
+          false,
+
+        metadata: {
+          kind:
+            "SESSION_REPORT",
+
+          session,
+
+          totalPnlUsd:
+            round(
+              totalPnlUsd,
+              2
+            ),
+
+          totalPnlToman:
+            round(
+              totalPnlToman,
+              0
+            ),
+
+          usdToToman:
+            round(
+              fx,
+              0
+            ),
+
+          wins,
+          losses,
+          completed,
+        } as any,
+      },
+    }
+  );
 }
 
 async function createNoTradeRun(
@@ -1719,37 +2364,65 @@ async function createNoTradeRun(
   price: number,
   analysis?: MarketAnalysis
 ) {
-  return prisma.analysisRun.create({
-    data: {
-      symbol: DISPLAY_SYMBOL,
-      timeframe: "MTF",
-      status: "AI_NO_TRADE",
-      signalGenerated: false,
-      finishedAt: new Date(),
-      metadata: {
-        kind: "AI_MARKET",
-        symbol: DISPLAY_SYMBOL,
-        currentPrice: round(price, 2),
-        state: "NO_TRADE",
-        reason,
+  return prisma.analysisRun.create(
+    {
+      data: {
+        symbol:
+          DISPLAY_SYMBOL,
 
-        score:
-          analysis?.score || 0,
+        timeframe:
+          "MTF",
 
-        confirmations:
-          analysis?.confirmations || 0,
+        status:
+          "AI_NO_TRADE",
 
-        support:
-          analysis?.support || 0,
+        signalGenerated:
+          false,
 
-        resistance:
-          analysis?.resistance || 0,
+        finishedAt:
+          new Date(),
 
-        analysis:
-          analysis?.analysis || {},
-      } as any,
-    },
-  });
+        metadata: {
+          kind:
+            "AI_MARKET",
+
+          symbol:
+            DISPLAY_SYMBOL,
+
+          currentPrice:
+            round(
+              price,
+              2
+            ),
+
+          state:
+            "NO_TRADE",
+
+          reason,
+
+          score:
+            analysis?.score ||
+            0,
+
+          confirmations:
+            analysis?.confirmations ||
+            0,
+
+          support:
+            analysis?.support ||
+            0,
+
+          resistance:
+            analysis?.resistance ||
+            0,
+
+          analysis:
+            analysis?.analysis ||
+            {},
+        } as any,
+      },
+    }
+  );
 }
 
 async function scan() {
@@ -1758,17 +2431,16 @@ async function scan() {
 
   if (existing) {
     return {
-      action: "monitor",
-      runId: existing.id,
+      action:
+        "monitor",
+
+      runId:
+        existing.id,
     };
   }
 
-  /*
-   * Get the price once for this complete cycle.
-   * The same cached price is used by the dashboard
-   * and scan whenever possible.
-   */
-  let currentPrice = 0;
+  let currentPrice =
+    0;
 
   try {
     currentPrice =
@@ -1780,45 +2452,63 @@ async function scan() {
     );
 
     return {
-      action: "error",
-      reason: "price_unavailable",
+      action:
+        "error",
+
+      reason:
+        "price_unavailable",
     };
   }
 
-  /*
-   * News protection
-   */
   const news =
     await newsBlock();
 
-  if (news.blocked) {
+  if (
+    news.blocked
+  ) {
     await createNoTradeRun(
       "high_impact_news",
       currentPrice
     );
 
     return {
-      action: "no_trade",
-      reason: "high_impact_news",
+      action:
+        "no_trade",
+
+      reason:
+        "high_impact_news",
+
       currentPrice,
     };
   }
 
-  /*
-   * Four timeframes:
-   * M1 / M5 / M15 / H1
-   */
   const [
     m1,
     m5,
     m15,
     h1,
-  ] = await Promise.all([
-    candles("1min", 120),
-    candles("5min", 160),
-    candles("15min", 160),
-    candles("1h", 160),
-  ]);
+  ] =
+    await Promise.all([
+      candles(
+        "1min",
+        120
+      ),
+
+      candles(
+        "5min",
+        160
+      ),
+
+      candles(
+        "15min",
+        160
+      ),
+
+      candles(
+        "1h",
+        160
+      ),
+    ]);
 
   const analysis =
     analyzeMarket(
@@ -1829,10 +2519,9 @@ async function scan() {
       currentPrice
     );
 
-  /*
-   * No direction
-   */
-  if (!analysis.direction) {
+  if (
+    !analysis.direction
+  ) {
     await createNoTradeRun(
       "no_direction",
       currentPrice,
@@ -1840,16 +2529,19 @@ async function scan() {
     );
 
     return {
-      action: "no_trade",
-      reason: "no_direction",
-      score: analysis.score,
+      action:
+        "no_trade",
+
+      reason:
+        "no_direction",
+
+      score:
+        analysis.score,
+
       currentPrice,
     };
   }
 
-  /*
-   * Score
-   */
   if (
     analysis.score <
     SCORE_TO_SIGNAL
@@ -1861,17 +2553,22 @@ async function scan() {
     );
 
     return {
-      action: "no_trade",
-      reason: "score_below_threshold",
-      score: analysis.score,
-      required: SCORE_TO_SIGNAL,
+      action:
+        "no_trade",
+
+      reason:
+        "score_below_threshold",
+
+      score:
+        analysis.score,
+
+      required:
+        SCORE_TO_SIGNAL,
+
       currentPrice,
     };
   }
 
-  /*
-   * Minimum confirmations
-   */
   if (
     analysis.confirmations <
     MIN_CONFIRMATIONS
@@ -1883,65 +2580,97 @@ async function scan() {
     );
 
     return {
-      action: "no_trade",
+      action:
+        "no_trade",
+
       reason:
         "not_enough_confirmations",
+
       confirmations:
         analysis.confirmations,
+
       currentPrice,
     };
   }
 
-  /*
-   * We use the LIVE price for Entry.
-   * We do NOT use the M1 candle close as the
-   * announced entry.
-   */
   const entry =
-    round(currentPrice, 2);
+    round(
+      currentPrice,
+      2
+    );
 
   const direction =
     analysis.direction;
 
   const stopLoss =
     direction === "BUY"
-      ? round(entry - STOP_DISTANCE, 2)
-      : round(entry + STOP_DISTANCE, 2);
+      ? round(
+          entry -
+            STOP_DISTANCE,
+          2
+        )
+      : round(
+          entry +
+            STOP_DISTANCE,
+          2
+        );
 
   const tp1 =
     direction === "BUY"
-      ? round(entry + TP1_DISTANCE, 2)
-      : round(entry - TP1_DISTANCE, 2);
+      ? round(
+          entry +
+            TP1_DISTANCE,
+          2
+        )
+      : round(
+          entry -
+            TP1_DISTANCE,
+          2
+        );
 
   const tp2 =
     direction === "BUY"
-      ? round(entry + TP2_DISTANCE, 2)
-      : round(entry - TP2_DISTANCE, 2);
+      ? round(
+          entry +
+            TP2_DISTANCE,
+          2
+        )
+      : round(
+          entry -
+            TP2_DISTANCE,
+          2
+        );
 
   const tp3 =
     direction === "BUY"
-      ? round(entry + TP3_DISTANCE, 2)
-      : round(entry - TP3_DISTANCE, 2);
+      ? round(
+          entry +
+            TP3_DISTANCE,
+          2
+        )
+      : round(
+          entry -
+            TP3_DISTANCE,
+          2
+        );
 
   /*
-   * IMPORTANT:
-   * Instead of requiring the price to be within
-   * $4.15 of support/resistance, we now verify
-   * that there is enough room for TP3.
-   *
-   * This is much more logical for a fixed
-   * $4 stop and $12 TP3 model.
+   * به جای فیلتر سخت فاصله از حمایت/مقاومت،
+   * بررسی می‌کنیم که تا TP3 فضای کافی وجود داشته باشد.
    */
   const roomToTarget =
     direction === "BUY"
-      ? analysis.resistance - entry
-      : entry - analysis.support;
+      ? analysis.resistance -
+        entry
+      : entry -
+        analysis.support;
 
   const requiredRoom =
     TP3_DISTANCE +
     Math.max(
       1,
-      analysis.atr * 0.25
+      analysis.atr *
+        0.25
     );
 
   if (
@@ -1955,12 +2684,24 @@ async function scan() {
     );
 
     return {
-      action: "no_trade",
-      reason: "not_enough_room_to_tp3",
+      action:
+        "no_trade",
+
+      reason:
+        "not_enough_room_to_tp3",
+
       roomToTarget:
-        round(roomToTarget, 2),
+        round(
+          roomToTarget,
+          2
+        ),
+
       requiredRoom:
-        round(requiredRoom, 2),
+        round(
+          requiredRoom,
+          2
+        ),
+
       currentPrice,
     };
   }
@@ -1970,553 +2711,131 @@ async function scan() {
 
   const entryMin =
     round(
-      entry - ENTRY_TOLERANCE,
+      entry -
+        ENTRY_TOLERANCE,
       2
     );
 
   const entryMax =
     round(
-      entry + ENTRY_TOLERANCE,
+      entry +
+        ENTRY_TOLERANCE,
       2
     );
 
-  const meta: RunMeta = {
-    kind: "AI_SIGNAL",
-    symbol: DISPLAY_SYMBOL,
+  const meta:
+    RunMeta = {
+      kind:
+        "AI_SIGNAL",
 
-    direction,
+      symbol:
+        DISPLAY_SYMBOL,
 
-    entry,
-    entryMin,
-    entryMax,
+      direction,
 
-    stopLoss,
-    tp1,
-    tp2,
-    tp3,
-
-    totalLot: TOTAL_LOT,
-    tp1Lot: TP1_LOT,
-    tp2Lot: TP2_LOT,
-    tp3Lot: TP3_LOT,
-
-    riskUsd: RISK_USD,
-    tp1Usd: TP1_USD,
-    tp2Usd: TP2_USD,
-    tp3Usd: TP3_USD,
-    totalPotentialUsd:
-      TOTAL_POTENTIAL_USD,
-
-    usdToToman: fx,
-
-    riskToman:
-      RISK_USD * fx,
-
-    tp1Toman:
-      TP1_USD * fx,
-
-    tp2Toman:
-      TP2_USD * fx,
-
-    tp3Toman:
-      TP3_USD * fx,
-
-    totalPotentialToman:
-      TOTAL_POTENTIAL_USD * fx,
-
-    session:
-      sessionName(),
-
-    score:
-      analysis.score,
-
-    confirmations:
-      analysis.confirmations,
-
-    timeframe:
-      "M1 / M5 / M15 / H1",
-
-    state:
-      "AI_PENDING",
-
-    breakeven:
-      false,
-
-    /*
-     * Because the signal entry is generated
-     * from the current price, this is immediately
-     * inside the ±$1 entry zone.
-     */
-    entryActivated:
-      true,
-
-    currentPrice:
       entry,
 
-    support:
-      round(
-        analysis.support,
-        2
-      ),
+      entryMin,
 
-    resistance:
-      round(
-        analysis.resistance,
-        2
-      ),
+      entryMax,
 
-    events: [],
+      stopLoss,
 
-    analysis:
-      analysis.analysis,
-  };
+      tp1,
+
+      tp2,
+
+      tp3,
+
+      totalLot:
+        TOTAL_LOT,
+
+      tp1Lot:
+        TP1_LOT,
+
+      tp2Lot:
+        TP2_LOT,
+
+      tp3Lot:
+        TP3_LOT,
+
+      riskUsd:
+        RISK_USD,
+
+      tp1Usd:
+        TP1_USD,
+
+      tp2Usd:
+        TP2_USD,
+
+      tp3Usd:
+        TP3_USD,
+
+      totalPotentialUsd:
+        TOTAL_POTENTIAL_USD,
+
+      usdToToman:
+        fx,
+
+      riskToman:
+        RISK_USD * fx,
+
+      tp1Toman:
+        TP1_USD * fx,
+
+      tp2Toman:
+        TP2_USD * fx,
+
+      tp3Toman:
+        TP3_USD * fx,
+
+      totalPotentialToman:
+        TOTAL_POTENTIAL_USD *
+        fx,
+
+      session:
+        sessionName(),
+
+      score:
+        analysis.score,
+
+      confirmations:
+        analysis.confirmations,
+
+      timeframe:
+        "M1 / M5 / M15 / H1",
+
+      state:
+        "AI_PENDING",
+
+      breakeven:
+        false,
+
+      entryActivated:
+        true,
+
+      currentPrice:
+        entry,
+
+      support:
+        round(
+          analysis.support,
+          2
+        ),
+
+      resistance:
+        round(
+          analysis.resistance,
+          2
+        ),
+
+      events: [],
+
+      analysis:
+        analysis.analysis,
+    };
 
   const run =
-    await prisma.analysisRun.create({
-      data: {
-        symbol: DISPLAY_SYMBOL,
-        timeframe: "MTF",
-        status: "AI_PENDING",
-        signalGenerated: true,
-        startedAt: new Date(),
-        metadata: meta as any,
-      },
-    });
-
-  try {
-    await sendTelegram(
-      buildSignalTelegram(meta)
-    );
-  } catch (error) {
-    console.error(
-      "Telegram signal delivery failed:",
-      error
-    );
-
-    /*
-     * The signal remains stored in DB even
-     * if Telegram temporarily fails.
-     */
-  }
-
-  return {
-    action: "signal",
-    runId: run.id,
-    signal: meta,
-  };
-}
-
-async function cronCycle() {
-  const active =
-    await activeRun();
-
-  if (active) {
-    const monitored =
-      await monitorOne(active);
-
-    return {
-      action: "monitor",
-      ...monitored,
-    };
-  }
-
-  const result =
-    await scan();
-
-  /*
-   * Session report
-   */
-  const endSession =
-    sessionEndReached();
-
-  if (endSession) {
-    const todayKey =
-      new Date()
-        .toISOString()
-        .slice(0, 10);
-
-    const existingReports =
-      await prisma.analysisRun.findMany({
-        where: {
-          symbol: DISPLAY_SYMBOL,
-          status: "SESSION_REPORT",
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 20,
-      });
-
-    const alreadySent =
-      existingReports.some(
-        (row: any) => {
-          const meta =
-            (row.metadata || {}) as any;
-
-          return (
-            meta.session ===
-              endSession &&
-            String(
-              row.createdAt
-            ).startsWith(todayKey)
-          );
-        }
-      );
-
-    if (!alreadySent) {
-      try {
-        await sessionReport(
-          endSession
-        );
-      } catch (error) {
-        console.error(
-          "Session report failed:",
-          error
-        );
-      }
-    }
-  }
-
-  return result;
-}
-
-async function performance() {
-  const now = new Date();
-
-  const dayStart =
-    new Date(
-      now.getTime() -
-        24 * 60 * 60 * 1000
-    );
-
-  const weekStart =
-    new Date(
-      now.getTime() -
-        7 * 24 * 60 * 60 * 1000
-    );
-
-  const monthStart =
-    new Date(
-      now.getTime() -
-        30 * 24 * 60 * 60 * 1000
-    );
-
-  const rows =
-    await prisma.analysisRun.findMany({
-      where: {
-        symbol: DISPLAY_SYMBOL,
-        signalGenerated: true,
-        createdAt: {
-          gte: monthStart,
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 500,
-    });
-
-  function calculate(
-    from: Date
-  ) {
-    let pnl = 0;
-    let trades = 0;
-    let wins = 0;
-    let losses = 0;
-
-    for (const row of rows) {
-      if (
-        row.createdAt <
-        from
-      ) {
-        continue;
-      }
-
-      const meta =
-        (row.metadata || {}) as RunMeta;
-
-      const events =
-        Array.isArray(meta.events)
-          ? meta.events
-          : [];
-
-      if (!events.length) {
-        continue;
-      }
-
-      trades++;
-
-      let tradePnl = 0;
-
-      for (const event of events) {
-        tradePnl +=
-          numberValue(
-            event.pnlUsd
-          );
-      }
-
-      pnl += tradePnl;
-
-      if (tradePnl > 0) wins++;
-      if (tradePnl < 0) losses++;
-    }
-
-    return {
-      pnl: round(pnl, 2),
-      trades,
-      wins,
-      losses,
-    };
-  }
-
-  return {
-    day: calculate(dayStart),
-    week: calculate(weekStart),
-    month: calculate(monthStart),
-  };
-}
-
-async function dashboard() {
-  const active =
-    await activeRun();
-
-  const [
-    perf,
-    fx,
-    recentRows,
-  ] = await Promise.all([
-    performance(),
-    getUsdToTomanRate().catch(
-      () => 0
-    ),
-    prisma.analysisRun.findMany({
-      where: {
-        symbol: DISPLAY_SYMBOL,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 30,
-    }),
-  ]);
-
-  /*
-   * Find the latest row that contains a market
-   * price. This can be AI signal, AI_NO_TRADE,
-   * or a market snapshot.
-   */
-  let marketRow =
-    recentRows.find(
-      (row: any) => {
-        const meta =
-          (row.metadata || {}) as RunMeta;
-
-        return (
-          numberValue(
-            meta.currentPrice
-          ) > 0
-        );
-      }
-    ) || null;
-
-  /*
-   * If the database is completely empty,
-   * fetch the price once and save it.
-   *
-   * IMPORTANT:
-   * After this first snapshot, normal dashboard
-   * requests do NOT call Twelve Data.
-   */
-  if (!marketRow) {
-    try {
-      const price =
-        await latestPriceCached();
-
-      marketRow =
-        await prisma.analysisRun.create({
-          data: {
-            symbol: DISPLAY_SYMBOL,
-            timeframe: "MARKET",
-            status: "AI_NO_TRADE",
-            signalGenerated: false,
-            metadata: {
-              kind: "AI_MARKET",
-              symbol: DISPLAY_SYMBOL,
-              currentPrice:
-                round(price, 2),
-              state: "MARKET_SNAPSHOT",
-              reason:
-                "initial_market_snapshot",
-            } as any,
-          },
-        });
-    } catch {
-      // Keep dashboard alive even if price is temporarily unavailable.
-    }
-  }
-
-  const latestMeta =
-    marketRow
-      ? ((marketRow.metadata || {}) as RunMeta)
-      : {};
-
-  const recentSignals =
-    recentRows
-      .filter(
-        (row: any) =>
-          row.signalGenerated === true
-      )
-      .slice(0, 20)
-      .map((row: any) => ({
-        id: row.id,
-        createdAt:
-          row.createdAt,
-        status:
-          row.status,
-        metadata:
-          row.metadata,
-      }));
-
-  const livePrice =
-    numberValue(
-      latestMeta.currentPrice
-    );
-
-  return {
-    symbol: DISPLAY_SYMBOL,
-
-    currentPrice:
-      livePrice > 0
-        ? livePrice
-        : null,
-
-    usdToToman:
-      fx || null,
-
-    active,
-
-    latest: marketRow
-      ? {
-          id: marketRow.id,
-          status: marketRow.status,
-          signalGenerated:
-            marketRow.signalGenerated,
-          createdAt:
-            marketRow.createdAt,
-          metadata:
-            latestMeta,
-        }
-      : null,
-
-    performance: perf,
-
-    recent: recentSignals,
-  };
-}
-
-export async function GET(
-  request: NextRequest
-) {
-  try {
-    const url =
-      new URL(request.url);
-
-    const cron =
-      url.searchParams.get(
-        "cron"
-      );
-
-    /*
-     * SERVER CRON
-     */
-    if (cron === "1") {
-      const secret =
-        env("NEWS_CRON_SECRET");
-
-      const headerSecret =
-        request.headers.get(
-          "x-ai-cron-secret"
-        );
-
-      const querySecret =
-        url.searchParams.get(
-          "secret"
-        );
-
-      if (
-        !secret ||
-        (
-          headerSecret !== secret &&
-          querySecret !== secret
-        )
-      ) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "Unauthorized cron request.",
-          },
-          {
-            status: 401,
-          }
-        );
-      }
-
-      const result =
-        await cronCycle();
-
-      return NextResponse.json({
-        ok: true,
-        engine:
-          "XAUUSD AI Analysis Engine",
-        timestamp:
-          new Date().toISOString(),
-        result,
-      });
-    }
-
-    /*
-     * NORMAL DASHBOARD
-     */
-    const session =
-      await getSession();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Unauthorized",
-        },
-        {
-          status: 401,
-        }
-      );
-    }
-
-    const data =
-      await dashboard();
-
-    return NextResponse.json({
-      ok: true,
-      data,
-    });
-  } catch (error: any) {
-    console.error(
-      "AI Analysis API error:",
-      error
-    );
-
-    return NextResponse.json(
+    await prisma.analysisRun.create(
       {
-        ok: false,
-        error:
-          error?.message ||
-          "AI Analysis API failed.",
-      },
-      {
-        status: 500,
-      }
-    );
-  }
-}
+        data: {
