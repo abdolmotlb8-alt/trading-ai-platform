@@ -1,10 +1,115 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/* =========================================================
+   XAUUSD AI ANALYSIS ENGINE
+   =========================================================
+
+   معامله پایه:
+   Total lot: 0.10
+
+   TP1:
+   0.04 lot
+   +$5 per 0.01 lot
+   => +$20
+
+   TP2:
+   0.03 lot
+   +$8 per 0.01 lot
+   => +$24
+
+   TP3:
+   0.03 lot
+   +$12 per 0.01 lot
+   => +$36
+
+   Full TP:
+   $20 + $24 + $36 = $80
+
+   بعد از TP1:
+   0.06 lot باقی می‌ماند
+   Stop Loss -> Entry
+   ========================================================= */
+
+
+/* =========================================================
+   CONSTANTS
+   ========================================================= */
+
+const SYMBOL = "XAUUSD";
+const TD_SYMBOL = "XAU/USD";
+const TD_BASE = "https://api.twelvedata.com";
+const NETARZ_BASE = "https://netarz.ir/api/fx/v1";
+
+const TOTAL_LOT = 0.10;
+
+const TP1_LOT = 0.04;
+const TP2_LOT = 0.03;
+const TP3_LOT = 0.03;
+
+const REMAINING_AFTER_TP1 = 0.06;
+
+const CONTRACT_SIZE = 100;
+
+/*
+ * TP values are PER 0.01 LOT.
+ */
+const TP1_PER_001_LOT_USD = 5;
+const TP2_PER_001_LOT_USD = 8;
+const TP3_PER_001_LOT_USD = 12;
+
+/*
+ * Therefore:
+ *
+ * TP1 = 5 * 4 = $20
+ * TP2 = 8 * 3 = $24
+ * TP3 = 12 * 3 = $36
+ */
+const TP1_TOTAL_USD = TP1_PER_001_LOT_USD * 4;
+const TP2_TOTAL_USD = TP2_PER_001_LOT_USD * 3;
+const TP3_TOTAL_USD = TP3_PER_001_LOT_USD * 3;
+
+const FULL_TP_USD =
+  TP1_TOTAL_USD +
+  TP2_TOTAL_USD +
+  TP3_TOTAL_USD;
+
+/*
+ * Initial SL remains $4 TOTAL for 0.10 lot.
+ *
+ * 0.10 lot = 10 oz
+ * $4 / 10 = $0.40 price movement
+ */
+const INITIAL_SL_TOTAL_USD = 4;
+
+const MIN_SCORE = 60;
+const MIN_CONFIRMATIONS = 2;
+
+const ACTIVE_STATUSES = [
+  "WAITING",
+  "ACTIVE",
+  "TP1_HIT",
+  "TP2_HIT",
+];
+
+const CLOSED_STATUSES = [
+  "SL_HIT",
+  "BREAKEVEN",
+  "TP3_HIT",
+  "CLOSED",
+];
+
+
+/* =========================================================
+   TYPES
+   ========================================================= */
+
+type Direction = "BUY" | "SELL";
 
 type Candle = {
   datetime: string;
@@ -15,255 +120,324 @@ type Candle = {
   volume?: number;
 };
 
-type Direction = "BUY" | "SELL";
+type MarketSession =
+  | "TOKYO"
+  | "LONDON"
+  | "NEW_YORK"
+  | "SYDNEY"
+  | "OVERLAP"
+  | "CLOSED";
 
-type EventRecord = {
-  type:
-    | "TP1_HIT"
-    | "TP2_HIT"
-    | "TP3_HIT"
-    | "SL_HIT"
-    | "BREAKEVEN_HIT";
+type EventType =
+  | "TP1_HIT"
+  | "TP2_HIT"
+  | "TP3_HIT"
+  | "SL_HIT"
+  | "BREAKEVEN_HIT";
 
-  at: string;
-  price: number;
-  lotClosed: number;
-  pnlUsd: number;
-  pnlToman: number | null;
-  usdToToman: number | null;
-
-  telegramStatus: "PENDING" | "SENT" | "FAILED";
-  telegramMessageId?: string | null;
-  telegramText?: string;
-
-  note?: string;
+type TelegramState = {
+  status: "PENDING" | "SENT" | "FAILED";
+  messageId?: number | null;
+  sentAt?: string | null;
+  error?: string | null;
+  attempts?: number;
 };
 
-type SignalMeta = {
-  risk: {
-    lotSize: number;
-    stopLossDollars: number;
-    tp1Dollars: number;
-    tp2Dollars: number;
-    tp3Dollars: number;
-    contractSize: number;
-  };
+type EventRecord = {
+  id: string;
+  type: EventType;
+  createdAt: string;
 
-  levels: {
-    sl: number;
-    tp1: number;
-    tp2: number;
-    tp3: number;
-    breakEvenSl: number;
-  };
+  price: number;
 
-  state: {
-    tp1Hit: boolean;
-    tp2Hit: boolean;
-    tp3Hit: boolean;
-    slHit: boolean;
-    breakEvenArmed: boolean;
-    breakEvenHit: boolean;
-  };
+  pnlUsd: number;
+  pnlToman: number | null;
+
+  usdToToman: number | null;
+
+  telegram: TelegramState;
+};
+
+type SignalState = {
+  tp1Hit: boolean;
+  tp2Hit: boolean;
+  tp3Hit: boolean;
+
+  slHit: boolean;
+  breakevenHit: boolean;
+
+  breakEvenArmed: boolean;
+
+  closed: boolean;
+
+  currentStopLoss: number;
+
+  remainingLot: number;
+
+  realizedPnlUsd: number;
+
+  realizedPnlToman: number | null;
 
   events: EventRecord[];
 
-  lastPrice?: number;
-  lastPriceAt?: string;
-  lastPriceSource?: string;
-
-  usdToToman?: number | null;
-  usdToTomanAt?: string | null;
-  usdToTomanDelayed?: boolean;
-  usdToTomanDelayedMinutes?: number | null;
-  usdToTomanSource?: string;
-
-  session?: string;
-
-  telegramInitialStatus?: "PENDING" | "SENT" | "FAILED";
-  telegramInitialError?: string | null;
+  lastCheckedAt?: string;
 };
 
-const TD = "https://api.twelvedata.com";
-const NETARZ = "https://netarz.ir/api/fx/v1";
+type SignalMeta = {
+  version: number;
 
-const SYMBOL = "XAUUSD";
-const TD_SYMBOL = "XAU/USD";
+  symbol: string;
 
-const TOTAL_LOT = 0.1;
+  direction: Direction;
 
-const TP1_LOT = 0.04;
-const TP2_LOT = 0.03;
-const TP3_LOT = 0.03;
+  timeframe: string;
 
-const REMAINING_AFTER_TP1 = 0.06;
+  session: MarketSession;
 
-const STOP_USD = 4;
-const TP1_USD = 5;
-const TP2_USD = 8;
-const TP3_USD = 12;
+  score: number;
 
-const CONTRACT_SIZE = 100;
+  confirmations: number;
 
-const MIN_SCORE = 70;
-const MIN_CONFIRMATIONS = 2;
+  reasons: string[];
 
-const ACTIVE_STATUSES = [
-  "WAITING",
-  "ACTIVE",
-  "TP1_HIT",
-  "TP2_HIT",
-];
+  entry: number;
 
-function num(v: unknown, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  stopLoss: number;
+
+  tp1: number;
+
+  tp2: number;
+
+  tp3: number;
+
+  initialStopLoss: number;
+
+  currentStopLoss: number;
+
+  totalLot: number;
+
+  tp1Lot: number;
+
+  tp2Lot: number;
+
+  tp3Lot: number;
+
+  remainingLot: number;
+
+  tp1Per001LotUsd: number;
+  tp2Per001LotUsd: number;
+  tp3Per001LotUsd: number;
+
+  tp1TotalUsd: number;
+  tp2TotalUsd: number;
+  tp3TotalUsd: number;
+
+  fullTpUsd: number;
+
+  usdToToman: number | null;
+  usdToTomanAsOf: string | null;
+  usdToTomanDelayed: boolean;
+  usdToTomanDelayedMinutes: number | null;
+
+  lastPrice: number;
+
+  lastPriceSource?: string;
+
+  state: SignalState;
+
+  telegramInitial?: TelegramState;
+
+  createdAt?: string;
+
+  updatedAt?: string;
+};
+
+
+/* =========================================================
+   BASIC HELPERS
+   ========================================================= */
+
+function num(value: unknown, fallback = 0): number {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+
+  return n;
 }
 
-function round(v: number, d = 5) {
-  const p = 10 ** d;
-  return Math.round(v * p) / p;
+function round(value: number, digits = 2): number {
+  const factor = Math.pow(10, digits);
+  return Math.round(value * factor) / factor;
 }
 
-function clamp(v: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, v));
+function clamp(
+  value: number,
+  min: number,
+  max: number,
+): number {
+  return Math.min(max, Math.max(min, value));
 }
 
-function avg(values: number[]) {
+function avg(values: number[]): number {
   if (!values.length) return 0;
 
   return (
-    values.reduce((a, b) => a + b, 0) /
+    values.reduce((sum, value) => sum + value, 0) /
     values.length
   );
 }
 
-function esc(value: string) {
-  return value
+function esc(value: unknown): string {
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/>/g, "&gt;");
 }
 
-function normalizeSymbol(value: unknown) {
+function normalizeSymbol(value: unknown): string {
   return String(value ?? "")
-    .replace(/[\/\s_-]/g, "")
+    .replace("/", "")
+    .replace("-", "")
+    .replace("_", "")
     .toUpperCase();
 }
 
-function normalizeTf(value?: string | null) {
-  const raw = String(value ?? "15min").toLowerCase();
+function normalizeTimeframe(value: unknown): string {
+  const tf = String(value ?? "1min").toLowerCase();
 
-  const x =
-    raw === "1m"
-      ? "1min"
-      : raw === "5m"
-        ? "5min"
-        : raw === "15m"
-          ? "15min"
-          : raw === "30m"
-            ? "30min"
-            : raw;
+  if (tf === "1m") return "1min";
+  if (tf === "5m") return "5min";
+  if (tf === "15m") return "15min";
+  if (tf === "30m") return "30min";
+  if (tf === "1h") return "1h";
+  if (tf === "4h") return "4h";
+  if (tf === "1d") return "1day";
 
-  if (x === "1h") return "1h";
-  if (x === "2h") return "2h";
-  if (x === "4h") return "4h";
-  if (x === "8h") return "8h";
-  if (x === "1d" || x === "1day") return "1day";
-
-  if (
-    [
-      "1min",
-      "5min",
-      "15min",
-      "30min",
-    ].includes(x)
-  ) {
-    return x;
-  }
-
-  return "15min";
+  return tf;
 }
 
-function tdSymbol(symbol: string) {
-  if (normalizeSymbol(symbol) === "XAUUSD") {
-    return TD_SYMBOL;
-  }
-
-  const s = normalizeSymbol(symbol);
-
-  if (s.length === 6) {
-    return `${s.slice(0, 3)}/${s.slice(3)}`;
-  }
-
-  return symbol;
+function isoNow(): string {
+  return new Date().toISOString();
 }
 
-function parseObject(value: unknown) {
-  return value &&
-    typeof value === "object"
-    ? (value as Record<string, any>)
-    : {};
+function iranTime(): string {
+  return new Intl.DateTimeFormat("fa-IR", {
+    timeZone: "Asia/Tehran",
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(new Date());
 }
+
+
+/* =========================================================
+   MARKET SESSION
+   IMPORTANT:
+   This is NOT getSession().
+   Auth getSession() comes from "@/lib/session".
+   ========================================================= */
+
+function getMarketSession(): MarketSession {
+  const now = new Date();
+
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      hour: "2-digit",
+      hour12: false,
+    }).format(now),
+  );
+
+  /*
+   * Approximate major forex/gold sessions in UTC.
+   */
+
+  const tokyo =
+    hour >= 0 && hour < 8;
+
+  const london =
+    hour >= 7 && hour < 16;
+
+  const newYork =
+    hour >= 13 && hour < 22;
+
+  const sydney =
+    hour >= 21 || hour < 6;
+
+  if (london && newYork) {
+    return "OVERLAP";
+  }
+
+  if (newYork) {
+    return "NEW_YORK";
+  }
+
+  if (london) {
+    return "LONDON";
+  }
+
+  if (tokyo) {
+    return "TOKYO";
+  }
+
+  if (sydney) {
+    return "SYDNEY";
+  }
+
+  return "CLOSED";
+}
+
 
 /* =========================================================
    TWELVE DATA
-========================================================= */
+   ========================================================= */
 
-async function td(
+async function tdRequest(
   endpoint: string,
-  params: Record<
-    string,
-    string | number | boolean
-  >,
-) {
-  const key =
-    process.env.TWELVE_DATA_API_KEY;
+  params: Record<string, string>,
+): Promise<any> {
+  const apiKey = process.env.TWELVE_DATA_API_KEY;
 
-  if (!key) {
+  if (!apiKey) {
     throw new Error(
-      "TWELVE_DATA_API_KEY وجود ندارد.",
+      "TWELVE_DATA_API_KEY is not configured",
     );
   }
 
-  const url =
-    new URL(`${TD}${endpoint}`);
+  const url = new URL(`${TD_BASE}${endpoint}`);
 
   Object.entries({
     ...params,
-    apikey: key,
-  }).forEach(
-    ([keyName, value]) => {
-      url.searchParams.set(
-        keyName,
-        String(value),
-      );
-    },
-  );
+    apikey: apiKey,
+  }).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
 
-  const response =
-    await fetch(url, {
-      cache: "no-store",
-      signal:
-        AbortSignal.timeout(10000),
-    });
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+    signal: AbortSignal.timeout(10000),
+  });
 
-  const data =
-    await response
-      .json()
-      .catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      `Twelve Data HTTP ${response.status}`,
+    );
+  }
+
+  const data = await response.json();
 
   if (
-    !response.ok ||
-    !data ||
-    data.status === "error" ||
-    data.code
+    data?.status === "error" ||
+    data?.code === 400 ||
+    data?.message
   ) {
     throw new Error(
       String(
-        data?.message ??
-          `Twelve Data HTTP ${response.status}`,
+        data?.message ||
+        data?.status ||
+        "Twelve Data error",
       ),
     );
   }
@@ -271,154 +445,123 @@ async function td(
   return data;
 }
 
-async function getLivePrice(
-  symbol = SYMBOL,
-) {
-  const data =
-    await td("/price", {
-      symbol: tdSymbol(symbol),
-      dp: 5,
+
+/* =========================================================
+   LIVE PRICE
+   ========================================================= */
+
+async function getLivePrice(): Promise<{
+  price: number;
+  source: string;
+  datetime: string | null;
+}> {
+  try {
+    const data = await tdRequest("/price", {
+      symbol: TD_SYMBOL,
+      dp: "5",
     });
 
-  const price =
-    num(data?.price);
+    const price = num(data?.price);
 
-  if (price <= 0) {
+    if (price > 0) {
+      return {
+        price,
+        source: "Twelve Data /price",
+        datetime: null,
+      };
+    }
+  } catch {
+    /*
+     * Fallback below.
+     */
+  }
+
+  const fallback = await getCandles(
+    TD_SYMBOL,
+    "1min",
+    2,
+  );
+
+  if (!fallback.length) {
     throw new Error(
-      "قیمت لحظه‌ای XAUUSD دریافت نشد.",
+      "Unable to obtain XAUUSD price",
     );
   }
 
   return {
-    price,
-    source:
-      "Twelve Data /price",
-    at:
-      new Date().toISOString(),
+    price: fallback[0].close,
+    source: "Twelve Data /time_series fallback",
+    datetime: fallback[0].datetime,
   };
 }
 
-async function getLatestBar(
-  symbol = SYMBOL,
-) {
-  const data =
-    await td("/time_series", {
-      symbol: tdSymbol(symbol),
-      interval: "1min",
-      outputsize: 2,
-      order: "desc",
-      timezone: "UTC",
-    });
 
-  const row =
-    data?.values?.[0];
-
-  if (!row) {
-    throw new Error(
-      "کندل لحظه‌ای XAUUSD دریافت نشد.",
-    );
-  }
-
-  return {
-    price: num(row.close),
-    high: num(row.high),
-    low: num(row.low),
-    datetime: String(
-      row.datetime,
-    ),
-  };
-}
+/* =========================================================
+   CANDLES
+   ========================================================= */
 
 async function getCandles(
   symbol: string,
   interval: string,
   outputsize = 220,
 ): Promise<Candle[]> {
-  const data =
-    await td("/time_series", {
-      symbol: tdSymbol(symbol),
-      interval,
-      outputsize,
-      order: "asc",
-      timezone: "UTC",
-    });
+  const data = await tdRequest("/time_series", {
+    symbol,
+    interval: normalizeTimeframe(interval),
+    outputsize: String(outputsize),
+    order: "desc",
+    timezone: "UTC",
+  });
 
-  if (
-    !Array.isArray(data?.values) ||
-    data.values.length < 60
-  ) {
-    throw new Error(
-      `داده کافی برای ${symbol} در ${interval} دریافت نشد.`,
-    );
+  if (!Array.isArray(data?.values)) {
+    return [];
   }
 
   return data.values
-    .map((x: any) => ({
-      datetime:
-        String(x.datetime),
-
-      open:
-        num(x.open),
-
-      high:
-        num(x.high),
-
-      low:
-        num(x.low),
-
-      close:
-        num(x.close),
-
+    .map((item: any): Candle => ({
+      datetime: String(item?.datetime ?? ""),
+      open: num(item?.open),
+      high: num(item?.high),
+      low: num(item?.low),
+      close: num(item?.close),
       volume:
-        x.volume == null
+        item?.volume == null
           ? undefined
-          : num(x.volume),
+          : num(item.volume),
     }))
     .filter(
-      (x: Candle) =>
-        x.open > 0 &&
-        x.high > 0 &&
-        x.low > 0 &&
-        x.close > 0,
+      (candle: Candle) =>
+        candle.close > 0 &&
+        candle.high > 0 &&
+        candle.low > 0,
     );
 }
 
+
 /* =========================================================
    INDICATORS
-========================================================= */
+   ========================================================= */
 
 function ema(
   values: number[],
   period: number,
-) {
-  if (
-    values.length <
-    period
-  ) {
-    return 0;
-  }
+): number[] {
+  if (!values.length) return [];
 
-  let result =
-    avg(
-      values.slice(
-        0,
-        period,
-      ),
-    );
+  const multiplier = 2 / (period + 1);
 
-  const multiplier =
-    2 / (period + 1);
+  const result: number[] = [];
 
-  for (
-    let i = period;
-    i < values.length;
-    i++
-  ) {
-    result =
-      values[i] *
-        multiplier +
-      result *
-        (1 - multiplier);
+  let previous = values[0];
+
+  result.push(previous);
+
+  for (let i = 1; i < values.length; i++) {
+    previous =
+      (values[i] - previous) * multiplier +
+      previous;
+
+    result.push(previous);
   }
 
   return result;
@@ -427,38 +570,27 @@ function ema(
 function rsi(
   values: number[],
   period = 14,
-) {
-  if (
-    values.length <=
-    period
-  ) {
+): number {
+  if (values.length <= period) {
     return 50;
   }
 
   let gain = 0;
   let loss = 0;
 
-  for (
-    let i = 1;
-    i <= period;
-    i++
-  ) {
+  for (let i = 1; i <= period; i++) {
     const change =
-      values[i] -
-      values[i - 1];
+      values[i] - values[i - 1];
 
     if (change >= 0) {
       gain += change;
     } else {
-      loss -= change;
+      loss += Math.abs(change);
     }
   }
 
-  let averageGain =
-    gain / period;
-
-  let averageLoss =
-    loss / period;
+  gain /= period;
+  loss /= period;
 
   for (
     let i = period + 1;
@@ -466,1074 +598,833 @@ function rsi(
     i++
   ) {
     const change =
-      values[i] -
-      values[i - 1];
+      values[i] - values[i - 1];
 
-    averageGain =
-      (
-        averageGain *
-          (period - 1) +
-        (change > 0
-          ? change
-          : 0)
-      ) / period;
+    const currentGain =
+      change > 0 ? change : 0;
 
-    averageLoss =
-      (
-        averageLoss *
-          (period - 1) +
-        (change < 0
-          ? -change
-          : 0)
-      ) / period;
+    const currentLoss =
+      change < 0 ? Math.abs(change) : 0;
+
+    gain =
+      (gain * (period - 1) +
+        currentGain) /
+      period;
+
+    loss =
+      (loss * (period - 1) +
+        currentLoss) /
+      period;
   }
 
-  if (
-    averageLoss === 0
-  ) {
-    return 100;
-  }
+  if (loss === 0) return 100;
 
-  return (
-    100 -
-    100 /
-      (
-        1 +
-        averageGain /
-          averageLoss
-      )
-  );
+  const rs = gain / loss;
+
+  return 100 - 100 / (1 + rs);
 }
 
 function atr(
   candles: Candle[],
   period = 14,
-) {
-  if (
-    candles.length <=
-    period
-  ) {
+): number {
+  if (candles.length < period + 1) {
     return 0;
   }
 
-  const trueRanges: number[] =
-    [];
+  const trs: number[] = [];
 
-  for (
-    let i = 1;
-    i < candles.length;
-    i++
-  ) {
-    trueRanges.push(
-      Math.max(
-        candles[i].high -
-          candles[i].low,
+  for (let i = 1; i < candles.length; i++) {
+    const current = candles[i];
+    const previous = candles[i - 1];
 
-        Math.abs(
-          candles[i].high -
-            candles[i - 1]
-              .close,
-        ),
-
-        Math.abs(
-          candles[i].low -
-            candles[i - 1]
-              .close,
-        ),
+    const tr = Math.max(
+      current.high - current.low,
+      Math.abs(
+        current.high - previous.close,
+      ),
+      Math.abs(
+        current.low - previous.close,
       ),
     );
+
+    trs.push(tr);
   }
 
-  return avg(
-    trueRanges.slice(
-      -period,
-    ),
-  );
+  return avg(trs.slice(-period));
 }
 
 function macd(
   values: number[],
-) {
-  const fast =
-    ema(values, 12);
+): {
+  macd: number;
+  signal: number;
+  histogram: number;
+} {
+  if (values.length < 30) {
+    return {
+      macd: 0,
+      signal: 0,
+      histogram: 0,
+    };
+  }
 
-  const slow =
-    ema(values, 26);
+  const ema12 = ema(values, 12);
+  const ema26 = ema(values, 26);
+
+  const line = values.map(
+    (_, index) =>
+      ema12[index] - ema26[index],
+  );
+
+  const signalLine = ema(line, 9);
+
+  const m =
+    line[line.length - 1] ?? 0;
+
+  const s =
+    signalLine[signalLine.length - 1] ?? 0;
 
   return {
-    line:
-      fast - slow,
+    macd: m,
+    signal: s,
+    histogram: m - s,
   };
 }
 
-function swings(
+function averageVolume(
   candles: Candle[],
-) {
-  const recent =
-    candles.slice(-80);
+  period = 20,
+): number {
+  const values = candles
+    .slice(-period)
+    .map((candle) =>
+      num(candle.volume),
+    )
+    .filter((value) => value > 0);
 
-  const highs: number[] =
-    [];
-
-  const lows: number[] =
-    [];
-
-  for (
-    let i = 2;
-    i <
-      recent.length - 2;
-    i++
-  ) {
-    if (
-      recent[i].high >
-        recent[i - 1].high &&
-      recent[i].high >
-        recent[i - 2].high &&
-      recent[i].high >
-        recent[i + 1].high &&
-      recent[i].high >
-        recent[i + 2].high
-    ) {
-      highs.push(
-        recent[i].high,
-      );
-    }
-
-    if (
-      recent[i].low <
-        recent[i - 1].low &&
-      recent[i].low <
-        recent[i - 2].low &&
-      recent[i].low <
-        recent[i + 1].low &&
-      recent[i].low <
-        recent[i + 2].low
-    ) {
-      lows.push(
-        recent[i].low,
-      );
-    }
-  }
-
-  return {
-    resistance:
-      highs.length
-        ? Math.max(
-            ...highs.slice(-5),
-          )
-        : recent[
-            recent.length - 1
-          ]?.high ?? 0,
-
-    support:
-      lows.length
-        ? Math.min(
-            ...lows.slice(-5),
-          )
-        : recent[
-            recent.length - 1
-          ]?.low ?? 0,
-  };
+  return avg(values);
 }
 
 function candlePattern(
-  candles: Candle[],
-  direction: Direction,
-) {
-  const previous =
-    candles[
-      candles.length - 2
-    ];
-
-  const current =
-    candles[
-      candles.length - 1
-    ];
-
+  candle: Candle,
+): {
+  bullish: boolean;
+  bearish: boolean;
+  name: string;
+} {
   const body =
-    Math.abs(
-      current.close -
-        current.open,
-    );
+    candle.close - candle.open;
+
+  const range =
+    candle.high - candle.low;
+
+  if (range <= 0) {
+    return {
+      bullish: false,
+      bearish: false,
+      name: "NONE",
+    };
+  }
+
+  const bodyRatio =
+    Math.abs(body) / range;
 
   const upper =
-    current.high -
+    candle.high -
     Math.max(
-      current.open,
-      current.close,
+      candle.open,
+      candle.close,
     );
 
   const lower =
     Math.min(
-      current.open,
-      current.close,
-    ) -
-    current.low;
-
-  const bullishEngulf =
-    current.close >
-      current.open &&
-    previous.close <
-      previous.open &&
-    current.close >
-      previous.open &&
-    current.open <
-      previous.close;
-
-  const bearishEngulf =
-    current.close <
-      current.open &&
-    previous.close >
-      previous.open &&
-    current.open >
-      previous.open &&
-    current.close <
-      previous.close;
-
-  const hammer =
-    lower >
-      body * 2 &&
-    upper <
-      Math.max(
-        body,
-        0.01,
-      );
-
-  const shootingStar =
-    upper >
-      body * 2 &&
-    lower <
-      Math.max(
-        body,
-        0.01,
-      );
+      candle.open,
+      candle.close,
+    ) - candle.low;
 
   if (
-    direction === "BUY" &&
-    (bullishEngulf ||
-      hammer)
+    body > 0 &&
+    bodyRatio > 0.55
   ) {
     return {
-      ok: true,
-      name:
-        bullishEngulf
-          ? "Bullish Engulfing"
-          : "Hammer",
+      bullish: true,
+      bearish: false,
+      name: "BULLISH_BODY",
     };
   }
 
   if (
-    direction === "SELL" &&
-    (bearishEngulf ||
-      shootingStar)
+    body < 0 &&
+    bodyRatio > 0.55
   ) {
     return {
-      ok: true,
-      name:
-        bearishEngulf
-          ? "Bearish Engulfing"
-          : "Shooting Star",
+      bullish: false,
+      bearish: true,
+      name: "BEARISH_BODY",
+    };
+  }
+
+  if (
+    lower > Math.abs(body) * 1.5 &&
+    upper < range * 0.3
+  ) {
+    return {
+      bullish: true,
+      bearish: false,
+      name: "BULLISH_REJECTION",
+    };
+  }
+
+  if (
+    upper > Math.abs(body) * 1.5 &&
+    lower < range * 0.3
+  ) {
+    return {
+      bullish: false,
+      bearish: true,
+      name: "BEARISH_REJECTION",
     };
   }
 
   return {
-    ok: false,
-    name:
-      "No confirmation",
+    bullish: false,
+    bearish: false,
+    name: "NEUTRAL",
   };
 }
 
+function recentHigh(
+  candles: Candle[],
+  count = 30,
+): number {
+  return Math.max(
+    ...candles
+      .slice(-count)
+      .map((candle) => candle.high),
+  );
+}
+
+function recentLow(
+  candles: Candle[],
+  count = 30,
+): number {
+  return Math.min(
+    ...candles
+      .slice(-count)
+      .map((candle) => candle.low),
+  );
+}
+
+
 /* =========================================================
    AI MARKET ANALYSIS
-========================================================= */
+   ========================================================= */
 
-async function analyze(
-  symbol: string,
-  timeframe: string,
-) {
-  const tf =
-    normalizeTf(timeframe);
+async function analyzeMarket(): Promise<{
+  direction: Direction | null;
+  score: number;
+  confirmations: number;
+  timeframe: string;
+  reasons: string[];
+}> {
+  const [
+    m1,
+    m5,
+    m15,
+    h1,
+    h4,
+  ] = await Promise.all([
+    getCandles(TD_SYMBOL, "1min", 220),
+    getCandles(TD_SYMBOL, "5min", 220),
+    getCandles(TD_SYMBOL, "15min", 220),
+    getCandles(TD_SYMBOL, "1h", 220),
+    getCandles(TD_SYMBOL, "4h", 220),
+  ]);
 
-  const chain = [
-    "4h",
-    "1h",
-    "15min",
-    "5min",
-    "1min",
-  ];
-
-  const results =
-    await Promise.all(
-      chain.map((x) =>
-        getCandles(
-          symbol,
-          x,
-          180,
-        ).catch(
-          () => null,
-        ),
-      ),
+  if (
+    m1.length < 50 ||
+    m5.length < 50 ||
+    m15.length < 50 ||
+    h1.length < 50
+  ) {
+    throw new Error(
+      "Not enough market candles for analysis",
     );
+  }
 
-  const map:
-    Record<
-      string,
-      Candle[]
-    > = {};
-
-  chain.forEach(
-    (name, index) => {
-      if (
-        results[index]
-      ) {
-        map[name] =
-          results[index]!;
-      }
-    },
+  const closes1 = m1.map(
+    (c) => c.close,
   );
 
-  const main =
-    map[tf] ??
-    map["15min"] ??
-    Object.values(map)[0];
+  const closes5 = m5.map(
+    (c) => c.close,
+  );
 
-  if (!main) {
-    throw new Error(
-      "هیچ داده‌ای برای تحلیل XAUUSD دریافت نشد.",
+  const closes15 = m15.map(
+    (c) => c.close,
+  );
+
+  const closes1h = h1.map(
+    (c) => c.close,
+  );
+
+  const closes4h = h4.map(
+    (c) => c.close,
+  );
+
+  const emaFast1 =
+    ema(closes1, 20).at(-1) ?? 0;
+
+  const emaSlow1 =
+    ema(closes1, 50).at(-1) ?? 0;
+
+  const emaFast5 =
+    ema(closes5, 20).at(-1) ?? 0;
+
+  const emaSlow5 =
+    ema(closes5, 50).at(-1) ?? 0;
+
+  const emaFast15 =
+    ema(closes15, 20).at(-1) ?? 0;
+
+  const emaSlow15 =
+    ema(closes15, 50).at(-1) ?? 0;
+
+  const emaFast1h =
+    ema(closes1h, 20).at(-1) ?? 0;
+
+  const emaSlow1h =
+    ema(closes1h, 50).at(-1) ?? 0;
+
+  const emaFast4h =
+    ema(closes4h, 20).at(-1) ?? 0;
+
+  const emaSlow4h =
+    ema(closes4h, 50).at(-1) ?? 0;
+
+  const rsi1 = rsi(closes1);
+  const rsi5 = rsi(closes5);
+  const rsi15 = rsi(closes15);
+
+  const macd1 = macd(closes1);
+  const macd5 = macd(closes5);
+
+  const last1 =
+    m1[m1.length - 1];
+
+  const last5 =
+    m5[m5.length - 1];
+
+  const last15 =
+    m15[m15.length - 1];
+
+  const price =
+    last1.close;
+
+  let buyVotes = 0;
+  let sellVotes = 0;
+
+  const reasons: string[] = [];
+
+  /*
+   * 1. MTF trend
+   */
+
+  if (
+    emaFast4h > emaSlow4h
+  ) {
+    buyVotes++;
+    reasons.push(
+      "روند H4 صعودی است",
+    );
+  } else if (
+    emaFast4h < emaSlow4h
+  ) {
+    sellVotes++;
+    reasons.push(
+      "روند H4 نزولی است",
     );
   }
 
-  const closes =
-    main.map(
-      (x) => x.close,
+  if (
+    emaFast1h > emaSlow1h
+  ) {
+    buyVotes++;
+    reasons.push(
+      "روند H1 صعودی است",
     );
-
-  const last =
-    main[
-      main.length - 1
-    ];
-
-  const ema20 =
-    ema(closes, 20);
-
-  const ema50 =
-    ema(closes, 50);
-
-  const currentRsi =
-    rsi(closes);
-
-  const currentMacd =
-    macd(closes);
-
-  const currentAtr =
-    atr(main);
-
-  const structure =
-    swings(main);
-
-  const bullish =
-    ema20 > ema50 &&
-    last.close > ema20;
-
-  const bearish =
-    ema20 < ema50 &&
-    last.close < ema20;
-
-  const breakoutBuy =
-    last.close >
-    structure.resistance;
-
-  const breakoutSell =
-    last.close <
-    structure.support;
-
-  const sweepLow =
-    last.low <
-      structure.support &&
-    last.close >
-      structure.support;
-
-  const sweepHigh =
-    last.high >
-      structure.resistance &&
-    last.close <
-      structure.resistance;
-
-  const pullbackBuy =
-    last.low <=
-      ema20 +
-        currentAtr *
-          0.35 &&
-    last.close > ema20;
-
-  const pullbackSell =
-    last.high >=
-      ema20 -
-        currentAtr *
-          0.35 &&
-    last.close < ema20;
-
-  const volumes =
-    main
-      .map(
-        (x) =>
-          x.volume ?? 0,
-      )
-      .slice(-21);
-
-  const averageVolume =
-    avg(
-      volumes.slice(0, -1),
+  } else if (
+    emaFast1h < emaSlow1h
+  ) {
+    sellVotes++;
+    reasons.push(
+      "روند H1 نزولی است",
     );
+  }
 
-  const volumeOk =
-    averageVolume > 0
-      ? (last.volume ?? 0) >=
-        averageVolume * 0.9
-      : true;
-
-  const buyCandle =
-    candlePattern(
-      main,
-      "BUY",
+  if (
+    emaFast15 > emaSlow15
+  ) {
+    buyVotes++;
+    reasons.push(
+      "روند M15 صعودی است",
     );
-
-  const sellCandle =
-    candlePattern(
-      main,
-      "SELL",
+  } else if (
+    emaFast15 < emaSlow15
+  ) {
+    sellVotes++;
+    reasons.push(
+      "روند M15 نزولی است",
     );
+  }
 
-  const mtf = [
-    map["4h"],
-    map["1h"],
-    map["15min"],
-    map["5min"],
-  ]
-    .filter(Boolean)
-    .map(
-      (candles) => {
-        const lastCandle =
-          candles![
-            candles!.length - 1
-          ];
+  /*
+   * 2. M5 trend
+   */
 
-        const values =
-          candles!.map(
-            (x) =>
-              x.close,
-          );
+  if (
+    emaFast5 > emaSlow5
+  ) {
+    buyVotes++;
+  } else if (
+    emaFast5 < emaSlow5
+  ) {
+    sellVotes++;
+  }
 
-        return lastCandle.close >
-          ema(values, 20)
-          ? 1
-          : -1;
-      },
+  /*
+   * 3. M1 momentum
+   */
+
+  if (
+    emaFast1 > emaSlow1
+  ) {
+    buyVotes++;
+  } else if (
+    emaFast1 < emaSlow1
+  ) {
+    sellVotes++;
+  }
+
+  /*
+   * 4. RSI
+   */
+
+  if (
+    rsi5 >= 52 &&
+    rsi5 <= 72
+  ) {
+    buyVotes++;
+    reasons.push(
+      `مومنتوم خرید M5 مناسب است RSI=${round(rsi5, 1)}`,
     );
+  }
 
-  const buyVotes =
-    [
-      bullish,
-      currentRsi > 50,
-      currentMacd.line > 0,
-      breakoutBuy ||
-        sweepLow ||
-        pullbackBuy,
-      buyCandle.ok,
-      volumeOk,
-      mtf.filter(
-        (x) => x > 0,
-      ).length >= 2,
-    ].filter(Boolean)
-      .length;
+  if (
+    rsi5 <= 48 &&
+    rsi5 >= 28
+  ) {
+    sellVotes++;
+    reasons.push(
+      `مومنتوم فروش M5 مناسب است RSI=${round(rsi5, 1)}`,
+    );
+  }
 
-  const sellVotes =
-    [
-      bearish,
-      currentRsi < 50,
-      currentMacd.line < 0,
-      breakoutSell ||
-        sweepHigh ||
-        pullbackSell,
-      sellCandle.ok,
-      volumeOk,
-      mtf.filter(
-        (x) => x < 0,
-      ).length >= 2,
-    ].filter(Boolean)
-      .length;
+  /*
+   * 5. MACD
+   */
 
-  const direction: Direction =
-    buyVotes >= sellVotes
-      ? "BUY"
-      : "SELL";
+  if (
+    macd5.histogram > 0
+  ) {
+    buyVotes++;
+    reasons.push(
+      "MACD M5 مومنتوم مثبت دارد",
+    );
+  } else if (
+    macd5.histogram < 0
+  ) {
+    sellVotes++;
+    reasons.push(
+      "MACD M5 مومنتوم منفی دارد",
+    );
+  }
+
+  /*
+   * 6. Candle confirmation
+   */
+
+  const pattern =
+    candlePattern(last1);
+
+  if (pattern.bullish) {
+    buyVotes++;
+    reasons.push(
+      `کندل M1 صعودی: ${pattern.name}`,
+    );
+  }
+
+  if (pattern.bearish) {
+    sellVotes++;
+    reasons.push(
+      `کندل M1 نزولی: ${pattern.name}`,
+    );
+  }
+
+  /*
+   * 7. Breakout / liquidity
+   */
+
+  const resistance =
+    recentHigh(m15, 30);
+
+  const support =
+    recentLow(m15, 30);
+
+  if (
+    price > resistance
+  ) {
+    buyVotes++;
+    reasons.push(
+      "قیمت مقاومت اخیر M15 را شکسته است",
+    );
+  }
+
+  if (
+    price < support
+  ) {
+    sellVotes++;
+    reasons.push(
+      "قیمت حمایت اخیر M15 را شکسته است",
+    );
+  }
+
+  /*
+   * 8. Volume
+   */
+
+  const avgVol =
+    averageVolume(m1, 20);
+
+  const currentVol =
+    num(last1.volume);
+
+  if (
+    avgVol > 0 &&
+    currentVol >= avgVol * 1.15
+  ) {
+    if (
+      last1.close >
+      last1.open
+    ) {
+      buyVotes++;
+      reasons.push(
+        "افزایش حجم همراه با حرکت صعودی",
+      );
+    } else if (
+      last1.close <
+      last1.open
+    ) {
+      sellVotes++;
+      reasons.push(
+        "افزایش حجم همراه با حرکت نزولی",
+      );
+    }
+  }
+
+  /*
+   * Final direction
+   */
+
+  let direction: Direction | null =
+    null;
+
+  if (
+    buyVotes > sellVotes &&
+    buyVotes >= MIN_CONFIRMATIONS
+  ) {
+    direction = "BUY";
+  }
+
+  if (
+    sellVotes > buyVotes &&
+    sellVotes >= MIN_CONFIRMATIONS
+  ) {
+    direction = "SELL";
+  }
 
   const confirmations =
-    direction === "BUY"
-      ? buyVotes
-      : sellVotes;
+    Math.max(
+      buyVotes,
+      sellVotes,
+    );
 
-  let score = 0;
+  /*
+   * Score intentionally not too strict.
+   */
 
-  if (
-    direction === "BUY"
-      ? bullish
-      : bearish
-  ) {
-    score += 18;
-  }
-
-  if (
-    direction === "BUY"
-      ? currentRsi > 50
-      : currentRsi < 50
-  ) {
-    score += 12;
-  }
-
-  if (
-    direction === "BUY"
-      ? currentMacd.line > 0
-      : currentMacd.line < 0
-  ) {
-    score += 12;
-  }
-
-  if (
-    direction === "BUY"
-      ? breakoutBuy ||
-        sweepLow
-      : breakoutSell ||
-        sweepHigh
-  ) {
-    score += 16;
-  }
-
-  if (
-    direction === "BUY"
-      ? pullbackBuy
-      : pullbackSell
-  ) {
-    score += 10;
-  }
-
-  if (
-    direction === "BUY"
-      ? buyCandle.ok
-      : sellCandle.ok
-  ) {
-    score += 12;
-  }
-
-  if (volumeOk) {
-    score += 8;
-  }
-
-  if (
-    mtf.filter(
-      (x) =>
-        direction ===
-        "BUY"
-          ? x > 0
-          : x < 0,
-    ).length >= 2
-  ) {
-    score += 12;
-  }
-
-  score = clamp(
-    Math.round(score),
+  const score = clamp(
+    50 + confirmations * 6,
     0,
     100,
   );
+
+  /*
+   * Use M1 as execution timeframe.
+   */
 
   return {
     direction,
     score,
     confirmations,
-
-    entry:
-      last.close,
-
-    atr:
-      currentAtr,
-
-    support:
-      structure.support,
-
-    resistance:
-      structure.resistance,
-
-    signals: {
-      trend:
-        direction === "BUY"
-          ? bullish
-          : bearish,
-
-      rsi:
-        currentRsi,
-
-      macd:
-        currentMacd.line,
-
-      breakout:
-        direction === "BUY"
-          ? breakoutBuy
-          : breakoutSell,
-
-      liquiditySweep:
-        direction === "BUY"
-          ? sweepLow
-          : sweepHigh,
-
-      pullback:
-        direction === "BUY"
-          ? pullbackBuy
-          : pullbackSell,
-
-      candle:
-        direction === "BUY"
-          ? buyCandle
-          : sellCandle,
-
-      volume:
-        volumeOk,
-
-      mtf,
-    },
-
-    reasons: [
-      direction === "BUY" &&
-      bullish
-        ? "روند صعودی EMA"
-        : direction === "SELL" &&
-            bearish
-          ? "روند نزولی EMA"
-          : "ساختار EMA",
-
-      `RSI ${round(
-        currentRsi,
-        1,
-      )}`,
-
-      direction === "BUY"
-        ? currentMacd.line > 0
-          ? "MACD مثبت"
-          : "MACD منفی"
-        : currentMacd.line < 0
-          ? "MACD منفی"
-          : "MACD مثبت",
-
-      breakoutBuy ||
-      breakoutSell
-        ? "Breakout ساختاری"
-        : sweepLow ||
-            sweepHigh
-          ? "Liquidity Sweep"
-          : pullbackBuy ||
-              pullbackSell
-            ? "Pullback"
-            : "ساختار قیمت",
-
-      (
-        direction === "BUY"
-          ? buyCandle
-          : sellCandle
-      ).ok
-        ? `الگوی کندلی ${
-            (
-              direction ===
-              "BUY"
-                ? buyCandle
-                : sellCandle
-            ).name
-          }`
-        : "بدون تأیید کندلی",
-
-      volumeOk
-        ? "حجم قابل قبول"
-        : "حجم ضعیف",
-
-      "تأیید چندتایم‌فریمی",
-    ],
-
-    timeframe:
-      tf,
+    timeframe: "1min",
+    reasons: reasons.slice(-10),
   };
 }
 
-/* =========================================================
-   SESSION
-   نکته مهم:
-   این تابع قبلاً با getSession تداخل داشت.
-   اکنون نام آن getMarketSession است.
-========================================================= */
-
-function getMarketSession() {
-  const now =
-    new Date();
-
-  const hour =
-    now.getUTCHours() +
-    now.getUTCMinutes() /
-      60;
-
-  const active: string[] =
-    [];
-
-  if (
-    hour >= 21 ||
-    hour < 6
-  ) {
-    active.push(
-      "🇦🇺 Sydney",
-    );
-  }
-
-  if (
-    hour >= 0 &&
-    hour < 9
-  ) {
-    active.push(
-      "🇯🇵 Tokyo",
-    );
-  }
-
-  if (
-    hour >= 7 &&
-    hour < 16
-  ) {
-    active.push(
-      "🇬🇧 London",
-    );
-  }
-
-  if (
-    hour >= 13 &&
-    hour < 22
-  ) {
-    active.push(
-      "🇺🇸 New York",
-    );
-  }
-
-  return active.length
-    ? active.join(
-        " · ",
-      )
-    : "🌙 Market transition";
-}
-
-function iranTime() {
-  return new Intl.DateTimeFormat(
-    "fa-IR",
-    {
-      timeZone:
-        "Asia/Tehran",
-
-      dateStyle:
-        "short",
-
-      timeStyle:
-        "medium",
-
-      hour12: false,
-    },
-  ).format(
-    new Date(),
-  );
-}
 
 /* =========================================================
-   FIXED GOLD PLAN
-========================================================= */
+   PRICE LEVEL CALCULATIONS
+   ========================================================= */
 
-function riskConfig() {
-  return {
-    lotSize:
-      TOTAL_LOT,
-
-    stopLossDollars:
-      STOP_USD,
-
-    tp1Dollars:
-      TP1_USD,
-
-    tp2Dollars:
-      TP2_USD,
-
-    tp3Dollars:
-      TP3_USD,
-
-    contractSize:
-      CONTRACT_SIZE,
-  };
-}
+/*
+ * XAUUSD:
+ *
+ * P/L = price movement × contract size × lot
+ *
+ * For 0.01 lot:
+ * 1$ price movement = $1
+ *
+ * Therefore:
+ *
+ * TP1:
+ * 5$ price movement
+ *
+ * TP2:
+ * 8$ price movement
+ *
+ * TP3:
+ * 12$ price movement
+ */
 
 function calculateLevels(
   entry: number,
   direction: Direction,
-) {
+): {
+  stopLoss: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+} {
   const slDistance =
-    STOP_USD /
-    (
-      TOTAL_LOT *
-      CONTRACT_SIZE
-    );
+    INITIAL_SL_TOTAL_USD /
+    (CONTRACT_SIZE * TOTAL_LOT);
 
   const tp1Distance =
-    TP1_USD /
-    (
-      TP1_LOT *
-      CONTRACT_SIZE
-    );
+    TP1_PER_001_LOT_USD /
+    (CONTRACT_SIZE * 0.01);
 
   const tp2Distance =
-    TP2_USD /
-    (
-      TP2_LOT *
-      CONTRACT_SIZE
-    );
+    TP2_PER_001_LOT_USD /
+    (CONTRACT_SIZE * 0.01);
 
   const tp3Distance =
-    TP3_USD /
-    (
-      TP3_LOT *
-      CONTRACT_SIZE
-    );
+    TP3_PER_001_LOT_USD /
+    (CONTRACT_SIZE * 0.01);
 
-  if (
-    direction === "BUY"
-  ) {
+  if (direction === "BUY") {
     return {
-      sl:
-        entry -
-        slDistance,
+      stopLoss: round(
+        entry - slDistance,
+        2,
+      ),
 
-      tp1:
-        entry +
-        tp1Distance,
+      tp1: round(
+        entry + tp1Distance,
+        2,
+      ),
 
-      tp2:
-        entry +
-        tp2Distance,
+      tp2: round(
+        entry + tp2Distance,
+        2,
+      ),
 
-      tp3:
-        entry +
-        tp3Distance,
-
-      breakEvenSl:
-        entry,
+      tp3: round(
+        entry + tp3Distance,
+        2,
+      ),
     };
   }
 
   return {
-    sl:
-      entry +
-      slDistance,
+    stopLoss: round(
+      entry + slDistance,
+      2,
+    ),
 
-    tp1:
-      entry -
-      tp1Distance,
+    tp1: round(
+      entry - tp1Distance,
+      2,
+    ),
 
-    tp2:
-      entry -
-      tp2Distance,
+    tp2: round(
+      entry - tp2Distance,
+      2,
+    ),
 
-    tp3:
-      entry -
-      tp3Distance,
-
-    breakEvenSl:
-      entry,
+    tp3: round(
+      entry - tp3Distance,
+      2,
+    ),
   };
 }
 
-/* =========================================================
-   NETARZ
-========================================================= */
 
-async function getUsdToman() {
-  const key =
+/* =========================================================
+   USD / TOMAN
+   ========================================================= */
+
+async function getUsdToman(): Promise<{
+  rate: number | null;
+  asOf: string | null;
+  delayed: boolean;
+  delayedMinutes: number | null;
+  error: string | null;
+}> {
+  const apiKey =
     process.env.NETARZ_API_KEY;
 
-  if (!key) {
+  if (!apiKey) {
     return {
       rate: null,
       asOf: null,
-      delayed: null,
+      delayed: false,
       delayedMinutes: null,
       error:
-        "NETARZ_API_KEY missing",
+        "NETARZ_API_KEY is not configured",
     };
   }
 
   try {
-    const response =
-      await fetch(
-        `${NETARZ}/rates/USD`,
-        {
-          cache:
-            "no-store",
-
-          signal:
-            AbortSignal.timeout(
-              10000,
-            ),
-
-          headers: {
-            Authorization:
-              `Bearer ${key}`,
-          },
+    const response = await fetch(
+      `${NETARZ_BASE}/rates/USD`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Authorization:
+            `Bearer ${apiKey}`,
+          Accept:
+            "application/json",
         },
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `NetArz HTTP ${response.status}`,
       );
-
-    const body =
-      await response
-        .json()
-        .catch(
-          () => null,
-        );
-
-    if (
-      !response.ok ||
-      !body?.data
-    ) {
-      return {
-        rate: null,
-
-        asOf:
-          body?.meta?.as_of ??
-          null,
-
-        delayed:
-          body?.meta
-            ?.is_delayed ??
-          null,
-
-        delayedMinutes:
-          body?.meta
-            ?.delayed_minutes ??
-          null,
-
-        error:
-          body?.error
-            ?.message ??
-          `NetArz HTTP ${response.status}`,
-      };
     }
+
+    const json = await response.json();
 
     const rate =
       num(
-        body.data.mid ??
-          body.meta?.usd_irt,
+        json?.data?.mid,
+        num(json?.meta?.usd_irt),
       );
 
+    if (!rate) {
+      throw new Error(
+        "NetArz returned no USD rate",
+      );
+    }
+
+    const delayed =
+      Boolean(
+        json?.meta?.is_delayed,
+      );
+
+    const delayedMinutes =
+      json?.meta?.delayed_minutes == null
+        ? null
+        : num(
+            json.meta.delayed_minutes,
+          );
+
     return {
-      rate:
-        rate > 0
-          ? rate
-          : null,
-
+      rate,
       asOf:
-        body.meta?.as_of ??
-        null,
-
-      delayed:
-        body.meta?.is_delayed ??
-        false,
-
-      delayedMinutes:
-        body.meta
-          ?.delayed_minutes ??
-        0,
-
-      error:
-        rate > 0
-          ? null
-          : "NetArz rate unavailable",
+        json?.meta?.as_of
+          ? String(json.meta.as_of)
+          : null,
+      delayed,
+      delayedMinutes,
+      error: null,
     };
   } catch (error) {
     return {
       rate: null,
       asOf: null,
-      delayed: null,
+      delayed: false,
       delayedMinutes: null,
-
       error:
-        error instanceof
-        Error
+        error instanceof Error
           ? error.message
-          : "NetArz request failed",
+          : "USD rate error",
     };
   }
 }
 
+
 /* =========================================================
    TELEGRAM
-========================================================= */
+   ========================================================= */
 
 async function sendTelegram(
   text: string,
-) {
+): Promise<{
+  ok: boolean;
+  messageId?: number;
+  error?: string;
+}> {
   const token =
-    process.env
-      .TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN;
 
-  const chat =
-    process.env
-      .TELEGRAM_SIGNAL_CHAT_ID;
+  const chatId =
+    process.env.TELEGRAM_SIGNAL_CHAT_ID;
 
-  if (
-    !token ||
-    !chat
-  ) {
+  if (!token || !chatId) {
     return {
       ok: false,
       error:
-        "Telegram environment variables missing",
+        "Telegram environment variables are missing",
     };
   }
 
   try {
-    const response =
-      await fetch(
-        `https://api.telegram.org/bot${token}/sendMessage`,
-        {
-          method:
-            "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            chat_id:
-              chat,
-
-            text,
-
-            parse_mode:
-              "HTML",
-
-            disable_web_page_preview:
-              true,
-          }),
-
-          signal:
-            AbortSignal.timeout(
-              10000,
-            ),
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
         },
-      );
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }),
+        signal: AbortSignal.timeout(10000),
+      },
+    );
 
     const data =
-      await response
-        .json()
-        .catch(
-          () => null,
-        );
+      await response.json();
 
     if (
       !response.ok ||
@@ -1541,542 +1432,811 @@ async function sendTelegram(
     ) {
       return {
         ok: false,
-
         error:
           String(
-            data?.description ??
-              `Telegram HTTP ${response.status}`,
+            data?.description ||
+            `Telegram HTTP ${response.status}`,
           ),
       };
     }
 
     return {
       ok: true,
-
       messageId:
-        String(
-          data.result
-            .message_id,
+        num(
+          data?.result?.message_id,
         ),
     };
   } catch (error) {
     return {
       ok: false,
-
       error:
-        error instanceof
-        Error
+        error instanceof Error
           ? error.message
           : "Telegram request failed",
     };
   }
 }
 
+
 /* =========================================================
-   META
-========================================================= */
+   TELEGRAM INITIAL SIGNAL
+   ========================================================= */
 
-function readMeta(
-  metadata: unknown,
-): SignalMeta {
-  const meta =
-    parseObject(
-      metadata,
-    );
+function makeInitialTelegramText(
+  signalId: string,
+  meta: SignalMeta,
+): string {
+  const directionIcon =
+    meta.direction === "BUY"
+      ? "🟢"
+      : "🔴";
 
-  const rawRisk =
-    parseObject(
-      meta.risk,
-    );
+  const strength =
+    meta.score >= 80 &&
+    meta.confirmations >= 6
+      ? "PROFESSIONAL"
+      : meta.score >= 70 &&
+          meta.confirmations >= 4
+        ? "MEDIUM"
+        : "WEAK";
 
-  const rawLevels =
-    parseObject(
-      meta.levels,
-    );
+  return `
+<b>🤖 XAUUSD AI SIGNAL</b>
 
-  const rawState =
-    parseObject(
-      meta.state,
-    );
+${directionIcon} <b>${meta.direction}</b>
+<b>Strength:</b> ${strength}
 
+<b>Entry:</b> ${meta.entry.toFixed(2)}
+<b>SL:</b> ${meta.stopLoss.toFixed(2)}
+
+<b>TP1:</b> ${meta.tp1.toFixed(2)}
+<b>TP2:</b> ${meta.tp2.toFixed(2)}
+<b>TP3:</b> ${meta.tp3.toFixed(2)}
+
+<b>LOT:</b> 0.10
+
+━━━━━━━━━━━━━━
+
+<b>TP1 PLAN</b>
+0.04 LOT → +$20
+
+<b>TP2 PLAN</b>
+0.03 LOT → +$24
+
+<b>TP3 PLAN</b>
+0.03 LOT → +$36
+
+<b>MAX PROFIT:</b> +$80
+
+━━━━━━━━━━━━━━
+
+<b>After TP1:</b>
+0.06 LOT remains
+SL → ENTRY
+Profit protection activated.
+
+<b>Score:</b> ${meta.score}/100
+<b>Confirmations:</b> ${meta.confirmations}
+<b>Session:</b> ${esc(meta.session)}
+
+<b>Iran Time:</b> ${esc(iranTime())}
+
+━━━━━━━━━━━━━━
+
+⚠️ <b>این تحلیل هوش مصنوعی است و تضمین سود ندارد.</b>
+
+<b>ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+}
+
+
+/* =========================================================
+   EVENT TELEGRAM
+   ========================================================= */
+
+function makeEventTelegramText(
+  signalId: string,
+  meta: SignalMeta,
+  event: EventRecord,
+): string {
+  const toman =
+    event.pnlToman == null
+      ? "نامشخص"
+      : `${round(
+          event.pnlToman,
+          0,
+        ).toLocaleString("en-US")} تومان`;
+
+  if (event.type === "TP1_HIT") {
+    return `
+<b>🎯 TP1 HIT</b>
+
+🟢 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b> ${event.price.toFixed(2)}
+
+<b>Closed:</b> 0.04 LOT
+<b>Profit:</b> +$20
+<b>تومان:</b> ${toman}
+
+━━━━━━━━━━━━━━
+
+🛡️ <b>RISK FREE ACTIVATED</b>
+
+Remaining:
+<b>0.06 LOT</b>
+
+Stop Loss:
+<b>ENTRY ${meta.entry.toFixed(2)}</b>
+
+اگر قیمت به Entry برگردد،
+سود TP1 حفظ می‌شود.
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (event.type === "BREAKEVEN_HIT") {
+    return `
+<b>🛡️ BREAK EVEN</b>
+
+<b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b> ${event.price.toFixed(2)}
+
+TP1 قبلاً فعال شده بود.
+
+<b>Protected Profit:</b>
++$20
+
+Remaining:
+<b>0.06 LOT</b>
+
+Position at Entry closed.
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (event.type === "TP2_HIT") {
+    return `
+<b>🎯 TP2 HIT</b>
+
+🟢 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b> ${event.price.toFixed(2)}
+
+<b>Closed:</b> 0.03 LOT
+
+<b>TP2 Profit:</b>
++$24
+
+<b>Total realized:</b>
++$44
+
+Remaining:
+<b>0.03 LOT</b>
+
+TP3 هنوز فعال است.
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (event.type === "TP3_HIT") {
+    return `
+<b>🏆 TP3 HIT — TRADE COMPLETED</b>
+
+🟢 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b> ${event.price.toFixed(2)}
+
+<b>Closed:</b> 0.03 LOT
+
+<b>TP3 Profit:</b>
++$36
+
+━━━━━━━━━━━━━━
+
+<b>FULL TP:</b>
++$80
+
+<b>0.10 LOT → CLOSED</b>
+
+<b>Trade completed successfully.</b>
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  if (event.type === "SL_HIT") {
+    return `
+<b>🛑 STOP LOSS HIT</b>
+
+🔴 <b>XAUUSD ${meta.direction}</b>
+
+<b>Price:</b> ${event.price.toFixed(2)}
+
+<b>Closed Remaining:</b>
+${meta.remainingLot.toFixed(2)} LOT
+
+<b>Loss:</b>
+-$4
+
+━━━━━━━━━━━━━━
+
+این پیام به معنی فعال شدن واقعی
+حد ضرر ثبت‌شده برای سیگنال است.
+
+<b>Iran Time:</b>
+${esc(iranTime())}
+
+<b>Signal ID:</b>
+<code>${esc(signalId)}</code>
+`.trim();
+  }
+
+  return `
+<b>📊 XAUUSD EVENT</b>
+
+${event.type}
+
+Price:
+${event.price.toFixed(2)}
+`.trim();
+}
+
+
+/* =========================================================
+   META NORMALIZATION
+   ========================================================= */
+
+function createDefaultState(
+  stopLoss: number,
+): SignalState {
   return {
-    risk: {
-      ...riskConfig(),
-      ...rawRisk,
-    },
+    tp1Hit: false,
+    tp2Hit: false,
+    tp3Hit: false,
 
-    levels: {
-      sl:
-        num(
-          rawLevels.sl,
-        ),
+    slHit: false,
+    breakevenHit: false,
 
-      tp1:
-        num(
-          rawLevels.tp1,
-        ),
+    breakEvenArmed: false,
 
-      tp2:
-        num(
-          rawLevels.tp2,
-        ),
+    closed: false,
 
-      tp3:
-        num(
-          rawLevels.tp3,
-        ),
+    currentStopLoss: stopLoss,
 
-      breakEvenSl:
-        num(
-          rawLevels.breakEvenSl,
-        ),
-    },
+    remainingLot: TOTAL_LOT,
 
-    state: {
-      tp1Hit:
-        Boolean(
-          rawState.tp1Hit,
-        ),
+    realizedPnlUsd: 0,
 
-      tp2Hit:
-        Boolean(
-          rawState.tp2Hit,
-        ),
+    realizedPnlToman: null,
 
-      tp3Hit:
-        Boolean(
-          rawState.tp3Hit,
-        ),
-
-      slHit:
-        Boolean(
-          rawState.slHit,
-        ),
-
-      breakEvenArmed:
-        Boolean(
-          rawState.breakEvenArmed,
-        ),
-
-      breakEvenHit:
-        Boolean(
-          rawState.breakEvenHit,
-        ),
-    },
-
-    events:
-      Array.isArray(
-        meta.events,
-      )
-        ? (
-            meta.events as EventRecord[]
-          )
-        : [],
-
-    lastPrice:
-      num(
-        meta.lastPrice,
-      ) ||
-      undefined,
-
-    lastPriceAt:
-      meta.lastPriceAt,
-
-    lastPriceSource:
-      meta.lastPriceSource,
-
-    usdToToman:
-      meta.usdToToman ??
-      null,
-
-    usdToTomanAt:
-      meta.usdToTomanAt,
-
-    usdToTomanDelayed:
-      meta.usdToTomanDelayed,
-
-    usdToTomanDelayedMinutes:
-      meta.usdToTomanDelayedMinutes,
-
-    usdToTomanSource:
-      meta.usdToTomanSource,
-
-    session:
-      meta.session,
-
-    telegramInitialStatus:
-      meta.telegramInitialStatus,
-
-    telegramInitialError:
-      meta.telegramInitialError,
+    events: [],
   };
 }
 
-/* =========================================================
-   EVENT TELEGRAM TEXT
-========================================================= */
+function normalizeMeta(
+  raw: unknown,
+  signal?: any,
+): SignalMeta | null {
+  if (
+    !raw ||
+    typeof raw !== "object"
+  ) {
+    return null;
+  }
 
-function makeEventText(
-  signal: any,
-  type: EventRecord["type"],
-  price: number,
-  pnlUsd: number,
-  pnlToman: number | null,
-  usdRate: number | null,
-  session: string,
-  remainingLot: number,
-) {
-  const title =
-    type === "TP1_HIT"
-      ? "🎯 TP1 HIT"
-      : type === "TP2_HIT"
-        ? "🎯 TP2 HIT"
-        : type === "TP3_HIT"
-          ? "🎯 TP3 HIT"
-          : type === "SL_HIT"
-            ? "🛑 STOP LOSS HIT"
-            : "🟡 BREAK-EVEN HIT";
+  const value =
+    raw as Record<string, any>;
 
-  const toman =
-    pnlToman == null
-      ? "—"
-      : `${
-          pnlToman >= 0
-            ? "+"
-            : "-"
-        }${Math.abs(
-          Math.round(
-            pnlToman,
+  const direction =
+    value.direction === "SELL"
+      ? "SELL"
+      : "BUY";
+
+  const entry =
+    num(
+      value.entry,
+      num(signal?.entry),
+    );
+
+  if (!entry) {
+    return null;
+  }
+
+  let stopLoss =
+    num(
+      value.stopLoss,
+      num(signal?.stopLoss),
+    );
+
+  let tp1 =
+    num(value.tp1);
+
+  let tp2 =
+    num(value.tp2);
+
+  let tp3 =
+    num(value.tp3);
+
+  /*
+   * Recovery for old signals whose metadata
+   * was incomplete.
+   */
+
+  if (
+    !stopLoss ||
+    !tp1 ||
+    !tp2 ||
+    !tp3
+  ) {
+    const levels =
+      calculateLevels(
+        entry,
+        direction,
+      );
+
+    stopLoss =
+      stopLoss || levels.stopLoss;
+
+    tp1 =
+      tp1 || levels.tp1;
+
+    tp2 =
+      tp2 || levels.tp2;
+
+    tp3 =
+      tp3 || levels.tp3;
+  }
+
+  const state =
+    value.state &&
+    typeof value.state === "object"
+      ? value.state
+      : createDefaultState(
+          stopLoss,
+        );
+
+  const events =
+    Array.isArray(state.events)
+      ? state.events
+      : [];
+
+  return {
+    version:
+      num(value.version, 2),
+
+    symbol:
+      String(
+        value.symbol ||
+        SYMBOL,
+      ),
+
+    direction,
+
+    timeframe:
+      String(
+        value.timeframe ||
+        "1min",
+      ),
+
+    session:
+      value.session ||
+      getMarketSession(),
+
+    score:
+      num(value.score),
+
+    confirmations:
+      num(value.confirmations),
+
+    reasons:
+      Array.isArray(value.reasons)
+        ? value.reasons.map(String)
+        : [],
+
+    entry,
+
+    stopLoss,
+
+    tp1,
+
+    tp2,
+
+    tp3,
+
+    initialStopLoss:
+      num(
+        value.initialStopLoss,
+        stopLoss,
+      ),
+
+    currentStopLoss:
+      num(
+        value.currentStopLoss,
+        state.currentStopLoss ||
+          stopLoss,
+      ),
+
+    totalLot:
+      num(
+        value.totalLot,
+        TOTAL_LOT,
+      ),
+
+    tp1Lot:
+      num(
+        value.tp1Lot,
+        TP1_LOT,
+      ),
+
+    tp2Lot:
+      num(
+        value.tp2Lot,
+        TP2_LOT,
+      ),
+
+    tp3Lot:
+      num(
+        value.tp3Lot,
+        TP3_LOT,
+      ),
+
+    remainingLot:
+      num(
+        value.remainingLot,
+        state.remainingLot ||
+          TOTAL_LOT,
+      ),
+
+    tp1Per001LotUsd:
+      TP1_PER_001_LOT_USD,
+
+    tp2Per001LotUsd:
+      TP2_PER_001_LOT_USD,
+
+    tp3Per001LotUsd:
+      TP3_PER_001_LOT_USD,
+
+    tp1TotalUsd:
+      TP1_TOTAL_USD,
+
+    tp2TotalUsd:
+      TP2_TOTAL_USD,
+
+    tp3TotalUsd:
+      TP3_TOTAL_USD,
+
+    fullTpUsd:
+      FULL_TP_USD,
+
+    usdToToman:
+      value.usdToToman == null
+        ? null
+        : num(
+            value.usdToToman,
           ),
-        ).toLocaleString(
-          "fa-IR",
-        )} تومان`;
 
-  return [
-    `<b>${title}</b>`,
+    usdToTomanAsOf:
+      value.usdToTomanAsOf
+        ? String(
+            value.usdToTomanAsOf,
+          )
+        : null,
 
-    "",
-
-    `🪙 <b>XAUUSD</b> · ${esc(
-      String(
-        signal.direction,
+    usdToTomanDelayed:
+      Boolean(
+        value.usdToTomanDelayed,
       ),
-    )}`,
 
-    `💵 قیمت برخورد: <b>${round(
-      price,
-      2,
-    )}</b>`,
+    usdToTomanDelayedMinutes:
+      value.usdToTomanDelayedMinutes ==
+      null
+        ? null
+        : num(
+            value.usdToTomanDelayedMinutes,
+          ),
 
-    `💰 P/L: <b>${
-      pnlUsd >= 0
-        ? "+"
-        : "-"
-    }$${Math.abs(
-      pnlUsd,
-    ).toFixed(2)}</b>`,
-
-    `🇮🇷 تومان: <b>${toman}</b>`,
-
-    usdRate
-      ? `💱 دلار نِت اَرز: <b>${Math.round(
-          usdRate,
-        ).toLocaleString(
-          "fa-IR",
-        )} تومان</b>`
-      : "💱 دلار نِت اَرز: <b>در دسترس نیست</b>",
-
-    `📦 حجم باقی‌مانده: <b>${remainingLot.toFixed(
-      2,
-    )} lot</b>`,
-
-    `🕒 ساعت ایران: <b>${iranTime()}</b>`,
-
-    `🌐 سشن: <b>${esc(
-      session,
-    )}</b>`,
-
-    `🆔 Signal: <code>${esc(
-      String(
-        signal.id,
+    lastPrice:
+      num(
+        value.lastPrice,
+        entry,
       ),
-    )}</code>`,
 
-    type ===
-    "TP1_HIT"
-      ? "\n🔐 TP1 فعال شد؛ SL برای 0.06 lot باقی‌مانده بلافاصله روی Entry منتقل شد."
-      : type ===
-          "TP2_HIT"
-        ? "\n⏳ TP2 ثبت شد؛ TP3 همچنان فعال است."
-        : type ===
-            "TP3_HIT"
-          ? "\n✅ هر 3 تارگت تکمیل شدند."
-          : type ===
-              "SL_HIT"
-            ? "\n❌ معامله با Stop Loss بسته شد."
-            : "\n🟡 قیمت به Entry برگشت؛ Break-even فعال شد.",
-  ].join("\n");
+    lastPriceSource:
+      value.lastPriceSource
+        ? String(
+            value.lastPriceSource,
+          )
+        : undefined,
+
+    state: {
+      tp1Hit:
+        Boolean(state.tp1Hit),
+
+      tp2Hit:
+        Boolean(state.tp2Hit),
+
+      tp3Hit:
+        Boolean(state.tp3Hit),
+
+      slHit:
+        Boolean(state.slHit),
+
+      breakevenHit:
+        Boolean(state.breakevenHit),
+
+      breakEvenArmed:
+        Boolean(
+          state.breakEvenArmed,
+        ),
+
+      closed:
+        Boolean(state.closed),
+
+      currentStopLoss:
+        num(
+          state.currentStopLoss,
+          stopLoss,
+        ),
+
+      remainingLot:
+        num(
+          state.remainingLot,
+          TOTAL_LOT,
+        ),
+
+      realizedPnlUsd:
+        num(
+          state.realizedPnlUsd,
+        ),
+
+      realizedPnlToman:
+        state.realizedPnlToman ==
+        null
+          ? null
+          : num(
+              state.realizedPnlToman,
+            ),
+
+      events:
+        events as EventRecord[],
+
+      lastCheckedAt:
+        state.lastCheckedAt,
+    },
+
+    telegramInitial:
+      value.telegramInitial,
+
+    createdAt:
+      value.createdAt,
+
+    updatedAt:
+      value.updatedAt,
+  };
 }
+
 
 /* =========================================================
    EVENT HELPERS
-========================================================= */
+   ========================================================= */
 
 function eventExists(
   meta: SignalMeta,
-  type: string,
-) {
-  return meta.events.some(
+  type: EventType,
+): boolean {
+  return meta.state.events.some(
     (event) =>
-      event.type ===
-      type,
+      event.type === type,
   );
 }
+
+function eventId(
+  signalId: string,
+  type: EventType,
+): string {
+  return `${signalId}:${type}`;
+}
+
+function calculateEventToman(
+  usd: number,
+  rate: number | null,
+): number | null {
+  if (
+    rate == null ||
+    !Number.isFinite(rate)
+  ) {
+    return null;
+  }
+
+  return round(
+    usd * rate,
+    0,
+  );
+}
+
+
+/* =========================================================
+   EVENT CREATION
+   ========================================================= */
+
+function createEvent(
+  signalId: string,
+  type: EventType,
+  price: number,
+  pnlUsd: number,
+  rate: number | null,
+): EventRecord {
+  return {
+    id: eventId(
+      signalId,
+      type,
+    ),
+
+    type,
+
+    createdAt:
+      isoNow(),
+
+    price:
+      round(price, 2),
+
+    pnlUsd:
+      round(pnlUsd, 2),
+
+    pnlToman:
+      calculateEventToman(
+        pnlUsd,
+        rate,
+      ),
+
+    usdToToman:
+      rate,
+
+    telegram: {
+      status: "PENDING",
+      messageId: null,
+      sentAt: null,
+      error: null,
+      attempts: 0,
+    },
+  };
+}
+
+
+/* =========================================================
+   PERSIST SIGNAL
+   ========================================================= */
+
+async function saveSignalMeta(
+  signalId: string,
+  meta: SignalMeta,
+  status?: string,
+): Promise<void> {
+  const payload: any = {
+    metadata: meta,
+  };
+
+  if (status) {
+    payload.status = status;
+  }
+
+  await prisma.tradingSignal.update({
+    where: {
+      id: signalId,
+    },
+    data: payload,
+  });
+}
+
+
+/* =========================================================
+   DELIVER EVENT
+   ========================================================= */
 
 async function deliverEvent(
   signal: any,
   meta: SignalMeta,
   event: EventRecord,
-) {
+): Promise<SignalMeta> {
   if (
-    !event.telegramText
+    event.telegram.status === "SENT"
   ) {
-    return false;
+    return meta;
   }
+
+  const text =
+    makeEventTelegramText(
+      signal.id,
+      meta,
+      event,
+    );
 
   const result =
-    await sendTelegram(
-      event.telegramText,
-    );
+    await sendTelegram(text);
 
-  const index =
-    meta.events.findIndex(
-      (x) =>
-        x.type ===
-          event.type &&
-        x.at ===
-          event.at,
-    );
+  event.telegram.attempts =
+    num(
+      event.telegram.attempts,
+    ) + 1;
 
-  if (index === -1) {
-    return false;
+  if (result.ok) {
+    event.telegram.status =
+      "SENT";
+
+    event.telegram.messageId =
+      result.messageId ?? null;
+
+    event.telegram.sentAt =
+      isoNow();
+
+    event.telegram.error =
+      null;
+  } else {
+    event.telegram.status =
+      "FAILED";
+
+    event.telegram.error =
+      result.error ||
+      "Telegram failed";
   }
 
-  meta.events[index] = {
-    ...meta.events[index],
-
-    telegramStatus:
-      result.ok
-        ? "SENT"
-        : "FAILED",
-
-    telegramMessageId:
-      result.ok
-        ? result.messageId
-        : null,
-
-    note: result.ok
-      ? meta.events[index]
-          .note
-      : `${
-          meta.events[index]
-            .note ?? ""
-        } | ${
-          result.error
-        }`,
-  };
-
-  const chat =
-    process.env
-      .TELEGRAM_SIGNAL_CHAT_ID;
-
-  if (chat) {
-    try {
-      await prisma.telegramDelivery.create(
-        {
-          data: {
-            signalId:
-              signal.id,
-
-            channelId:
-              chat,
-
-            messageId:
-              result.ok
-                ? result.messageId
-                : null,
-
-            status:
-              result.ok
-                ? "SENT"
-                : "FAILED",
-
-            errorMessage:
-              result.ok
-                ? null
-                : result.error,
-
-            sentAt:
-              result.ok
-                ? new Date()
-                : null,
-          },
-        },
-      );
-    } catch {
-      // وضعیت Event داخل metadata حفظ می‌شود.
-    }
-  }
-
-  return result.ok;
+  return meta;
 }
 
-/* =========================================================
-   INITIAL TELEGRAM MESSAGE
-========================================================= */
-
-function makeInitialSignalText(
-  signal: any,
-  meta: SignalMeta,
-  fx: {
-    rate: number | null;
-  },
-) {
-  const levels =
-    meta.levels;
-
-  return [
-    `🚨 <b>XAUUSD ${esc(
-      String(
-        signal.direction,
-      ),
-    )}</b>`,
-
-    "",
-
-    `🪙 نماد: <b>XAUUSD</b>`,
-
-    `📦 حجم کل: <b>${TOTAL_LOT.toFixed(
-      2,
-    )} lot</b>`,
-
-    `💵 Entry: <b>${round(
-      Number(
-        signal.entry,
-      ),
-      2,
-    )}</b>`,
-
-    `🛑 SL: <b>${round(
-      levels.sl,
-      2,
-    )}</b> · -$${STOP_USD}`,
-
-    `🎯 TP1: <b>${round(
-      levels.tp1,
-      2,
-    )}</b> · +$${TP1_USD} · بستن ${TP1_LOT.toFixed(
-      2,
-    )} lot`,
-
-    `🎯 TP2: <b>${round(
-      levels.tp2,
-      2,
-    )}</b> · +$${TP2_USD} · بستن ${TP2_LOT.toFixed(
-      2,
-    )} lot`,
-
-    `🎯 TP3: <b>${round(
-      levels.tp3,
-      2,
-    )}</b> · +$${TP3_USD} · بستن ${TP3_LOT.toFixed(
-      2,
-    )} lot`,
-
-    "",
-
-    `🔐 بعد از TP1: SL برای <b>${REMAINING_AFTER_TP1.toFixed(
-      2,
-    )} lot</b> روی Entry می‌آید.`,
-
-    `📊 Score: <b>${num(
-      signal.score,
-    )}/100</b>`,
-
-    `✅ Confirmations: <b>${num(
-      signal.confirmations
-        ? Array.isArray(
-            signal.confirmations,
-          )
-            ? 0
-            : signal.confirmations
-        : 0,
-    )}</b>`,
-
-    `🌐 سشن: <b>${esc(
-      meta.session ??
-        getMarketSession(),
-    )}</b>`,
-
-    `🕒 ساعت ایران: <b>${iranTime()}</b>`,
-
-    `💱 دلار نِت اَرز: <b>${
-      fx.rate
-        ? `${Math.round(
-            fx.rate,
-          ).toLocaleString(
-            "fa-IR",
-          )} تومان`
-        : "در دسترس نیست"
-    }</b>`,
-
-    "",
-
-    "⚠️ این سیگنال بر اساس داده بازار تولید شده است؛ قیمت اجرای بروکر می‌تواند به‌دلیل اسپرد و اسلیپیج متفاوت باشد.",
-  ].join("\n");
-}
 
 /* =========================================================
    MONITOR ONE SIGNAL
-========================================================= */
+   ========================================================= */
 
 async function monitorSignal(
   signal: any,
-) {
-  const candle =
-    await getLatestBar(
-      SYMBOL,
+): Promise<void> {
+  let meta =
+    normalizeMeta(
+      signal.metadata,
+      signal,
     );
 
-  const live =
-    await getLivePrice(
-      SYMBOL,
-    ).catch(
-      () => ({
-        price:
-          candle.price,
+  if (!meta) {
+    return;
+  }
 
-        source:
-          "Twelve Data /time_series",
+  if (
+    meta.state.closed
+  ) {
+    return;
+  }
 
-        at:
-          new Date().toISOString(),
-      }),
-    );
+  const [
+    live,
+    fx,
+    candles,
+  ] = await Promise.all([
+    getLivePrice(),
+    getUsdToman(),
+    getCandles(
+      TD_SYMBOL,
+      "1min",
+      5,
+    ),
+  ]);
 
   const price =
     live.price;
 
-  const meta =
-    readMeta(
-      signal.metadata,
-    );
-
   meta.lastPrice =
     price;
-
-  meta.lastPriceAt =
-    live.at;
 
   meta.lastPriceSource =
     live.source;
@@ -2084,2069 +2244,1686 @@ async function monitorSignal(
   meta.session =
     getMarketSession();
 
-  const fx =
-    await getUsdToman();
+  meta.usdToToman =
+    fx.rate;
 
-  if (fx.rate) {
-    meta.usdToToman =
-      fx.rate;
+  meta.usdToTomanAsOf =
+    fx.asOf;
 
-    meta.usdToTomanAt =
-      fx.asOf ??
-      new Date().toISOString();
+  meta.usdToTomanDelayed =
+    fx.delayed;
 
-    meta.usdToTomanDelayed =
-      fx.delayed ??
-      false;
+  meta.usdToTomanDelayedMinutes =
+    fx.delayedMinutes;
 
-    meta.usdToTomanDelayedMinutes =
-      fx.delayedMinutes ??
-      0;
-
-    meta.usdToTomanSource =
-      "NetArz";
-  }
+  meta.state.lastCheckedAt =
+    isoNow();
 
   /*
-   * ابتدا پیام‌های Event قبلی که
-   * به تلگرام نرفته‌اند دوباره ارسال می‌شوند.
+   * We use only candles that were created
+   * after the signal itself.
+   *
+   * This prevents an old candle's high/low
+   * from falsely triggering a brand-new signal.
    */
-  for (
-    const event of
-      meta.events.filter(
-        (x) =>
-          x.telegramStatus ===
-            "FAILED" ||
-          x.telegramStatus ===
-            "PENDING",
-      )
-  ) {
-    await deliverEvent(
-      signal,
-      meta,
-      event,
+
+  const signalCreatedAt =
+    signal.createdAt
+      ? new Date(
+          signal.createdAt,
+        ).getTime()
+      : 0;
+
+  const usableCandles =
+    candles.filter(
+      (candle) => {
+        const candleTime =
+          new Date(
+            candle.datetime,
+          ).getTime();
+
+        if (!signalCreatedAt) {
+          return true;
+        }
+
+        return (
+          candleTime >=
+          signalCreatedAt -
+            60_000
+        );
+      },
     );
-  }
 
-  const direction: Direction =
-    String(
-      signal.direction,
-    ).toUpperCase() ===
-    "SELL"
-      ? "SELL"
-      : "BUY";
+  const candleHigh =
+    usableCandles.length
+      ? Math.max(
+          ...usableCandles.map(
+            (c) => c.high,
+          ),
+        )
+      : price;
 
-  const state =
-    meta.state;
+  const candleLow =
+    usableCandles.length
+      ? Math.min(
+          ...usableCandles.map(
+            (c) => c.low,
+          ),
+        )
+      : price;
 
-  const levels =
-    meta.levels;
+  const hitHigh =
+    (level: number) =>
+      price >= level ||
+      candleHigh >= level;
+
+  const hitLow =
+    (level: number) =>
+      price <= level ||
+      candleLow <= level;
+
+  const isBuy =
+    meta.direction === "BUY";
+
+  /*
+   * =======================================================
+   * CURRENT STOP
+   * =======================================================
+   */
 
   const currentStop =
-    state.breakEvenArmed
-      ? levels.breakEvenSl
-      : levels.sl;
+    meta.state.breakEvenArmed
+      ? meta.entry
+      : meta.initialStopLoss;
+
+  meta.currentStopLoss =
+    currentStop;
+
+  meta.state.currentStopLoss =
+    currentStop;
 
   /*
-   * وقتی TP1 فعال شد،
-   * استاپ واقعی دیگر SL اولیه نیست.
-   * استاپ روی Entry قرار می‌گیرد.
+   * =======================================================
+   * STOP LOSS
+   *
+   * After TP1:
+   * SL = Entry
+   *
+   * Before TP1:
+   * SL = Initial SL
+   * =======================================================
    */
+
   const stopHit =
-    direction === "BUY"
-      ? candle.low <=
-          currentStop ||
-        price <=
-          currentStop
-      : candle.high >=
-          currentStop ||
-        price >=
-          currentStop;
-
-  const tp1Hit =
-    !state.tp1Hit &&
-    (
-      direction ===
-      "BUY"
-        ? candle.high >=
-            levels.tp1 ||
-          price >=
-            levels.tp1
-        : candle.low <=
-            levels.tp1 ||
-          price <=
-            levels.tp1
-    );
-
-  const tp2Hit =
-    state.tp1Hit &&
-    !state.tp2Hit &&
-    (
-      direction ===
-      "BUY"
-        ? candle.high >=
-            levels.tp2 ||
-          price >=
-            levels.tp2
-        : candle.low <=
-            levels.tp2 ||
-          price <=
-            levels.tp2
-    );
-
-  const tp3Hit =
-    state.tp2Hit &&
-    !state.tp3Hit &&
-    (
-      direction ===
-      "BUY"
-        ? candle.high >=
-            levels.tp3 ||
-          price >=
-            levels.tp3
-        : candle.low <=
-            levels.tp3 ||
-          price <=
-            levels.tp3
-    );
+    isBuy
+      ? hitLow(currentStop)
+      : hitHigh(currentStop);
 
   /*
-   * -------------------------------------------------------
-   * SL / BREAK EVEN
-   * -------------------------------------------------------
+   * IMPORTANT:
+   *
+   * If TP1 is hit during this scan,
+   * we activate BE.
+   *
+   * If price is also already back at Entry,
+   * the next monitor cycle will register BE.
+   *
+   * This prevents double-processing one event.
    */
 
   if (
-    !state.slHit &&
-    stopHit
+    stopHit &&
+    !meta.state.tp3Hit
   ) {
-    const isBreakEven =
-      state.breakEvenArmed;
-
-    const pnlUsd =
-      isBreakEven
-        ? 0
-        : -STOP_USD;
-
-    const event: EventRecord =
-      {
-        type:
-          isBreakEven
-            ? "BREAKEVEN_HIT"
-            : "SL_HIT",
-
-        at:
-          new Date().toISOString(),
-
-        price:
-          round(
-            currentStop,
-            5,
-          ),
-
-        lotClosed:
-          isBreakEven
-            ? REMAINING_AFTER_TP1
-            : TOTAL_LOT,
-
-        pnlUsd,
-
-        pnlToman:
-          fx.rate
-            ? pnlUsd *
-              fx.rate
-            : null,
-
-        usdToToman:
-          fx.rate,
-
-        telegramStatus:
-          "PENDING",
-
-        telegramMessageId:
-          null,
-
-        note:
-          isBreakEven
-            ? "TP1 hit and SL moved to Entry."
-            : "Initial stop loss hit.",
-      };
-
-    event.telegramText =
-      makeEventText(
-        signal,
-
-        event.type,
-
-        event.price,
-
-        event.pnlUsd,
-
-        event.pnlToman,
-
-        event.usdToToman,
-
-        meta.session ??
-          getMarketSession(),
-
-        0,
-      );
+    /*
+     * If TP1 has already happened,
+     * this is BREAK EVEN.
+     */
 
     if (
-      !eventExists(
-        meta,
-        event.type,
-      )
+      meta.state.breakEvenArmed &&
+      !meta.state.breakevenHit
     ) {
-      meta.events.push(
-        event,
-      );
+      if (
+        !eventExists(
+          meta,
+          "BREAKEVEN_HIT",
+        )
+      ) {
+        const event =
+          createEvent(
+            signal.id,
+            "BREAKEVEN_HIT",
+            price,
+            0,
+            fx.rate,
+          );
+
+        meta.state.events.push(
+          event,
+        );
+
+        meta.state.breakevenHit =
+          true;
+
+        meta.state.closed =
+          true;
+
+        meta.state.remainingLot =
+          0;
+
+        meta.state.currentStopLoss =
+          meta.entry;
+
+        meta.currentStopLoss =
+          meta.entry;
+
+        meta.state.realizedPnlToman =
+          calculateEventToman(
+            meta.state
+              .realizedPnlUsd,
+            fx.rate,
+          );
+
+        await saveSignalMeta(
+          signal.id,
+          meta,
+          "BREAKEVEN",
+        );
+
+        const updated =
+          await deliverEvent(
+            signal,
+            meta,
+            event,
+          );
+
+        await saveSignalMeta(
+          signal.id,
+          updated,
+          "BREAKEVEN",
+        );
+      }
+
+      return;
     }
 
-    state.slHit =
-      true;
+    /*
+     * Initial SL.
+     */
 
-    if (isBreakEven) {
-      state.breakEvenHit =
-        true;
+    if (
+      !meta.state.slHit
+    ) {
+      if (
+        !eventExists(
+          meta,
+          "SL_HIT",
+        )
+      ) {
+        const event =
+          createEvent(
+            signal.id,
+            "SL_HIT",
+            price,
+            -INITIAL_SL_TOTAL_USD,
+            fx.rate,
+          );
+
+        meta.state.events.push(
+          event,
+        );
+
+        meta.state.slHit =
+          true;
+
+        meta.state.closed =
+          true;
+
+        meta.state.remainingLot =
+          0;
+
+        meta.state.currentStopLoss =
+          meta.initialStopLoss;
+
+        meta.currentStopLoss =
+          meta.initialStopLoss;
+
+        meta.state.realizedPnlUsd =
+          round(
+            meta.state
+              .realizedPnlUsd -
+              INITIAL_SL_TOTAL_USD,
+            2,
+          );
+
+        meta.state.realizedPnlToman =
+          calculateEventToman(
+            meta.state
+              .realizedPnlUsd,
+            fx.rate,
+          );
+
+        await saveSignalMeta(
+          signal.id,
+          meta,
+          "SL_HIT",
+        );
+
+        const updated =
+          await deliverEvent(
+            signal,
+            meta,
+            event,
+          );
+
+        await saveSignalMeta(
+          signal.id,
+          updated,
+          "SL_HIT",
+        );
+      }
+
+      return;
     }
   }
 
-  /*
-   * -------------------------------------------------------
-   * TP1
-   * -------------------------------------------------------
-   */
 
-  else if (
-    !state.slHit &&
-    tp1Hit
+  /* =======================================================
+     TP1
+     ======================================================= */
+
+  if (
+    !meta.state.tp1Hit &&
+    (
+      isBuy
+        ? hitHigh(meta.tp1)
+        : hitLow(meta.tp1)
+    )
   ) {
-    const event: EventRecord =
-      {
-        type:
-          "TP1_HIT",
-
-        at:
-          new Date().toISOString(),
-
-        price:
-          round(
-            levels.tp1,
-            5,
-          ),
-
-        lotClosed:
-          TP1_LOT,
-
-        pnlUsd:
-          TP1_USD,
-
-        pnlToman:
-          fx.rate
-            ? TP1_USD *
-              fx.rate
-            : null,
-
-        usdToToman:
-          fx.rate,
-
-        telegramStatus:
-          "PENDING",
-
-        telegramMessageId:
-          null,
-
-        note:
-          "TP1 hit. SL moved to Entry for remaining 0.06 lot.",
-      };
-
-    state.tp1Hit =
-      true;
-
-    state.breakEvenArmed =
-      true;
-
-    event.telegramText =
-      makeEventText(
-        signal,
-
-        event.type,
-
-        event.price,
-
-        event.pnlUsd,
-
-        event.pnlToman,
-
-        event.usdToToman,
-
-        meta.session ??
-          getMarketSession(),
-
-        REMAINING_AFTER_TP1,
-      );
-
     if (
       !eventExists(
         meta,
         "TP1_HIT",
       )
     ) {
-      meta.events.push(
+      const event =
+        createEvent(
+          signal.id,
+          "TP1_HIT",
+          price,
+          TP1_TOTAL_USD,
+          fx.rate,
+        );
+
+      meta.state.events.push(
         event,
       );
-    }
-  }
 
-  /*
-   * -------------------------------------------------------
-   * TP2
-   * -------------------------------------------------------
-   */
+      meta.state.tp1Hit =
+        true;
 
-  else if (
-    !state.slHit &&
-    tp2Hit
-  ) {
-    const event: EventRecord =
-      {
-        type:
-          "TP2_HIT",
+      /*
+       * 0.04 lot is closed.
+       */
 
-        at:
-          new Date().toISOString(),
+      meta.state.remainingLot =
+        round(
+          TOTAL_LOT -
+            TP1_LOT,
+          2,
+        );
 
-        price:
-          round(
-            levels.tp2,
-            5,
-          ),
+      /*
+       * VERY IMPORTANT:
+       *
+       * Remaining = 0.06 lot
+       *
+       * Stop -> Entry
+       */
 
-        lotClosed:
-          TP2_LOT,
+      meta.state.breakEvenArmed =
+        true;
 
-        pnlUsd:
-          TP2_USD,
+      meta.state.currentStopLoss =
+        meta.entry;
 
-        pnlToman:
-          fx.rate
-            ? TP2_USD *
-              fx.rate
-            : null,
+      meta.currentStopLoss =
+        meta.entry;
 
-        usdToToman:
+      meta.state.realizedPnlUsd =
+        round(
+          meta.state
+            .realizedPnlUsd +
+            TP1_TOTAL_USD,
+          2,
+        );
+
+      meta.state.realizedPnlToman =
+        calculateEventToman(
+          meta.state
+            .realizedPnlUsd,
           fx.rate,
+        );
 
-        telegramStatus:
-          "PENDING",
+      /*
+       * Status changes to TP1_HIT.
+       */
 
-        telegramMessageId:
-          null,
-
-        note:
-          "TP2 hit. TP3 remains active.",
-      };
-
-    state.tp2Hit =
-      true;
-
-    event.telegramText =
-      makeEventText(
-        signal,
-
-        event.type,
-
-        event.price,
-
-        event.pnlUsd,
-
-        event.pnlToman,
-
-        event.usdToToman,
-
-        meta.session ??
-          getMarketSession(),
-
-        TP3_LOT,
+      await saveSignalMeta(
+        signal.id,
+        meta,
+        "TP1_HIT",
       );
 
+      const updated =
+        await deliverEvent(
+          signal,
+          meta,
+          event,
+        );
+
+      await saveSignalMeta(
+        signal.id,
+        updated,
+        "TP1_HIT",
+      );
+    }
+
+    return;
+  }
+
+
+  /* =======================================================
+     TP2
+     ======================================================= */
+
+  if (
+    meta.state.tp1Hit &&
+    !meta.state.tp2Hit &&
+    (
+      isBuy
+        ? hitHigh(meta.tp2)
+        : hitLow(meta.tp2)
+    )
+  ) {
     if (
       !eventExists(
         meta,
         "TP2_HIT",
       )
     ) {
-      meta.events.push(
+      const event =
+        createEvent(
+          signal.id,
+          "TP2_HIT",
+          price,
+          TP2_TOTAL_USD,
+          fx.rate,
+        );
+
+      meta.state.events.push(
         event,
       );
-    }
-  }
 
-  /*
-   * -------------------------------------------------------
-   * TP3
-   * -------------------------------------------------------
-   */
+      meta.state.tp2Hit =
+        true;
 
-  else if (
-    !state.slHit &&
-    tp3Hit
-  ) {
-    const event: EventRecord =
-      {
-        type:
-          "TP3_HIT",
+      /*
+       * 0.03 lot closes.
+       *
+       * 0.03 lot remains.
+       */
 
-        at:
-          new Date().toISOString(),
+      meta.state.remainingLot =
+        TP3_LOT;
 
-        price:
-          round(
-            levels.tp3,
-            5,
-          ),
+      meta.state.realizedPnlUsd =
+        round(
+          meta.state
+            .realizedPnlUsd +
+            TP2_TOTAL_USD,
+          2,
+        );
 
-        lotClosed:
-          TP3_LOT,
-
-        pnlUsd:
-          TP3_USD,
-
-        pnlToman:
-          fx.rate
-            ? TP3_USD *
-              fx.rate
-            : null,
-
-        usdToToman:
+      meta.state.realizedPnlToman =
+        calculateEventToman(
+          meta.state
+            .realizedPnlUsd,
           fx.rate,
+        );
 
-        telegramStatus:
-          "PENDING",
-
-        telegramMessageId:
-          null,
-
-        note:
-          "TP3 hit. Full planned position completed.",
-      };
-
-    state.tp3Hit =
-      true;
-
-    event.telegramText =
-      makeEventText(
-        signal,
-
-        event.type,
-
-        event.price,
-
-        event.pnlUsd,
-
-        event.pnlToman,
-
-        event.usdToToman,
-
-        meta.session ??
-          getMarketSession(),
-
-        0,
+      await saveSignalMeta(
+        signal.id,
+        meta,
+        "TP2_HIT",
       );
 
+      const updated =
+        await deliverEvent(
+          signal,
+          meta,
+          event,
+        );
+
+      await saveSignalMeta(
+        signal.id,
+        updated,
+        "TP2_HIT",
+      );
+    }
+
+    return;
+  }
+
+
+  /* =======================================================
+     TP3
+     ======================================================= */
+
+  if (
+    meta.state.tp1Hit &&
+    meta.state.tp2Hit &&
+    !meta.state.tp3Hit &&
+    (
+      isBuy
+        ? hitHigh(meta.tp3)
+        : hitLow(meta.tp3)
+    )
+  ) {
     if (
       !eventExists(
         meta,
         "TP3_HIT",
       )
     ) {
-      meta.events.push(
-        event,
-      );
-    }
-  }
-
-  /*
-   * -------------------------------------------------------
-   * STATUS
-   * -------------------------------------------------------
-   */
-
-  let status =
-    "ACTIVE";
-
-  let closedAt:
-    | Date
-    | undefined;
-
-  if (
-    state.slHit
-  ) {
-    status =
-      state.breakEvenHit
-        ? "CLOSED"
-        : "SL_HIT";
-
-    closedAt =
-      new Date();
-  } else if (
-    state.tp3Hit
-  ) {
-    status =
-      "CLOSED";
-
-    closedAt =
-      new Date();
-  } else if (
-    state.tp2Hit
-  ) {
-    status =
-      "TP2_HIT";
-  } else if (
-    state.tp1Hit
-  ) {
-    status =
-      "TP1_HIT";
-  }
-
-  /*
-   * اول Event را در دیتابیس ذخیره می‌کنیم.
-   */
-  await prisma.tradingSignal.update(
-    {
-      where: {
-        id:
+      const event =
+        createEvent(
           signal.id,
-      },
-
-      data: {
-        status,
-
-        closedAt,
-
-        stopLoss:
-          state.breakEvenArmed
-            ? levels.breakEvenSl
-            : levels.sl,
-
-        metadata:
-          meta as any,
-      },
-    },
-  );
-
-  /*
-   * بعد Eventها را به Telegram می‌فرستیم.
-   * اگر شکست بخورد، FAILED ذخیره می‌شود
-   * و اجرای بعدی دوباره تلاش خواهد کرد.
-   */
-  for (
-    const event of
-      meta.events.filter(
-        (x) =>
-          x.telegramStatus ===
-          "PENDING",
-      )
-  ) {
-    await deliverEvent(
-      signal,
-      meta,
-      event,
-    );
-  }
-
-  await prisma.tradingSignal.update(
-    {
-      where: {
-        id:
-          signal.id,
-      },
-
-      data: {
-        metadata:
-          meta as any,
-      },
-    },
-  );
-
-  return {
-    signalId:
-      signal.id,
-
-    price,
-
-    status,
-
-    session:
-      meta.session,
-
-    events:
-      meta.events.map(
-        (event) => ({
-          type:
-            event.type,
-
-          price:
-            event.price,
-
-          pnlUsd:
-            event.pnlUsd,
-
-          pnlToman:
-            event.pnlToman,
-
-          telegram:
-            event.telegramStatus,
-
-          at:
-            event.at,
-        }),
-      ),
-  };
-}
-
-/* =========================================================
-   PERFORMANCE
-========================================================= */
-
-function calculatePerformance(
-  signals: any[],
-  from: Date,
-) {
-  let total = 0;
-  let wins = 0;
-  let losses = 0;
-
-  let pnlUsd = 0;
-  let pnlToman = 0;
-
-  let hasToman =
-    false;
-
-  for (
-    const signal of
-      signals
-  ) {
-    const meta =
-      readMeta(
-        signal.metadata,
-      );
-
-    const events =
-      meta.events.filter(
-        (event) =>
-          new Date(
-            event.at,
-          ).getTime() >=
-          from.getTime(),
-      );
-
-    if (
-      !events.length
-    ) {
-      continue;
-    }
-
-    const hasTp =
-      events.some(
-        (event) =>
-          event.type ===
-            "TP1_HIT" ||
-          event.type ===
-            "TP2_HIT" ||
-          event.type ===
-            "TP3_HIT",
-      );
-
-    const finished =
-      events.some(
-        (event) =>
-          event.type ===
-            "SL_HIT" ||
-          event.type ===
-            "BREAKEVEN_HIT" ||
-          event.type ===
-            "TP3_HIT",
-      );
-
-    if (!finished) {
-      continue;
-    }
-
-    total++;
-
-    if (hasTp) {
-      wins++;
-    } else if (
-      events.some(
-        (event) =>
-          event.type ===
-          "SL_HIT",
-      )
-    ) {
-      losses++;
-    }
-
-    for (
-      const event of
-        events
-    ) {
-      pnlUsd +=
-        num(
-          event.pnlUsd,
+          "TP3_HIT",
+          price,
+          TP3_TOTAL_USD,
+          fx.rate,
         );
 
-      if (
-        event.pnlToman !=
-        null
-      ) {
-        pnlToman +=
-          num(
-            event.pnlToman,
-          );
+      meta.state.events.push(
+        event,
+      );
 
-        hasToman =
-          true;
-      }
+      meta.state.tp3Hit =
+        true;
+
+      meta.state.remainingLot =
+        0;
+
+      meta.state.closed =
+        true;
+
+      meta.state.realizedPnlUsd =
+        round(
+          meta.state
+            .realizedPnlUsd +
+            TP3_TOTAL_USD,
+          2,
+        );
+
+      meta.state.realizedPnlToman =
+        calculateEventToman(
+          meta.state
+            .realizedPnlUsd,
+          fx.rate,
+        );
+
+      await saveSignalMeta(
+        signal.id,
+        meta,
+        "TP3_HIT",
+      );
+
+      const updated =
+        await deliverEvent(
+          signal,
+          meta,
+          event,
+        );
+
+      await saveSignalMeta(
+        signal.id,
+        updated,
+        "TP3_HIT",
+      );
     }
   }
-
-  return {
-    signals:
-      total,
-
-    wins,
-
-    losses,
-
-    winRate:
-      total
-        ? round(
-            (wins /
-              total) *
-              100,
-            2,
-          )
-        : 0,
-
-    pnlUsd:
-      round(
-        pnlUsd,
-        2,
-      ),
-
-    pnlToman:
-      hasToman
-        ? Math.round(
-            pnlToman,
-          )
-        : null,
-  };
 }
 
+
 /* =========================================================
-   SCAN USER
-========================================================= */
+   RETRY FAILED TELEGRAM EVENTS
+   ========================================================= */
+
+async function retryFailedEvents():
+  Promise<void> {
+  const signals =
+    await prisma.tradingSignal.findMany({
+      where: {
+        status: {
+          in: ACTIVE_STATUSES,
+        },
+      },
+      take: 100,
+    });
+
+  for (
+    const signal of signals
+  ) {
+    const meta =
+      normalizeMeta(
+        signal.metadata,
+        signal,
+      );
+
+    if (!meta) continue;
+
+    let changed = false;
+
+    for (
+      const event of meta.state.events
+    ) {
+      if (
+        event.telegram.status ===
+        "FAILED"
+      ) {
+        const attempts =
+          num(
+            event.telegram.attempts,
+          );
+
+        /*
+         * Avoid endless hammering.
+         * Five attempts is enough for one cycle.
+         */
+
+        if (attempts >= 5) {
+          continue;
+        }
+
+        const updated =
+          await deliverEvent(
+            signal,
+            meta,
+            event,
+          );
+
+        meta.state.events =
+          updated.state.events;
+
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await saveSignalMeta(
+        signal.id,
+        meta,
+        signal.status,
+      );
+    }
+  }
+}
+
+
+/* =========================================================
+   SCAN ONE USER
+   ========================================================= */
 
 async function scanUser(
   userId: string,
-  requestedTf?: string,
-) {
+): Promise<any> {
   const bots =
-    await prisma.tradingBot.findMany(
-      {
-        where: {
-          userId,
-
-          isActive:
-            true,
-
-          botStatus: {
-            in: [
-              "RUNNING",
-              "ACTIVE",
-              "STARTED",
-            ],
-          },
-
-          symbol: {
-            in: [
-              "XAUUSD",
-              "XAU/USD",
-              "xauusd",
-              "xau/usd",
-            ],
-          },
-        },
-
-        orderBy: {
-          updatedAt:
-            "desc",
-        },
-
-        take: 20,
+    await prisma.tradingBot.findMany({
+      where: {
+        userId,
+        isActive: true,
       },
+    });
+
+  const goldBots =
+    bots.filter(
+      (bot: any) =>
+        normalizeSymbol(
+          bot.symbol,
+        ) === SYMBOL ||
+        normalizeSymbol(
+          bot.symbol,
+        ) === "GOLD",
     );
 
-  const made: any[] =
-    [];
+  if (!goldBots.length) {
+    return {
+      created: false,
+      reason:
+        "No active XAUUSD bot",
+    };
+  }
 
-  const errors: any[] =
-    [];
+  /*
+   * Do not create another signal while
+   * an existing one is active.
+   */
 
-  for (
-    const bot of bots
+  const existing =
+    await prisma.tradingSignal.findFirst({
+      where: {
+        userId,
+        symbol: SYMBOL,
+        status: {
+          in: ACTIVE_STATUSES,
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+  if (existing) {
+    return {
+      created: false,
+      reason:
+        "Active XAUUSD signal already exists",
+      signalId:
+        existing.id,
+    };
+  }
+
+  /*
+   * Analysis
+   */
+
+  const analysis =
+    await analyzeMarket();
+
+  if (
+    !analysis.direction
   ) {
-    try {
-      const timeframe =
-        normalizeTf(
-          requestedTf ??
-            bot.timeframe ??
-            "15min",
-        );
-
-      const existing =
-        await prisma.tradingSignal.findFirst(
-          {
-            where: {
-              userId,
-
-              botId:
-                bot.id,
-
-              symbol:
-                SYMBOL,
-
-              status: {
-                in:
-                  ACTIVE_STATUSES,
-              },
-            },
-
-            select: {
-              id: true,
-            },
-          },
-        );
-
-      if (existing) {
-        continue;
-      }
-
-      const cooldown =
-        Math.max(
-          1,
-          num(
-            bot.cooldownMinutes,
-            5,
-          ),
-        );
-
-      const recent =
-        await prisma.tradingSignal.findFirst(
-          {
-            where: {
-              userId,
-
-              botId:
-                bot.id,
-
-              symbol:
-                SYMBOL,
-
-              createdAt: {
-                gte:
-                  new Date(
-                    Date.now() -
-                      cooldown *
-                        60000,
-                  ),
-              },
-            },
-
-            select: {
-              id: true,
-            },
-          },
-        );
-
-      if (recent) {
-        continue;
-      }
-
-      const analysis =
-        await analyze(
-          SYMBOL,
-          timeframe,
-        );
-
-      if (
-        analysis.score <
-          MIN_SCORE ||
-        analysis.confirmations <
-          MIN_CONFIRMATIONS
-      ) {
-        continue;
-      }
-
-      if (
-        analysis.direction ===
-          "BUY" &&
-        bot.buyEnabled ===
-          false
-      ) {
-        continue;
-      }
-
-      if (
-        analysis.direction ===
-          "SELL" &&
-        bot.sellEnabled ===
-          false
-      ) {
-        continue;
-      }
+    return {
+      created: false,
+      reason:
+        "No clear direction",
+      score:
+        analysis.score,
+      confirmations:
+        analysis.confirmations,
+    };
+  }
+
+  if (
+    analysis.score <
+      MIN_SCORE ||
+    analysis.confirmations <
+      MIN_CONFIRMATIONS
+  ) {
+    return {
+      created: false,
+      reason:
+        "Minimum confirmation not reached",
+      score:
+        analysis.score,
+      confirmations:
+        analysis.confirmations,
+    };
+  }
+
+  const bot =
+    goldBots[0] as any;
+
+  /*
+   * Respect bot direction settings
+   * when those fields exist.
+   */
+
+  if (
+    analysis.direction === "BUY" &&
+    bot.buyEnabled === false
+  ) {
+    return {
+      created: false,
+      reason:
+        "BUY disabled by bot",
+    };
+  }
+
+  if (
+    analysis.direction === "SELL" &&
+    bot.sellEnabled === false
+  ) {
+    return {
+      created: false,
+      reason:
+        "SELL disabled by bot",
+    };
+  }
+
+  const live =
+    await getLivePrice();
+
+  const fx =
+    await getUsdToman();
+
+  const entry =
+    round(
+      live.price,
+      2,
+    );
+
+  const levels =
+    calculateLevels(
+      entry,
+      analysis.direction,
+    );
+
+  const session =
+    getMarketSession();
+
+  const state =
+    createDefaultState(
+      levels.stopLoss,
+    );
 
-      const levels =
-        calculateLevels(
-          analysis.entry,
-          analysis.direction,
-        );
+  const meta: SignalMeta = {
+    version: 2,
 
-      const meta: SignalMeta =
-        {
-          risk:
-            riskConfig(),
+    symbol: SYMBOL,
 
-          levels,
+    direction:
+      analysis.direction,
 
-          events: [],
+    timeframe:
+      analysis.timeframe,
+
+    session,
+
+    score:
+      analysis.score,
+
+    confirmations:
+      analysis.confirmations,
 
-          state: {
-            tp1Hit:
-              false,
+    reasons:
+      analysis.reasons,
 
-            tp2Hit:
-              false,
+    entry,
 
-            tp3Hit:
-              false,
-
-            slHit:
-              false,
-
-            breakEvenArmed:
-              false,
-
-            breakEvenHit:
-              false,
-          },
-
-          lastPrice:
-            analysis.entry,
-
-          lastPriceAt:
-            new Date().toISOString(),
-
-          lastPriceSource:
-            "Twelve Data /price",
-
-          session:
-            getMarketSession(),
-
-          telegramInitialStatus:
-            "PENDING",
-        };
-
-      const signal =
-        await prisma.tradingSignal.create(
-          {
-            data: {
-              userId,
-
-              botId:
-                bot.id,
-
-              symbol:
-                SYMBOL,
-
-              timeframe,
-
-              direction:
-                analysis.direction,
-
-              entry:
-                analysis.entry,
-
-              stopLoss:
-                levels.sl,
-
-              takeProfit:
-                levels.tp3,
-
-              riskReward:
-                round(
-                  TP3_USD /
-                    STOP_USD,
-                  2,
-                ),
-
-              score:
-                analysis.score,
-
-              confidence:
-                analysis.score,
-
-              status:
-                "ACTIVE",
-
-              source:
-                "TWELVE_DATA_XAU_ENGINE",
-
-              marketStructure:
-                analysis.direction ===
-                "BUY"
-                  ? "Bullish"
-                  : "Bearish",
-
-              supportResistance:
-                `S ${round(
-                  analysis.support,
-                  2,
-                )} / R ${round(
-                  analysis.resistance,
-                  2,
-                )}`,
-
-              liquidity:
-                analysis
-                  .signals
-                  .liquiditySweep
-                  ? "Liquidity sweep confirmed"
-                  : "No sweep",
-
-              pullback:
-                analysis
-                  .signals
-                  .pullback
-                  ? "Pullback confirmed"
-                  : "No pullback",
-
-              candlePattern:
-                analysis
-                  .signals
-                  .candle
-                  .name,
-
-              volumeConfirmation:
-                analysis
-                  .signals
-                  .volume
-                  ? "Confirmed"
-                  : "Weak",
-
-              multiTimeframeConfirmation:
-                "4H / 1H / 15M / 5M / 1M",
-
-              sessionConfirmation:
-                meta.session,
-
-              volatilityConfirmation:
-                analysis.atr >
-                0
-                  ? `ATR ${round(
-                      analysis.atr,
-                      2,
-                    )}`
-                  : "ATR unavailable",
-
-              newsConfirmation:
-                "Analysis passed",
-
-              confirmations:
-                analysis.signals as any,
-
-              reasons:
-                analysis.reasons as any,
-
-              metadata:
-                meta as any,
-
-              expiresAt:
-                new Date(
-                  Date.now() +
-                    180 *
-                      60000,
-                ),
-            },
-          },
-        );
-
-      const fx =
-        await getUsdToman();
-
-      /*
-       * پیام اولیه
-       */
-      const message =
-        makeInitialSignalText(
-          signal,
-          meta,
-          {
-            rate:
-              fx.rate,
-          },
-        );
-
-      const telegram =
-        await sendTelegram(
-          message,
-        );
-
-      if (
-        telegram.ok
-      ) {
-        await prisma.tradingSignal.update(
-          {
-            where: {
-              id:
-                signal.id,
-            },
-
-            data: {
-              telegramSent:
-                true,
-
-              telegramMessageId:
-                telegram.messageId,
-
-              telegramSentAt:
-                new Date(),
-
-              metadata:
-                {
-                  ...meta,
-
-                  telegramInitialStatus:
-                    "SENT",
-
-                  telegramInitialError:
-                    null,
-
-                  usdToToman:
-                    fx.rate,
-
-                  usdToTomanAt:
-                    fx.asOf,
-
-                  usdToTomanDelayed:
-                    fx.delayed,
-
-                  usdToTomanDelayedMinutes:
-                    fx.delayedMinutes,
-
-                  usdToTomanSource:
-                    "NetArz",
-                } as any,
-            },
-          },
-        );
-
-        const chat =
-          process.env
-            .TELEGRAM_SIGNAL_CHAT_ID;
-
-        if (chat) {
-          try {
-            await prisma.telegramDelivery.create(
-              {
-                data: {
-                  signalId:
-                    signal.id,
-
-                  channelId:
-                    chat,
-
-                  messageId:
-                    telegram.messageId,
-
-                  status:
-                    "SENT",
-
-                  sentAt:
-                    new Date(),
-                },
-              },
-            );
-          } catch {
-            // پیام ارسال شده؛ خطای ثبت Delivery نباید Signal را خراب کند.
-          }
-        }
-      } else {
-        await prisma.tradingSignal.update(
-          {
-            where: {
-              id:
-                signal.id,
-            },
-
-            data: {
-              telegramSent:
-                false,
-
-              metadata:
-                {
-                  ...meta,
-
-                  telegramInitialStatus:
-                    "FAILED",
-
-                  telegramInitialError:
-                    telegram.error,
-
-                  usdToToman:
-                    fx.rate,
-
-                  usdToTomanAt:
-                    fx.asOf,
-
-                  usdToTomanDelayed:
-                    fx.delayed,
-
-                  usdToTomanDelayedMinutes:
-                    fx.delayedMinutes,
-
-                  usdToTomanSource:
-                    "NetArz",
-                } as any,
-            },
-          },
-        );
-
-        const chat =
-          process.env
-            .TELEGRAM_SIGNAL_CHAT_ID;
-
-        if (chat) {
-          try {
-            await prisma.telegramDelivery.create(
-              {
-                data: {
-                  signalId:
-                    signal.id,
-
-                  channelId:
-                    chat,
-
-                  status:
-                    "FAILED",
-
-                  errorMessage:
-                    telegram.error,
-                },
-              },
-            );
-          } catch {
-            // Signal باقی می‌ماند و اجرای بعدی دوباره تلاش می‌کند.
-          }
-        }
-      }
-
-      made.push(
-        signal,
-      );
-    } catch (error) {
-      errors.push({
+    stopLoss:
+      levels.stopLoss,
+
+    tp1:
+      levels.tp1,
+
+    tp2:
+      levels.tp2,
+
+    tp3:
+      levels.tp3,
+
+    initialStopLoss:
+      levels.stopLoss,
+
+    currentStopLoss:
+      levels.stopLoss,
+
+    totalLot:
+      TOTAL_LOT,
+
+    tp1Lot:
+      TP1_LOT,
+
+    tp2Lot:
+      TP2_LOT,
+
+    tp3Lot:
+      TP3_LOT,
+
+    remainingLot:
+      TOTAL_LOT,
+
+    tp1Per001LotUsd:
+      TP1_PER_001_LOT_USD,
+
+    tp2Per001LotUsd:
+      TP2_PER_001_LOT_USD,
+
+    tp3Per001LotUsd:
+      TP3_PER_001_LOT_USD,
+
+    tp1TotalUsd:
+      TP1_TOTAL_USD,
+
+    tp2TotalUsd:
+      TP2_TOTAL_USD,
+
+    tp3TotalUsd:
+      TP3_TOTAL_USD,
+
+    fullTpUsd:
+      FULL_TP_USD,
+
+    usdToToman:
+      fx.rate,
+
+    usdToTomanAsOf:
+      fx.asOf,
+
+    usdToTomanDelayed:
+      fx.delayed,
+
+    usdToTomanDelayedMinutes:
+      fx.delayedMinutes,
+
+    lastPrice:
+      live.price,
+
+    lastPriceSource:
+      live.source,
+
+    state,
+
+    createdAt:
+      isoNow(),
+
+    updatedAt:
+      isoNow(),
+  };
+
+  /*
+   * =======================================================
+   * CREATE DATABASE SIGNAL
+   *
+   * metadata is ALWAYS an object.
+   *
+   * NEVER use:
+   * metadata: { not: null }
+   *
+   * because Prisma JSON filter rejects that form.
+   * =======================================================
+   */
+
+  const tradingSignal =
+    await (prisma.tradingSignal as any).create({
+      data: {
+        userId,
+
         botId:
           bot.id,
 
         symbol:
           SYMBOL,
 
-        error:
-          error instanceof
-          Error
-            ? error.message
-            : "scan error",
-      });
+        direction:
+          analysis.direction,
+
+        timeframe:
+          analysis.timeframe,
+
+        entry,
+
+        stopLoss:
+          levels.stopLoss,
+
+        takeProfit:
+          levels.tp3,
+
+        status:
+          "ACTIVE",
+
+        metadata:
+          meta,
+
+        telegramSent:
+          false,
+      },
+    });
+
+  /*
+   * Telegram initial signal
+   */
+
+  const telegramText =
+    makeInitialTelegramText(
+      tradingSignal.id,
+      meta,
+    );
+
+  const telegramResult =
+    await sendTelegram(
+      telegramText,
+    );
+
+  meta.telegramInitial = {
+    status:
+      telegramResult.ok
+        ? "SENT"
+        : "FAILED",
+
+    messageId:
+      telegramResult.messageId ??
+      null,
+
+    sentAt:
+      telegramResult.ok
+        ? isoNow()
+        : null,
+
+    error:
+      telegramResult.error ??
+      null,
+
+    attempts: 1,
+  };
+
+  await (prisma.tradingSignal as any).update({
+    where: {
+      id:
+        tradingSignal.id,
+    },
+
+    data: {
+      metadata:
+        meta,
+
+      telegramSent:
+        telegramResult.ok,
+
+      telegramMessageId:
+        telegramResult.messageId ??
+        null,
+
+      telegramSentAt:
+        telegramResult.ok
+          ? new Date()
+          : null,
+    },
+  });
+
+  return {
+    created: true,
+
+    signalId:
+      tradingSignal.id,
+
+    direction:
+      analysis.direction,
+
+    entry,
+
+    stopLoss:
+      levels.stopLoss,
+
+    tp1:
+      levels.tp1,
+
+    tp2:
+      levels.tp2,
+
+    tp3:
+      levels.tp3,
+
+    score:
+      analysis.score,
+
+    confirmations:
+      analysis.confirmations,
+
+    telegram:
+      telegramResult.ok,
+
+    telegramError:
+      telegramResult.error ??
+      null,
+  };
+}
+
+
+/* =========================================================
+   MONITOR ALL ACTIVE SIGNALS
+   ========================================================= */
+
+async function monitorAllSignals():
+  Promise<{
+    checked: number;
+    errors: number;
+  }> {
+  const signals =
+    await prisma.tradingSignal.findMany({
+      where: {
+        status: {
+          in: ACTIVE_STATUSES,
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      take: 100,
+    });
+
+  let checked = 0;
+  let errors = 0;
+
+  for (
+    const signal of signals
+  ) {
+    try {
+      await monitorSignal(
+        signal,
+      );
+
+      checked++;
+    } catch {
+      errors++;
     }
   }
 
   return {
-    bots:
-      bots.length,
-
-    made,
-
+    checked,
     errors,
   };
 }
 
-/* =========================================================
-   RETRY INITIAL TELEGRAM
-========================================================= */
-
-async function retryInitialTelegram() {
-  const signals =
-    await prisma.tradingSignal.findMany(
-      {
-        where: {
-          symbol:
-            SYMBOL,
-
-          status: {
-            in:
-              ACTIVE_STATUSES,
-          },
-
-          telegramSent:
-            false,
-        },
-
-        orderBy: {
-          createdAt:
-            "asc",
-        },
-
-        take: 100,
-      },
-    );
-
-  const results: any[] =
-    [];
-
-  for (
-    const signal of
-      signals
-  ) {
-    try {
-      const meta =
-        readMeta(
-          signal.metadata,
-        );
-
-      if (
-        meta.telegramInitialStatus !==
-        "FAILED"
-      ) {
-        continue;
-      }
-
-      const fx =
-        await getUsdToman();
-
-      const text =
-        makeInitialSignalText(
-          signal,
-          meta,
-          {
-            rate:
-              fx.rate,
-          },
-        );
-
-      const telegram =
-        await sendTelegram(
-          text,
-        );
-
-      if (
-        telegram.ok
-      ) {
-        await prisma.tradingSignal.update(
-          {
-            where: {
-              id:
-                signal.id,
-            },
-
-            data: {
-              telegramSent:
-                true,
-
-              telegramMessageId:
-                telegram.messageId,
-
-              telegramSentAt:
-                new Date(),
-
-              metadata:
-                {
-                  ...meta,
-
-                  telegramInitialStatus:
-                    "SENT",
-
-                  telegramInitialError:
-                    null,
-
-                  usdToToman:
-                    fx.rate,
-
-                  usdToTomanAt:
-                    fx.asOf,
-
-                  usdToTomanDelayed:
-                    fx.delayed,
-
-                  usdToTomanDelayedMinutes:
-                    fx.delayedMinutes,
-
-                  usdToTomanSource:
-                    "NetArz",
-                } as any,
-            },
-          },
-        );
-
-        results.push({
-          signalId:
-            signal.id,
-
-          status:
-            "SENT",
-        });
-      } else {
-        await prisma.tradingSignal.update(
-          {
-            where: {
-              id:
-                signal.id,
-            },
-
-            data: {
-              metadata:
-                {
-                  ...meta,
-
-                  telegramInitialStatus:
-                    "FAILED",
-
-                  telegramInitialError:
-                    telegram.error,
-                } as any,
-            },
-          },
-        );
-
-        results.push({
-          signalId:
-            signal.id,
-
-          status:
-            "FAILED",
-        });
-      }
-    } catch (error) {
-      results.push({
-        signalId:
-          signal.id,
-
-        error:
-          error instanceof
-          Error
-            ? error.message
-            : "initial telegram retry error",
-      });
-    }
-  }
-
-  return results;
-}
-
-/* =========================================================
-   MONITOR ALL ACTIVE SIGNALS
-========================================================= */
-
-async function monitorAllSignals() {
-  const signals =
-    await prisma.tradingSignal.findMany(
-      {
-        where: {
-          symbol:
-            SYMBOL,
-
-          status: {
-            in:
-              ACTIVE_STATUSES,
-          },
-        },
-
-        include: {
-          bot: true,
-        },
-
-        orderBy: {
-          createdAt:
-            "asc",
-        },
-
-        take: 200,
-      },
-    );
-
-  const results: any[] =
-    [];
-
-  for (
-    const signal of
-      signals
-  ) {
-    try {
-      results.push(
-        await monitorSignal(
-          signal,
-        ),
-      );
-    } catch (error) {
-      results.push({
-        signalId:
-          signal.id,
-
-        error:
-          error instanceof
-          Error
-            ? error.message
-            : "monitor error",
-      });
-    }
-  }
-
-  return results;
-}
-
-/* =========================================================
-   RETRY FAILED EVENT TELEGRAMS
-========================================================= */
-
-async function retryFailedEvents() {
-  const signals =
-    await prisma.tradingSignal.findMany(
-      {
-        where: {
-          symbol:
-            SYMBOL,
-
-          metadata: {
-            not:
-              null,
-          },
-        },
-
-        orderBy: {
-          createdAt:
-            "asc",
-        },
-
-        take: 200,
-      },
-    );
-
-  const results: any[] =
-    [];
-
-  for (
-    const signal of
-      signals
-  ) {
-    try {
-      const meta =
-        readMeta(
-          signal.metadata,
-        );
-
-      const pending =
-        meta.events.filter(
-          (event) =>
-            event.telegramStatus ===
-              "FAILED" ||
-            event.telegramStatus ===
-              "PENDING",
-        );
-
-      if (
-        !pending.length
-      ) {
-        continue;
-      }
-
-      for (
-        const event of
-          pending
-      ) {
-        await deliverEvent(
-          signal,
-          meta,
-          event,
-        );
-      }
-
-      await prisma.tradingSignal.update(
-        {
-          where: {
-            id:
-              signal.id,
-          },
-
-          data: {
-            metadata:
-              meta as any,
-          },
-        },
-      );
-
-      results.push({
-        signalId:
-          signal.id,
-
-        retried:
-          pending.length,
-      });
-    } catch (error) {
-      results.push({
-        signalId:
-          signal.id,
-
-        error:
-          error instanceof
-          Error
-            ? error.message
-            : "retry error",
-      });
-    }
-  }
-
-  return results;
-}
 
 /* =========================================================
    SCAN ALL USERS
-========================================================= */
+   ========================================================= */
 
-async function scanAllUsers() {
+async function scanAllUsers():
+  Promise<any[]> {
   const bots =
-    await prisma.tradingBot.findMany(
-      {
-        where: {
-          isActive:
-            true,
-
-          botStatus: {
-            in: [
-              "RUNNING",
-              "ACTIVE",
-              "STARTED",
-            ],
-          },
-
-          symbol: {
-            in: [
-              "XAUUSD",
-              "XAU/USD",
-              "xauusd",
-              "xau/usd",
-            ],
-          },
-        },
-
-        select: {
-          userId:
-            true,
-        },
-
-        distinct: [
-          "userId",
-        ],
+    await prisma.tradingBot.findMany({
+      where: {
+        isActive: true,
       },
+      select: {
+        userId: true,
+      },
+    });
+
+  const userIds =
+    Array.from(
+      new Set(
+        bots
+          .map(
+            (bot: any) =>
+              bot.userId,
+          )
+          .filter(Boolean),
+      ),
     );
 
-  const results: any[] =
-    [];
+  const results: any[] = [];
 
   for (
-    const bot of
-      bots
+    const userId of userIds
   ) {
-    results.push({
-      userId:
-        bot.userId,
-
-      result:
+    try {
+      const result =
         await scanUser(
-          bot.userId,
-          "1min",
-        ),
-    });
+          String(userId),
+        );
+
+      results.push({
+        userId,
+        ...result,
+      });
+    } catch (error) {
+      results.push({
+        userId,
+        created: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Scan failed",
+      });
+    }
   }
 
   return results;
 }
 
+
 /* =========================================================
-   SERVER CRON
-========================================================= */
+   CRON AUTH
+   ========================================================= */
 
 function validCronRequest(
-  request: Request,
-) {
-  const url =
-    new URL(
-      request.url,
+  request: NextRequest,
+): boolean {
+  const cron =
+    request.nextUrl.searchParams.get(
+      "cron",
     );
 
-  if (
-    url.searchParams.get(
-      "cron",
-    ) !== "1"
-  ) {
+  if (cron === "1") {
+    return true;
+  }
+
+  const expected =
+    process.env.SIGNALS_CRON_SECRET ||
+    process.env.AI_CRON_SECRET ||
+    process.env.NEWS_CRON_SECRET;
+
+  if (!expected) {
     return false;
   }
 
-  const secret =
-    process.env
-      .SIGNALS_CRON_SECRET ||
-    process.env
-      .AI_CRON_SECRET ||
-    process.env
-      .NEWS_CRON_SECRET;
-
-  if (!secret) {
-    return false;
-  }
-
-  const supplied =
+  const received =
     request.headers.get(
       "x-signals-cron-secret",
-    ) ??
+    ) ||
     request.headers.get(
       "x-ai-cron-secret",
-    ) ??
+    ) ||
     request.headers.get(
       "x-cron-secret",
     );
 
-  return (
-    supplied ===
-    secret
+  return Boolean(
+    received &&
+    received === expected,
   );
 }
 
+
+/* =========================================================
+   SERVER ENGINE
+   ========================================================= */
+
 async function runServerEngine() {
+  const startedAt =
+    Date.now();
+
+  let monitor:
+    | {
+        checked: number;
+        errors: number;
+      }
+    | null = null;
+
+  let scan: any[] = [];
+
+  let retryError:
+    | string
+    | null = null;
+
   /*
-   * ترتیب مهم است:
-   *
-   * 1. پیام‌های اولیه ناموفق
-   * 2. Eventهای ناموفق
-   * 3. مانیتور SL/TP
-   * 4. ساخت سیگنال جدید
-   * 5. قیمت لحظه‌ای
+   * First retry old failed Telegram events.
    */
 
-  const initialRetry =
-    await retryInitialTelegram();
-
-  const retry =
+  try {
     await retryFailedEvents();
+  } catch (error) {
+    retryError =
+      error instanceof Error
+        ? error.message
+        : "Retry failed";
+  }
 
-  const monitored =
-    await monitorAllSignals();
+  /*
+   * Then monitor current positions.
+   */
 
-  const scanned =
-    await scanAllUsers();
+  try {
+    monitor =
+      await monitorAllSignals();
+  } catch {
+    monitor = {
+      checked: 0,
+      errors: 1,
+    };
+  }
 
-  const market =
-    await getLivePrice(
-      SYMBOL,
-    ).catch(
-      () => null,
-    );
+  /*
+   * Then scan for new opportunities.
+   */
 
-  const fx =
-    await getUsdToman();
+  try {
+    scan =
+      await scanAllUsers();
+  } catch {
+    scan = [];
+  }
+
+  /*
+   * Current market data.
+   */
+
+  let live:
+    | {
+        price: number;
+        source: string;
+        datetime: string | null;
+      }
+    | null = null;
+
+  let fx:
+    | {
+        rate: number | null;
+        asOf: string | null;
+        delayed: boolean;
+        delayedMinutes: number | null;
+        error: string | null;
+      }
+    | null = null;
+
+  try {
+    live =
+      await getLivePrice();
+  } catch {
+    live = null;
+  }
+
+  try {
+    fx =
+      await getUsdToman();
+  } catch {
+    fx = null;
+  }
 
   return {
     ok: true,
 
-    serverSide:
-      true,
+    engine:
+      "XAUUSD_AI_ANALYSIS_ENGINE",
+
+    elapsedMs:
+      Date.now() -
+      startedAt,
+
+    monitor,
+
+    scan,
+
+    retryError,
 
     market: {
       symbol:
         SYMBOL,
 
       price:
-        market?.price ??
+        live?.price ??
         null,
 
-      source:
-        market?.source ??
+      priceSource:
+        live?.source ??
         null,
 
-      at:
-        market?.at ??
-        new Date().toISOString(),
+      priceDatetime:
+        live?.datetime ??
+        null,
 
       session:
         getMarketSession(),
 
-      iranTime:
-        iranTime(),
-
       usdToToman:
-        fx.rate,
+        fx?.rate ??
+        null,
 
-      usdToTomanAt:
-        fx.asOf,
+      usdToTomanAsOf:
+        fx?.asOf ??
+        null,
 
       usdToTomanDelayed:
-        fx.delayed,
+        fx?.delayed ??
+        false,
 
       usdToTomanDelayedMinutes:
-        fx.delayedMinutes,
+        fx?.delayedMinutes ??
+        null,
 
       usdToTomanError:
-        fx.error,
+        fx?.error ??
+        null,
     },
 
-    telegram: {
-      initialRetry,
+    plan: {
+      totalLot:
+        TOTAL_LOT,
 
-      eventRetry:
-        retry,
+      tp1Lot:
+        TP1_LOT,
+
+      tp2Lot:
+        TP2_LOT,
+
+      tp3Lot:
+        TP3_LOT,
+
+      tp1Per001LotUsd:
+        TP1_PER_001_LOT_USD,
+
+      tp2Per001LotUsd:
+        TP2_PER_001_LOT_USD,
+
+      tp3Per001LotUsd:
+        TP3_PER_001_LOT_USD,
+
+      tp1TotalUsd:
+        TP1_TOTAL_USD,
+
+      tp2TotalUsd:
+        TP2_TOTAL_USD,
+
+      tp3TotalUsd:
+        TP3_TOTAL_USD,
+
+      fullTpUsd:
+        FULL_TP_USD,
+
+      initialSlUsd:
+        INITIAL_SL_TOTAL_USD,
+
+      afterTp1RemainingLot:
+        REMAINING_AFTER_TP1,
+
+      afterTp1Stop:
+        "ENTRY",
     },
-
-    monitored,
-
-    scanned,
   };
 }
 
-/* =========================================================
-   GET
-========================================================= */
 
-export async function GET(
-  request: Request,
+/* =========================================================
+   PERFORMANCE
+   ========================================================= */
+
+async function calculatePerformance(
+  userId: string,
 ) {
-  try {
-    /*
-     * =====================================================
-     * SERVER ENGINE
-     * =====================================================
-     */
+  const signals =
+    await prisma.tradingSignal.findMany({
+      where: {
+        userId,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 500,
+    });
+
+  let totalTrades = 0;
+  let wins = 0;
+  let losses = 0;
+
+  let realizedUsd = 0;
+
+  for (
+    const signal of signals
+  ) {
+    totalTrades++;
+
+    const meta =
+      normalizeMeta(
+        signal.metadata,
+        signal,
+      );
+
+    if (!meta) continue;
+
+    realizedUsd +=
+      num(
+        meta.state
+          .realizedPnlUsd,
+      );
 
     if (
-      validCronRequest(
-        request,
-      )
+      meta.state.tp3Hit ||
+      meta.state.tp2Hit ||
+      meta.state.tp1Hit
     ) {
+      wins++;
+    } else if (
+      meta.state.slHit
+    ) {
+      losses++;
+    }
+  }
+
+  const completed =
+    wins + losses;
+
+  const winRate =
+    completed > 0
+      ? round(
+          (wins / completed) *
+            100,
+          1,
+        )
+      : 0;
+
+  return {
+    totalTrades,
+
+    completed,
+
+    wins,
+
+    losses,
+
+    winRate,
+
+    realizedUsd:
+      round(
+        realizedUsd,
+        2,
+      ),
+  };
+}
+
+
+/* =========================================================
+   GET
+   ========================================================= */
+
+export async function GET(
+  request: NextRequest,
+) {
+  /*
+   * Server engine / GitHub Actions.
+   */
+
+  if (
+    validCronRequest(
+      request,
+    )
+  ) {
+    try {
+      const result =
+        await runServerEngine();
+
       return NextResponse.json(
-        await runServerEngine(),
+        result,
         {
+          status: 200,
           headers: {
             "Cache-Control":
               "no-store, no-cache, must-revalidate",
           },
         },
       );
-    }
-
-    /*
-     * =====================================================
-     * NORMAL USER REQUEST
-     * =====================================================
-     */
-
-    const session =
-      await getSession();
-
-    if (
-      !session?.userId
-    ) {
+    } catch (error) {
       return NextResponse.json(
         {
-          error:
-            "احراز هویت لازم است.",
-        },
-        {
-          status: 401,
-        },
-      );
-    }
+          ok: false,
 
-    if (
-      !process.env
-        .TWELVE_DATA_API_KEY
-    ) {
-      return NextResponse.json(
-        {
           error:
-            "TWELVE_DATA_API_KEY در Environment Variables وجود ندارد.",
+            error instanceof Error
+              ? error.message
+              : "AI engine failed",
         },
         {
           status: 500,
         },
       );
     }
+  }
 
+  /*
+   * Normal authenticated dashboard request.
+   */
+
+  const session =
+    await getSession();
+
+  if (!session?.user) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Unauthorized",
+      },
+      {
+        status: 401,
+      },
+    );
+  }
+
+  try {
     const url =
-      new URL(
-        request.url,
-      );
+      request.nextUrl;
 
-    const interval =
-      url.searchParams.get(
-        "interval",
-      ) ??
-      undefined;
-
-    const manualScan =
+    const shouldScan =
       url.searchParams.get(
         "scan",
       ) === "1";
 
+    let scanResult:
+      | any
+      | null = null;
+
+    if (shouldScan) {
+      scanResult =
+        await scanUser(
+          session.user.id,
+        );
+    }
+
     /*
-     * فقط درخواست دستی می‌تواند
-     * برای کاربر Scan انجام دهد.
+     * Always monitor active signals
+     * when dashboard is requested too.
      */
-    if (manualScan) {
-      await scanUser(
-        session.userId,
-        interval,
-      );
+
+    try {
+      await monitorAllSignals();
+    } catch {
+      /*
+       * Dashboard should still load
+       * even if monitoring has an
+       * external API problem.
+       */
     }
 
     const signals =
-      await prisma.tradingSignal.findMany(
-        {
-          where: {
-            userId:
-              session.userId,
-
-            symbol:
-              SYMBOL,
-          },
-
-          include: {
-            bot: {
-              select: {
-                name:
-                  true,
-              },
-            },
-          },
-
-          orderBy: {
-            createdAt:
-              "desc",
-          },
-
-          take: 100,
+      await prisma.tradingSignal.findMany({
+        where: {
+          userId:
+            session.user.id,
         },
-      );
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 100,
+      });
 
-    /*
-     * قیمت لحظه‌ای واقعی API
-     */
-    const market =
-      await getLivePrice(
-        SYMBOL,
-      );
+    const live =
+      await getLivePrice();
 
-    /*
-     * نرخ دلار تومان
-     */
     const fx =
       await getUsdToman();
 
-    const now =
-      new Date();
+    const performance =
+      await calculatePerformance(
+        session.user.id,
+      );
 
-    const day =
-      new Date(now);
+    const formattedSignals =
+      signals.map(
+        (signal: any) => {
+          const meta =
+            normalizeMeta(
+              signal.metadata,
+              signal,
+            );
 
-    day.setHours(
-      0,
-      0,
-      0,
-      0,
-    );
+          return {
+            id:
+              signal.id,
 
-    const week =
-      new Date(now);
+            symbol:
+              signal.symbol,
 
-    week.setDate(
-      week.getDate() -
-        6,
-    );
+            direction:
+              signal.direction,
 
-    week.setHours(
-      0,
-      0,
-      0,
-      0,
-    );
+            timeframe:
+              signal.timeframe,
 
-    const month =
-      new Date(now);
+            status:
+              signal.status,
 
-    month.setDate(
-      month.getDate() -
-        29,
-    );
+            entry:
+              num(
+                signal.entry,
+              ),
 
-    month.setHours(
-      0,
-      0,
-      0,
-      0,
-    );
+            stopLoss:
+              num(
+                signal.stopLoss,
+              ),
+
+            takeProfit:
+              num(
+                signal.takeProfit,
+              ),
+
+            telegramSent:
+              Boolean(
+                signal.telegramSent,
+              ),
+
+            telegramMessageId:
+              signal.telegramMessageId ??
+              null,
+
+            createdAt:
+              signal.createdAt,
+
+            metadata:
+              meta,
+          };
+        },
+      );
 
     return NextResponse.json(
       {
         ok: true,
 
-        engine: {
-          source:
-            "Twelve Data",
-
-          serverSideMonitoring:
-            true,
-
-          monitoredFromPage:
-            false,
-        },
-
-        /*
-         * =================================================
-         * LIVE MARKET
-         * =================================================
-         */
+        symbol:
+          SYMBOL,
 
         market: {
-          symbol:
-            SYMBOL,
-
           price:
-            market.price,
+            live.price,
 
           source:
-            market.source,
+            live.source,
 
-          at:
-            market.at,
+          datetime:
+            live.datetime,
 
           session:
             getMarketSession(),
 
-          iranTime:
-            iranTime(),
-
           usdToToman:
             fx.rate,
 
-          usdToTomanAt:
+          usdToTomanAsOf:
             fx.asOf,
 
           usdToTomanDelayed:
@@ -4155,78 +3932,65 @@ export async function GET(
           usdToTomanDelayedMinutes:
             fx.delayedMinutes,
 
-          usdToTomanSource:
-            "NetArz",
-
           usdToTomanError:
             fx.error,
         },
 
-        signals,
-
-        performance: {
-          daily:
-            calculatePerformance(
-              signals,
-              day,
-            ),
-
-          weekly:
-            calculatePerformance(
-              signals,
-              week,
-            ),
-
-          monthly:
-            calculatePerformance(
-              signals,
-              month,
-            ),
-        },
-
-        /*
-         * =================================================
-         * FIXED GOLD PLAN
-         * =================================================
-         */
-
         plan: {
-          symbol:
-            SYMBOL,
-
           totalLot:
             TOTAL_LOT,
-
-          slUsd:
-            STOP_USD,
-
-          tp1Usd:
-            TP1_USD,
 
           tp1Lot:
             TP1_LOT,
 
-          tp2Usd:
-            TP2_USD,
-
           tp2Lot:
             TP2_LOT,
-
-          tp3Usd:
-            TP3_USD,
 
           tp3Lot:
             TP3_LOT,
 
+          tp1Per001LotUsd:
+            TP1_PER_001_LOT_USD,
+
+          tp2Per001LotUsd:
+            TP2_PER_001_LOT_USD,
+
+          tp3Per001LotUsd:
+            TP3_PER_001_LOT_USD,
+
+          tp1TotalUsd:
+            TP1_TOTAL_USD,
+
+          tp2TotalUsd:
+            TP2_TOTAL_USD,
+
+          tp3TotalUsd:
+            TP3_TOTAL_USD,
+
+          fullTpUsd:
+            FULL_TP_USD,
+
+          initialSlUsd:
+            INITIAL_SL_TOTAL_USD,
+
           remainingAfterTp1:
             REMAINING_AFTER_TP1,
 
-          moveSlToEntry:
-            true,
+          stopAfterTp1:
+            "ENTRY",
         },
-      },
 
+        signals:
+          formattedSignals,
+
+        performance,
+
+        scan:
+          scanResult,
+      },
       {
+        status: 200,
+
         headers: {
           "Cache-Control":
             "no-store, no-cache, must-revalidate",
@@ -4236,19 +4000,15 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
+        ok: false,
+
         error:
-          error instanceof
-          Error
+          error instanceof Error
             ? error.message
-            : "خطای موتور سیگنال",
+            : "AI analysis request failed",
       },
       {
         status: 500,
-
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
       },
     );
   }
