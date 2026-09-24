@@ -1,1 +1,20 @@
+name: AI Analysis Cron
 
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-ai-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger AI Analysis
+        env:
+          AI_URL: https://trading-ai-platform-81i5.onrender.com/api/ai-analysis?cron=1
+          CRON_SECRET: ${{ secrets.NEWS_CRON_SECRET }}
+        run: |
+          curl -fsS \
+            -H "x-ai-cron-secret: ${CRON_SECRET}" \
+            "${AI_URL}"
