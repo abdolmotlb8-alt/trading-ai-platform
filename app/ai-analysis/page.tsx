@@ -1,1150 +1,1702 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-const SYMBOLS = [
-  ["EURUSD", "EUR / USD"],
-  ["GBPUSD", "GBP / USD"],
-  ["USDJPY", "USD / JPY"],
-  ["AUDUSD", "AUD / USD"],
-  ["USDCAD", "USD / CAD"],
-  ["USDCHF", "USD / CHF"],
-  ["NZDUSD", "NZD / USD"],
+const faNumber = new Intl.NumberFormat("fa-IR");
+const usdNumber = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+const sessions = [
+  {
+    name: "Sydney",
+    icon: "🌏",
+    time: "00:00 – 06:00 UTC",
+    description: "شروع چرخه بازار آسیا",
+  },
+  {
+    name: "Tokyo",
+    icon: "🇯🇵",
+    time: "00:00 – 09:00 UTC",
+    description: "جلسه آسیایی",
+  },
+  {
+    name: "London",
+    icon: "🇬🇧",
+    time: "07:00 – 16:00 UTC",
+    description: "جلسه اروپا",
+  },
+  {
+    name: "New York",
+    icon: "🇺🇸",
+    time: "13:00 – 22:00 UTC",
+    description: "جلسه آمریکا",
+  },
 ];
 
-type Candle = {
-  datetime: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
+type TradeEvent = {
+  type: string;
+  at: string;
+  price: number;
+  lotClosed: number;
+  pnlUsd: number;
+  pnlToman: number;
+  usdToToman: number;
 };
 
-type Analysis = {
-  symbol: string;
-  price: number;
+type AnalysisMeta = {
+  kind?: string;
 
-  direction:
-    | "BUY"
-    | "SELL"
-    | "NO_TRADE";
+  direction: "BUY" | "SELL";
 
-  score: number;
-  confirmations: number;
+  entry: number;
+  stopLoss: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+
+  totalLot: number;
+  tp1Lot: number;
+  tp2Lot: number;
+  tp3Lot: number;
+
+  riskUsd: number;
+  tp1Usd: number;
+  tp2Usd: number;
+  tp3Usd: number;
+  totalPotentialUsd: number;
+
+  usdToToman: number;
+
+  riskToman: number;
+  tp1Toman: number;
+  tp2Toman: number;
+  tp3Toman: number;
+  totalPotentialToman: number;
 
   session: string;
-
-  sessions: {
-    name: string;
-    fa: string;
-    open: boolean;
-  }[];
-
-  entry?: number;
-  stopLoss?: number;
-
-  tp1?: number;
-  tp2?: number;
-  tp3?: number;
-
-  lotSize?: number;
-  actualRisk?: number;
-  rr?: number;
-
-  mtf: string;
-
-  support: number;
-  resistance: number;
-  atr: number;
-
-  reasons: string[];
-
-  confirmationsList: {
-    name: string;
-    ok: boolean;
-    value: string;
-  }[];
-
-  candles: Candle[];
-
+  score: number;
+  confirmations: number;
   timeframe: string;
 
-  newsBlocked: boolean;
-  newsReason: string;
+  state: string;
+  breakeven: boolean;
+
+  currentPrice: number;
+
+  events: TradeEvent[];
+
+  analysis?: {
+    reasons?: string[];
+    support?: number;
+    resistance?: number;
+    atr?: number;
+  };
 };
 
-type Perf = {
-  signals: number;
-  wins: number;
-  losses: number;
-  partial: number;
-  winRate: number;
+type Performance = {
+  trades: number;
+
+  wins?: number;
+  losses?: number;
+  breakeven?: number;
+
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  sl: number;
+
+  tp1Toman: number;
+  tp2Toman: number;
+  tp3Toman: number;
+  slToman: number;
+
   pnlUsd: number;
+  pnlToman: number;
 };
 
-type Response = {
-  ok: boolean;
+type RecentRun = {
+  id: string;
+  createdAt: string;
+  status: string;
+  metadata: AnalysisMeta;
+};
 
-  analysis: Analysis;
+type Dashboard = {
+  symbol: string;
 
-  performance: {
-    daily: Perf;
-    weekly: Perf;
-    monthly: Perf;
+  contractSize: number;
+
+  position: {
+    totalLot: number;
+    tp1Lot: number;
+    tp2Lot: number;
+    tp3Lot: number;
+
+    stopUsd: number;
+    tp1Usd: number;
+    tp2Usd: number;
+    tp3Usd: number;
   };
 
-  history: any[];
+  active:
+    | {
+        id: string;
+        status: string;
+        metadata: AnalysisMeta;
+      }
+    | null;
 
-  error?: string;
+  latest:
+    | {
+        id: string;
+        status: string;
+        metadata: AnalysisMeta;
+      }
+    | null;
+
+  performance: {
+    day: Performance;
+    week: Performance;
+    month: Performance;
+
+    recent: RecentRun[];
+  };
+
+  usdToToman: {
+    rate: number;
+    asOf: string;
+  } | null;
+
+  sessions?: Record<
+    string,
+    {
+      start: number;
+      end: number;
+    }
+  >;
 };
 
-const money = (
-  value: number | undefined
-) =>
-  typeof value === "number"
-    ? `$${value.toFixed(2)}`
-    : "—";
+const emptyPerformance: Performance = {
+  trades: 0,
+  wins: 0,
+  losses: 0,
+  breakeven: 0,
 
-const price = (
-  symbol: string,
-  value: number | undefined
-) =>
-  typeof value === "number"
-    ? value.toFixed(
-        symbol.includes("JPY")
-          ? 3
-          : 5
-      )
-    : "—";
+  tp1: 0,
+  tp2: 0,
+  tp3: 0,
+  sl: 0,
+
+  tp1Toman: 0,
+  tp2Toman: 0,
+  tp3Toman: 0,
+  slToman: 0,
+
+  pnlUsd: 0,
+  pnlToman: 0,
+};
+
+function formatUsd(value: number) {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}$${usdNumber.format(Math.abs(value))}`;
+}
+
+function formatToman(value: number) {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}${faNumber.format(Math.round(Math.abs(value)))} تومان`;
+}
+
+function formatPrice(value?: number | null) {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return value.toFixed(2);
+}
+
+function formatDate(value?: string | Date | null) {
+  if (!value) return "—";
+
+  try {
+    return new Intl.DateTimeFormat("fa-IR", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch {
+    return "—";
+  }
+}
+
+function stateLabel(value?: string) {
+  const states: Record<string, string> = {
+    AI_PENDING: "در انتظار TP1",
+    AI_TP1: "TP1 فعال شده",
+    AI_TP2: "TP2 فعال شده",
+    AI_TP3: "معامله کامل شد",
+    AI_SL: "استاپ لاس",
+    AI_BE: "بریک‌ایون",
+  };
+
+  return states[value || ""] || "بدون معامله";
+}
+
+function eventLabel(value: string) {
+  const events: Record<string, string> = {
+    TP1: "TP1 رسید",
+    TP2: "TP2 رسید",
+    TP3: "TP3 رسید",
+    SL: "استاپ خورد",
+    BREAKEVEN: "بریک‌ایون",
+  };
+
+  return events[value] || value;
+}
+
+function eventIcon(value: string) {
+  if (value === "SL") return "🛑";
+  if (value === "TP3") return "🏆";
+  if (value === "BREAKEVEN") return "🔐";
+  return "🎯";
+}
+
+function sessionIcon(name?: string) {
+  if (name === "New York") return "🇺🇸";
+  if (name === "London") return "🇬🇧";
+  if (name === "Tokyo") return "🇯🇵";
+  if (name === "Sydney") return "🌏";
+  return "🌐";
+}
 
 export default function AIAnalysisPage() {
-  const [symbol, setSymbol] =
-    useState("EURUSD");
+  const [data, setData] = useState<Dashboard | null>(null);
 
-  const [data, setData] =
-    useState<Response | null>(
-      null
-    );
+  const [loading, setLoading] = useState(true);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [error, setError] = useState("");
 
-  const [error, setError] =
-    useState("");
+  const [period, setPeriod] = useState<"day" | "week" | "month">("day");
 
-  const [lastUpdate, setLastUpdate] =
-    useState<Date | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  const load = useCallback(
-    async (manual = false) => {
-      if (manual) {
-        setLoading(true);
+  const loadDashboard = useCallback(async () => {
+    try {
+      const response = await fetch("/api/ai-analysis", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        throw new Error(
+          json?.error || "دریافت اطلاعات تحلیل هوش مصنوعی ناموفق بود."
+        );
       }
 
-      try {
-        const response =
-          await fetch(
-            `/api/ai-analysis?symbol=${encodeURIComponent(
-              symbol
-            )}`,
-            {
-              cache: "no-store",
-            }
-          );
+      setData(json.data);
 
-        const result =
-          await response.json();
+      setError("");
 
-        if (
-          !response.ok ||
-          !result.ok
-        ) {
-          throw new Error(
-            result?.error ||
-              "تحلیل دریافت نشد."
-          );
-        }
-
-        setData(result);
-        setError("");
-        setLastUpdate(
-          new Date()
-        );
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "خطای ارتباط با موتور تحلیل"
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    [symbol]
-  );
+      setLastUpdate(new Date());
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "خطا در ارتباط با موتور تحلیل هوش مصنوعی."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    load(true);
+    loadDashboard();
 
-    const interval =
-      setInterval(
-        () => load(false),
-        20000
-      );
+    const timer = window.setInterval(() => {
+      loadDashboard();
+    }, 20000);
 
-    return () =>
-      clearInterval(interval);
-  }, [load]);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [loadDashboard]);
 
-  const chartPoints =
-    useMemo(() => {
-      const candles =
-        data?.analysis.candles ??
-        [];
+  const meta =
+    data?.active?.metadata ||
+    data?.latest?.metadata ||
+    null;
 
-      if (candles.length < 2) {
-        return "";
-      }
+  const performance =
+    data?.performance?.[period] || emptyPerformance;
 
-      const min = Math.min(
-        ...candles.map(
-          (item) => item.low
-        )
-      );
+  const totalEvents =
+    (performance.tp1 || 0) +
+    (performance.tp2 || 0) +
+    (performance.tp3 || 0) +
+    (performance.sl || 0);
 
-      const max = Math.max(
-        ...candles.map(
-          (item) => item.high
-        )
-      );
+  const winCount =
+    performance.wins ??
+    performance.tp3 ??
+    0;
 
-      const width = 760;
-      const height = 250;
-      const padding = 12;
+  const lossCount =
+    performance.losses ??
+    performance.sl ??
+    0;
 
-      const span =
-        Math.max(
-          max - min,
-          0.0000001
-        );
+  const winRate =
+    performance.trades > 0
+      ? Math.round((winCount / performance.trades) * 100)
+      : 0;
 
-      return candles
-        .map((item, index) => {
-          const x =
-            padding +
-            (index /
-              (candles.length -
-                1)) *
-              (width -
-                padding * 2);
+  const chart = useMemo(() => {
+    const positive = Math.max(
+      0,
+      Number(performance.pnlUsd || 0)
+    );
 
-          const y =
-            height -
-            padding -
-            ((item.close - min) /
-              span) *
-              (height -
-                padding * 2);
+    const negative = Math.max(
+      0,
+      Number(-(performance.pnlUsd || 0))
+    );
 
-          return `${x},${y}`;
-        })
-        .join(" ");
-    }, [data]);
+    const max = Math.max(
+      1,
+      positive,
+      negative,
+      performance.tp1 * 20,
+      performance.tp2 * 24,
+      performance.tp3 * 36,
+      performance.sl * 40
+    );
 
-  const analysis =
-    data?.analysis;
-
-  const direction =
-    analysis?.direction;
-
-  const hasSignal =
-    direction !==
-    undefined &&
-    direction !==
-      "NO_TRADE";
+    return {
+      positive,
+      negative,
+      max,
+    };
+  }, [performance]);
 
   return (
-    <main
-      dir="rtl"
-      className="aiPage"
-    >
-      <style>{css}</style>
+    <main dir="rtl" className="ai-page">
+      <style>{styles}</style>
 
-      <div className="aiShell">
+      <div className="page-shell">
 
-        {/* TOP */}
+        {/* HEADER */}
+        <header className="header">
 
-        <header className="topbar glass">
-          <div className="brandBlock">
-            <div className="brandMark">
-              AI
+          <div className="brand-area">
+
+            <div className="brand-icon">
+              🤖
             </div>
 
             <div>
               <div className="eyebrow">
-                AI MARKET
-                INTELLIGENCE
+                AI MARKET ENGINE
               </div>
 
               <h1>
-                تحلیل هوشمند بازار
+                تحلیل هوش مصنوعی طلا
               </h1>
 
               <p>
-                اسکلپینگ فارکس با
-                تحلیل چندلایه و
-                مدیریت ریسک
+                موتور مستقل تحلیل XAUUSD با مدیریت حجم، TP، SL،
+                Break-even و کارنامه معاملاتی
               </p>
             </div>
+
           </div>
 
-          <div className="topActions">
-            <span className="liveDot">
-              <i />
-              موتور تحلیل{" "}
-              {loading
-                ? "در حال بررسی"
-                : "فعال"}
-            </span>
+          <div className="header-actions">
+
+            <div className="system-status">
+              <span className="status-dot" />
+              سیستم فعال
+            </div>
 
             <button
-              onClick={() =>
-                load(true)
-              }
-              className="iconBtn"
-              title="به‌روزرسانی"
+              className="refresh-button"
+              onClick={loadDashboard}
+              disabled={loading}
             >
-              ↻
+              {loading
+                ? "در حال دریافت..."
+                : "↻ بروزرسانی"}
             </button>
+
           </div>
+
         </header>
 
-        {/* DISCLAIMER */}
 
-        <section className="disclaimer glass goldEdge">
-          <span className="warn">
-            ⚠️
-          </span>
+        {/* AI DISCLAIMER */}
+        <section className="ai-disclaimer">
+
+          <div className="ai-disclaimer-icon">
+            🧠
+          </div>
 
           <div>
+
             <strong>
-              این بخش «تحلیل هوش مصنوعی»
-              است و سیگنال مستقیم نیست.
+              این تحلیل هوش مصنوعی است
             </strong>
 
             <p>
-              خروجی بر اساس داده واقعی
-              بازار، چند تایم‌فریم،
-              ساختار، نقدینگی، پولبک،
-              کندل، مومنتوم، سشن و
-              فیلتر خبر ساخته می‌شود.
-              هیچ الگوریتمی سود یا
-              موفقیت را تضمین نمی‌کند.
+              تحلیل توسط موتور AI برای XAUUSD انجام می‌شود.
+              مقادیر TP، SL، حجم و P/L طبق مدل تعریف‌شده ثبت
+              می‌شوند. اجرای واقعی سفارش در بروکر فقط با اتصال
+              مستقیم به بروکر امکان‌پذیر است.
             </p>
-          </div>
-        </section>
 
-        {/* CONTROLS */}
-
-        <section className="controlRow">
-
-          <div className="symbolBox glass">
-            <span>
-              نماد تحلیل
-            </span>
-
-            <select
-              value={symbol}
-              onChange={(event) =>
-                setSymbol(
-                  event.target.value
-                )
-              }
-            >
-              {SYMBOLS.map(
-                ([value, label]) => (
-                  <option
-                    key={value}
-                    value={value}
-                  >
-                    {label}
-                  </option>
-                )
-              )}
-            </select>
-
-            <small>
-              فقط جفت‌ارزهای فارکس
-            </small>
-          </div>
-
-          <div className="riskBox glass">
-
-            <div>
-              <span>
-                ریسک هدف
-              </span>
-              <b>
-                $4
-              </b>
-            </div>
-
-            <div>
-              <span>
-                TP1
-              </span>
-              <b>
-                +$5
-              </b>
-            </div>
-
-            <div>
-              <span>
-                TP2
-              </span>
-              <b>
-                +$8
-              </b>
-            </div>
-
-            <div>
-              <span>
-                TP3
-              </span>
-              <b>
-                +$12
-              </b>
-            </div>
-
-          </div>
-
-          <div className="refreshBox glass">
-            <span>
-              آخرین بررسی
-            </span>
-
-            <b>
-              {lastUpdate
-                ? lastUpdate.toLocaleTimeString(
-                    "fa-IR"
-                  )
-                : "—"}
-            </b>
-
-            <small>
-              بررسی خودکار هر ۲۰ ثانیه
-            </small>
           </div>
 
         </section>
+
 
         {/* ERROR */}
-
         {error && (
-          <section className="error glass">
-            🔴 {error}
-          </section>
+          <div className="error-box">
+            ⚠️ {error}
+          </div>
         )}
 
-        {/* DECISION + SESSIONS */}
 
-        <section className="heroGrid">
+        {/* MAIN MARKET */}
+        <section className="market-grid">
 
-          <div className="decision glass">
+          <div className="market-card main-market">
 
-            <div
-              className={`decisionIcon ${
-                hasSignal
-                  ? direction ===
-                    "BUY"
-                    ? "buy"
-                    : "sell"
-                  : "neutral"
-              }`}
-            >
-              {hasSignal
-                ? direction ===
-                  "BUY"
-                  ? "📈"
-                  : "📉"
-                : "⌛"}
-            </div>
+            <div className="market-top">
 
-            <div className="decisionText">
+              <div className="symbol">
 
-              <div className="symbolTitle">
-                {analysis?.symbol ??
-                  symbol}{" "}
-                · 1 MIN SCALP
-              </div>
-
-              <h2
-                className={
-                  hasSignal
-                    ? direction ===
-                      "BUY"
-                      ? "buyText"
-                      : "sellText"
-                    : "neutralText"
-                }
-              >
-                {hasSignal
-                  ? direction ===
-                    "BUY"
-                    ? "BUY CONFIRMED"
-                    : "SELL CONFIRMED"
-                  : "NO TRADE"}
-              </h2>
-
-              <p>
-                {hasSignal
-                  ? "شرایط ورود توسط فیلترهای اصلی تأیید شده است."
-                  : "تا زمانی که مجموعه تأییدیه‌ها کامل نشود، ورود جدید صادر نمی‌شود."}
-              </p>
-
-            </div>
-
-            <div className="decisionScore">
-              <span>
-                AI SCORE
-              </span>
-
-              <strong>
-                {analysis?.score ??
-                  0}
-
-                <small>
-                  /100
-                </small>
-              </strong>
-            </div>
-
-          </div>
-
-          <div className="sessionPanel glass">
-
-            <div className="panelHead">
-
-              <div>
-                <div className="sectionLabel">
-                  FOREX SESSIONS
-                </div>
-
-                <h3>
-                  وضعیت سشن‌ها
-                </h3>
-              </div>
-
-              <span className="sessionNow">
-                {analysis?.session ??
-                  "—"}
-              </span>
-
-            </div>
-
-            <div className="sessions">
-
-              {(
-                analysis?.sessions ??
-                [
-                  {
-                    name:
-                      "Sydney",
-                    fa: "سیدنی",
-                    open: false,
-                  },
-                  {
-                    name:
-                      "Tokyo",
-                    fa: "توکیو",
-                    open: false,
-                  },
-                  {
-                    name:
-                      "London",
-                    fa: "لندن",
-                    open: false,
-                  },
-                  {
-                    name:
-                      "New York",
-                    fa: "نیویورک",
-                    open: false,
-                  },
-                ]
-              ).map((session) => (
-                <div
-                  className={
-                    session.open
-                      ? "session active"
-                      : "session"
-                  }
-                  key={
-                    session.name
-                  }
-                >
-                  <i>
-                    {session.open
-                      ? "●"
-                      : "○"}
-                  </i>
-
-                  <span>
-                    {session.fa}
-                  </span>
-
-                  <b>
-                    {session.open
-                      ? "OPEN"
-                      : "CLOSED"}
-                  </b>
-                </div>
-              ))}
-
-            </div>
-
-          </div>
-
-        </section>
-
-        {/* CHART */}
-
-        <section className="chartCard glass">
-
-          <div className="panelHead">
-
-            <div>
-              <div className="sectionLabel">
-                LIVE MARKET
-                STRUCTURE
-              </div>
-
-              <h2>
-                {analysis?.symbol ??
-                  symbol}{" "}
-                / تحلیل 1 دقیقه
-              </h2>
-            </div>
-
-            <div className="priceNow">
-              {price(
-                symbol,
-                analysis?.price
-              )}
-            </div>
-
-          </div>
-
-          <div className="chartWrap">
-
-            <svg
-              viewBox="0 0 760 250"
-              preserveAspectRatio="none"
-              className="chart"
-            >
-              <defs>
-                <linearGradient
-                  id="goldLine"
-                  x1="0"
-                  x2="1"
-                >
-                  <stop offset="0%" />
-                  <stop offset="100%" />
-                </linearGradient>
-              </defs>
-
-              {[1, 2, 3, 4].map(
-                (item) => (
-                  <line
-                    key={item}
-                    x1="0"
-                    x2="760"
-                    y1={
-                      item * 50
-                    }
-                    y2={
-                      item * 50
-                    }
-                    className="gridLine"
-                  />
-                )
-              )}
-
-              {chartPoints && (
-                <polyline
-                  points={
-                    chartPoints
-                  }
-                  fill="none"
-                  stroke="url(#goldLine)"
-                  strokeWidth="3"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              )}
-            </svg>
-
-            <div className="chartTags">
-              <span>
-                1m
-              </span>
-              <span>
-                5m
-              </span>
-              <span>
-                15m
-              </span>
-              <span>
-                1h
-              </span>
-              <span>
-                4h
-              </span>
-            </div>
-
-          </div>
-
-          <div className="levels">
-
-            <span>
-              Support
-
-              <b>
-                {price(
-                  symbol,
-                  analysis?.support
-                )}
-              </b>
-            </span>
-
-            <span>
-              ATR
-
-              <b>
-                {price(
-                  symbol,
-                  analysis?.atr
-                )}
-              </b>
-            </span>
-
-            <span>
-              Resistance
-
-              <b>
-                {price(
-                  symbol,
-                  analysis?.resistance
-                )}
-              </b>
-            </span>
-
-          </div>
-
-        </section>
-
-        {/* TRADE PLAN + CONFIRMATIONS */}
-
-        <section className="signalGrid">
-
-          <div className="tradeCard glass goldEdge">
-
-            <div className="panelHead">
-
-              <div>
-                <div className="sectionLabel">
-                  AI SCALP PLAN
-                </div>
-
-                <h2>
-                  طرح مدیریت سرمایه
-                </h2>
-              </div>
-
-              <span
-                className={
-                  hasSignal
-                    ? direction ===
-                      "BUY"
-                      ? "badge buy"
-                      : "badge sell"
-                    : "badge"
-                }
-              >
-                {hasSignal
-                  ? direction ===
-                    "BUY"
-                    ? "🟢 صعودی"
-                    : "🔻 نزولی"
-                  : "بدون ورود"}
-              </span>
-
-            </div>
-
-            <div className="levelsGrid">
-
-              <Level
-                title="Entry / ورود"
-                value={price(
-                  symbol,
-                  analysis?.entry
-                )}
-                cls="entry"
-              />
-
-              <Level
-                title="Stop Loss / -$4"
-                value={price(
-                  symbol,
-                  analysis?.stopLoss
-                )}
-                cls="sl"
-              />
-
-              <Level
-                title="TP1 / +$5"
-                value={price(
-                  symbol,
-                  analysis?.tp1
-                )}
-                cls="tp"
-              />
-
-              <Level
-                title="TP2 / +$8"
-                value={price(
-                  symbol,
-                  analysis?.tp2
-                )}
-                cls="tp"
-              />
-
-              <Level
-                title="TP3 / +$12"
-                value={price(
-                  symbol,
-                  analysis?.tp3
-                )}
-                cls="tp strong"
-              />
-
-              <Level
-                title="Lot model"
-                value={
-                  analysis?.lotSize
-                    ? analysis.lotSize.toFixed(
-                        2
-                      )
-                    : "—"
-                }
-                cls="lot"
-              />
-
-            </div>
-
-            <div className="riskNote">
-              ریسک هدف:{" "}
-              <b>
-                $4
-              </b>{" "}
-              · سود کامل:{" "}
-              <b>
-                $12
-              </b>{" "}
-              · ریسک واقعی مدل:{" "}
-              <b>
-                {money(
-                  analysis?.actualRisk
-                )}
-              </b>{" "}
-              · نسبت هدف به ریسک:{" "}
-              <b>
-                {analysis?.rr
-                  ? analysis.rr.toFixed(
-                      2
-                    )
-                  : "—"}
-              </b>
-            </div>
-
-          </div>
-
-          <div className="confirmCard glass">
-
-            <div className="panelHead">
-
-              <div>
-                <div className="sectionLabel">
-                  MULTI-LAYER
-                  CONFIRMATION
-                </div>
-
-                <h2>
-                  تاییدیه‌های موتور AI
-                </h2>
-              </div>
-
-              <b className="confirmCount">
-                {analysis?.confirmations ??
-                  0}
-                /10
-              </b>
-
-            </div>
-
-            <div className="confirmList">
-
-              {(
-                analysis?.confirmationsList ??
-                []
-              ).map((item) => (
-                <div
-                  className={
-                    item.ok
-                      ? "confirm ok"
-                      : "confirm"
-                  }
-                  key={
-                    item.name
-                  }
-                >
-                  <span>
-                    {item.ok
-                      ? "✓"
-                      : "—"}
-                  </span>
-
-                  <div>
-                    <b>
-                      {item.name}
-                    </b>
-
-                    <small>
-                      {item.value}
-                    </small>
-                  </div>
-                </div>
-              ))}
-
-            </div>
-
-          </div>
-
-        </section>
-
-        {/* ANALYZER STACK */}
-
-        <section className="analyzers glass">
-
-          <div className="panelHead">
-
-            <div>
-              <div className="sectionLabel">
-                AI ANALYZER STACK
-              </div>
-
-              <h2>
-                موتورهای تحلیل همزمان
-              </h2>
-            </div>
-
-            <span className="muted">
-              هر ماژول مستقل بررسی می‌کند
-            </span>
-
-          </div>
-
-          <div className="analyzerGrid">
-
-            {[
-              [
-                "01",
-                "Trend Engine",
-                "روند 4H / 1H / 15M",
-              ],
-              [
-                "02",
-                "Momentum Engine",
-                "RSI + MACD",
-              ],
-              [
-                "03",
-                "Structure Engine",
-                "Swing + Breakout",
-              ],
-              [
-                "04",
-                "Liquidity Engine",
-                "Sweep + Reaction",
-              ],
-              [
-                "05",
-                "Pullback Engine",
-                "EMA Pullback",
-              ],
-              [
-                "06",
-                "Candle Engine",
-                "Engulfing / Hammer",
-              ],
-              [
-                "07",
-                "Session Engine",
-                "Tokyo / London / NY",
-              ],
-              [
-                "08",
-                "Risk Engine",
-                "$4 / $5 / $8 / $12",
-              ],
-            ].map((item) => (
-              <div
-                className="analyzer"
-                key={item[0]}
-              >
-                <i>
-                  {item[0]}
-                </i>
+                <span className="gold-ball">
+                  🟡
+                </span>
 
                 <div>
-                  <b>
-                    {item[1]}
-                  </b>
+                  <strong>
+                    XAUUSD
+                  </strong>
 
                   <small>
-                    {item[2]}
+                    GOLD / US DOLLAR
                   </small>
                 </div>
 
-                <span>
-                  ✓
-                </span>
               </div>
-            ))}
+
+              <div
+                className={
+                  meta?.direction === "BUY"
+                    ? "direction buy"
+                    : meta?.direction === "SELL"
+                    ? "direction sell"
+                    : "direction neutral"
+                }
+              >
+                {meta?.direction === "BUY"
+                  ? "🟢 BUY"
+                  : meta?.direction === "SELL"
+                  ? "🔴 SELL"
+                  : "⏳ NO TRADE"}
+              </div>
+
+            </div>
+
+
+            <div className="live-price-label">
+              قیمت فعلی بازار
+            </div>
+
+            <div className="live-price">
+              {meta
+                ? formatPrice(meta.currentPrice)
+                : "—"}
+            </div>
+
+            <div className="price-source">
+              XAU/USD · Market Data
+            </div>
+
+
+            <div className="market-meta">
+
+              <div>
+                <span>سشن</span>
+
+                <strong>
+                  {meta
+                    ? `${sessionIcon(meta.session)} ${meta.session}`
+                    : "—"}
+                </strong>
+              </div>
+
+              <div>
+                <span>تایم‌فریم</span>
+
+                <strong>
+                  {meta?.timeframe || "—"}
+                </strong>
+              </div>
+
+              <div>
+                <span>امتیاز AI</span>
+
+                <strong className="gold-text">
+                  {meta?.score ?? "—"}/100
+                </strong>
+              </div>
+
+              <div>
+                <span>تأییدها</span>
+
+                <strong>
+                  {meta?.confirmations ?? "—"}
+                </strong>
+              </div>
+
+            </div>
+
+          </div>
+
+
+          {/* USD RATE */}
+          <div className="market-card currency-card">
+
+            <div className="currency-title">
+              💵 نرخ دلار
+            </div>
+
+            <div className="currency-big">
+
+              {data?.usdToToman
+                ? faNumber.format(
+                    Math.round(data.usdToToman.rate)
+                  )
+                : "—"}
+
+            </div>
+
+            <div className="currency-unit">
+              تومان برای هر دلار
+            </div>
+
+            <div className="currency-date">
+
+              آخرین دریافت:
+
+              <br />
+
+              {data?.usdToToman?.asOf
+                ? formatDate(data.usdToToman.asOf)
+                : "—"}
+
+            </div>
+
+            <div className="real-rate">
+              ✓ نرخ از سرویس ارزی سرور دریافت می‌شود
+              <br />
+              ✓ نرخ داخل معامله ذخیره می‌شود
+              <br />
+              ✓ تغییر نرخ آینده، کارنامه قبلی را تغییر نمی‌دهد
+            </div>
 
           </div>
 
         </section>
 
-        {/* PERFORMANCE */}
 
-        <section className="performance glass">
+        {/* POSITION MODEL */}
+        <section className="section">
 
-          <div className="panelHead">
+          <div className="section-heading">
 
             <div>
-              <div className="sectionLabel">
-                AI PERFORMANCE
-                JOURNAL
-              </div>
+              <span className="section-kicker">
+                TRADE MODEL
+              </span>
 
               <h2>
-                کارنامه تحلیل هوش مصنوعی
+                ساختار دقیق معامله
+              </h2>
+
+              <p>
+                حجم کل 0.10 لات با تقسیم جداگانه TP1، TP2 و TP3
+              </p>
+            </div>
+
+            <div className="contract-badge">
+              Contract: {data?.contractSize || 100} oz
+            </div>
+
+          </div>
+
+
+          <div className="levels-grid">
+
+            <LevelCard
+              title="ENTRY"
+              label="نقطه ورود"
+              value={meta?.entry}
+              type="entry"
+            />
+
+            <LevelCard
+              title="STOP LOSS"
+              label="0.10 LOT · -$40"
+              value={meta?.stopLoss}
+              type="stop"
+              moneyUsd={
+                meta
+                  ? -meta.riskUsd
+                  : -40
+              }
+              moneyToman={
+                meta
+                  ? -meta.riskToman
+                  : undefined
+              }
+            />
+
+            <LevelCard
+              title="TP1"
+              label="0.04 LOT · +$20"
+              value={meta?.tp1}
+              type="tp"
+              moneyUsd={
+                meta
+                  ? meta.tp1Usd
+                  : 20
+              }
+              moneyToman={
+                meta
+                  ? meta.tp1Toman
+                  : undefined
+              }
+            />
+
+            <LevelCard
+              title="TP2"
+              label="0.03 LOT · +$24"
+              value={meta?.tp2}
+              type="tp"
+              moneyUsd={
+                meta
+                  ? meta.tp2Usd
+                  : 24
+              }
+              moneyToman={
+                meta
+                  ? meta.tp2Toman
+                  : undefined
+              }
+            />
+
+            <LevelCard
+              title="TP3"
+              label="0.03 LOT · +$36"
+              value={meta?.tp3}
+              type="tp"
+              moneyUsd={
+                meta
+                  ? meta.tp3Usd
+                  : 36
+              }
+              moneyToman={
+                meta
+                  ? meta.tp3Toman
+                  : undefined
+              }
+            />
+
+          </div>
+
+        </section>
+
+
+        {/* POSITION SUMMARY */}
+        <section className="summary-grid">
+
+          <SummaryCard
+            icon="📦"
+            title="حجم کل"
+            value="0.10 LOT"
+            sub="0.04 + 0.03 + 0.03"
+          />
+
+          <SummaryCard
+            icon="🛑"
+            title="ریسک حد ضرر"
+            value="-40 USD"
+            sub={
+              meta
+                ? formatToman(-meta.riskToman)
+                : "طبق نرخ ثبت‌شده"
+            }
+            danger
+          />
+
+          <SummaryCard
+            icon="🎯"
+            title="TP1"
+            value="+20 USD"
+            sub={
+              meta
+                ? formatToman(meta.tp1Toman)
+                : "نرخ معامله"
+            }
+          />
+
+          <SummaryCard
+            icon="🎯"
+            title="TP2"
+            value="+24 USD"
+            sub={
+              meta
+                ? formatToman(meta.tp2Toman)
+                : "نرخ معامله"
+            }
+          />
+
+          <SummaryCard
+            icon="🏆"
+            title="TP3"
+            value="+36 USD"
+            sub={
+              meta
+                ? formatToman(meta.tp3Toman)
+                : "نرخ معامله"
+            }
+          />
+
+          <SummaryCard
+            icon="💰"
+            title="حداکثر سود"
+            value="+80 USD"
+            sub={
+              meta
+                ? formatToman(meta.totalPotentialToman)
+                : "TP1 + TP2 + TP3"
+            }
+            success
+          />
+
+        </section>
+
+
+        {/* CURRENT TRADE */}
+        <section className="current-trade card">
+
+          <div className="section-heading">
+
+            <div>
+              <span className="section-kicker">
+                LIVE AI TRADE
+              </span>
+
+              <h2>
+                وضعیت تحلیل فعلی
               </h2>
             </div>
 
-            <span className="muted">
-              فقط خروجی‌های AI
-            </span>
-
-          </div>
-
-          <div className="perfGrid">
-
-            <Perf
-              title="روزانه"
-              data={
-                data?.performance
-                  .daily
+            <div
+              className={
+                meta?.breakeven
+                  ? "be-badge active"
+                  : "be-badge"
               }
-            />
-
-            <Perf
-              title="هفتگی"
-              data={
-                data?.performance
-                  .weekly
-              }
-            />
-
-            <Perf
-              title="ماهانه"
-              data={
-                data?.performance
-                  .monthly
-              }
-            />
-
-          </div>
-
-          <div className="history">
-
-            <div className="historyTitle">
-              آخرین نتایج ثبت‌شده
+            >
+              {meta?.breakeven
+                ? "🔐 BREAK-EVEN فعال"
+                : "🔓 BREAK-EVEN فعال نشده"}
             </div>
 
-            {(
-              data?.history ??
-              []
-            ).length === 0 ? (
-              <div className="empty">
-                هنوز نتیجه بسته‌شده‌ای
-                برای تحلیل AI ثبت نشده
-                است.
-              </div>
-            ) : (
-              data?.history.map(
-                (item: any) => (
-                  <div
-                    className="historyRow"
-                    key={item.id}
-                  >
-                    <span>
-                      {new Date(
-                        item.startedAt
-                      ).toLocaleString(
-                        "fa-IR"
-                      )}
-                    </span>
+          </div>
 
-                    <b>
-                      {
-                        item.metadata
-                          ?.symbol
-                      }
-                    </b>
 
-                    <span>
-                      {
-                        item.metadata
-                          ?.direction
-                      }
-                    </span>
+          <div className="trade-status">
 
-                    <em>
-                      {item.status}
-                    </em>
-                  </div>
-                )
-              )
-            )}
+            <div className="trade-state">
+
+              <span>
+                وضعیت
+              </span>
+
+              <strong>
+                {stateLabel(meta?.state)}
+              </strong>
+
+            </div>
+
+            <div className="trade-state">
+
+              <span>
+                سشن
+              </span>
+
+              <strong>
+                {meta
+                  ? `${sessionIcon(meta.session)} ${meta.session}`
+                  : "—"}
+              </strong>
+
+            </div>
+
+            <div className="trade-state">
+
+              <span>
+                حجم باقی‌مانده
+              </span>
+
+              <strong>
+                {meta
+                  ? calculateRemainingLot(meta)
+                  : "0.10"}
+                {" LOT"}
+              </strong>
+
+            </div>
+
+            <div className="trade-state">
+
+              <span>
+                P/L رویدادها
+              </span>
+
+              <strong
+                className={
+                  calculateEventsPnl(meta) >= 0
+                    ? "green"
+                    : "red"
+                }
+              >
+                {formatUsd(
+                  calculateEventsPnl(meta)
+                )}
+              </strong>
+
+            </div>
 
           </div>
 
         </section>
 
-        <footer>
-          داده بازار از Twelve Data
-          دریافت می‌شود. این صفحه
-          اجرای معامله انجام نمی‌دهد.
-          تحلیل AI صرفاً اطلاعات
-          تحلیلی است و تضمین سود نیست.
+
+        {/* PERFORMANCE */}
+        <section className="performance card">
+
+          <div className="section-heading">
+
+            <div>
+              <span className="section-kicker">
+                PERFORMANCE
+              </span>
+
+              <h2>
+                کارنامه معاملات AI
+              </h2>
+
+              <p>
+                آمار بر اساس رویدادهای ثبت‌شده در دیتابیس
+              </p>
+            </div>
+
+
+            <div className="period-tabs">
+
+              <button
+                className={
+                  period === "day"
+                    ? "selected"
+                    : ""
+                }
+                onClick={() =>
+                  setPeriod("day")
+                }
+              >
+                امروز
+              </button>
+
+              <button
+                className={
+                  period === "week"
+                    ? "selected"
+                    : ""
+                }
+                onClick={() =>
+                  setPeriod("week")
+                }
+              >
+                این هفته
+              </button>
+
+              <button
+                className={
+                  period === "month"
+                    ? "selected"
+                    : ""
+                }
+                onClick={() =>
+                  setPeriod("month")
+                }
+              >
+                این ماه
+              </button>
+
+            </div>
+
+          </div>
+
+
+          <div className="performance-grid">
+
+            <Metric
+              title="معاملات"
+              value={String(
+                performance.trades
+              )}
+              icon="📊"
+            />
+
+            <Metric
+              title="برد"
+              value={String(
+                winCount
+              )}
+              icon="🏆"
+              success
+            />
+
+            <Metric
+              title="باخت"
+              value={String(
+                lossCount
+              )}
+              icon="🛑"
+              danger
+            />
+
+            <Metric
+              title="Win Rate"
+              value={`${winRate}%`}
+              icon="📈"
+            />
+
+            <Metric
+              title="TP1"
+              value={String(
+                performance.tp1
+              )}
+              icon="🎯"
+              sub={`+${performance.tp1 * 20}$`}
+            />
+
+            <Metric
+              title="TP2"
+              value={String(
+                performance.tp2
+              )}
+              icon="🎯"
+              sub={`+${performance.tp2 * 24}$`}
+            />
+
+            <Metric
+              title="TP3"
+              value={String(
+                performance.tp3
+              )}
+              icon="🏆"
+              sub={`+${performance.tp3 * 36}$`}
+            />
+
+            <Metric
+              title="SL"
+              value={String(
+                performance.sl
+              )}
+              icon="🛑"
+              danger
+              sub={`-${performance.sl * 40}$`}
+            />
+
+          </div>
+
+
+          <div className="net-profit">
+
+            <div>
+
+              <span>
+                خالص سود / زیان
+              </span>
+
+              <strong
+                className={
+                  performance.pnlUsd >= 0
+                    ? "green"
+                    : "red"
+                }
+              >
+                {formatUsd(
+                  performance.pnlUsd
+                )}
+              </strong>
+
+            </div>
+
+            <div>
+
+              <span>
+                خالص به تومان
+              </span>
+
+              <strong
+                className={
+                  performance.pnlToman >= 0
+                    ? "green"
+                    : "red"
+                }
+              >
+                {formatToman(
+                  performance.pnlToman
+                )}
+              </strong>
+
+            </div>
+
+            <div>
+
+              <span>
+                تعداد رویدادها
+              </span>
+
+              <strong>
+                {totalEvents}
+              </strong>
+
+            </div>
+
+          </div>
+
+
+          {/* SMALL P/L CHART */}
+          <div className="chart-card">
+
+            <div className="chart-header">
+
+              <div>
+                <strong>
+                  نمودار سود و زیان
+                </strong>
+
+                <span>
+                  {period === "day"
+                    ? "روزانه"
+                    : period === "week"
+                    ? "هفتگی"
+                    : "ماهانه"}
+                </span>
+              </div>
+
+              <b>
+                {formatUsd(
+                  performance.pnlUsd
+                )}
+              </b>
+
+            </div>
+
+
+            <div className="chart">
+
+              <div className="chart-column">
+
+                <span>
+                  سود
+                </span>
+
+                <div className="chart-track">
+
+                  <div
+                    className="chart-profit"
+                    style={{
+                      height: `${Math.max(
+                        5,
+                        (chart.positive /
+                          chart.max) *
+                          100
+                      )}%`,
+                    }}
+                  />
+
+                </div>
+
+                <b>
+                  +${usdNumber.format(
+                    chart.positive
+                  )}
+                </b>
+
+              </div>
+
+
+              <div className="chart-column">
+
+                <span>
+                  زیان
+                </span>
+
+                <div className="chart-track">
+
+                  <div
+                    className="chart-loss"
+                    style={{
+                      height: `${Math.max(
+                        5,
+                        (chart.negative /
+                          chart.max) *
+                          100
+                      )}%`,
+                    }}
+                  />
+
+                </div>
+
+                <b>
+                  -${usdNumber.format(
+                    chart.negative
+                  )}
+                </b>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+        {/* SESSIONS */}
+        <section className="section">
+
+          <div className="section-heading">
+
+            <div>
+              <span className="section-kicker">
+                TRADING SESSIONS
+              </span>
+
+              <h2>
+                سشن‌های معاملاتی
+              </h2>
+
+              <p>
+                پایان هر سشن توسط موتور AI بررسی و کارنامه آن
+                برای Telegram ارسال می‌شود.
+              </p>
+            </div>
+
+          </div>
+
+
+          <div className="sessions-grid">
+
+            {sessions.map((session) => {
+
+              const active =
+                meta?.session === session.name;
+
+              return (
+                <div
+                  key={session.name}
+                  className={
+                    active
+                      ? "session-card active"
+                      : "session-card"
+                  }
+                >
+
+                  <div className="session-icon">
+                    {session.icon}
+                  </div>
+
+                  <div className="session-content">
+
+                    <strong>
+                      {session.name}
+                    </strong>
+
+                    <span>
+                      {session.time}
+                    </span>
+
+                    <small>
+                      {session.description}
+                    </small>
+
+                  </div>
+
+                  <div
+                    className={
+                      active
+                        ? "session-live"
+                        : "session-wait"
+                    }
+                  >
+                    {active
+                      ? "● فعال"
+                      : "آماده"}
+                  </div>
+
+                </div>
+              );
+
+            })}
+
+          </div>
+
+        </section>
+
+
+        {/* ANALYSIS ENGINE */}
+        <section className="analysis-grid">
+
+          <div className="card">
+
+            <div className="section-heading">
+
+              <div>
+                <span className="section-kicker">
+                  AI ENGINE
+                </span>
+
+                <h2>
+                  موتور تأیید چندلایه
+                </h2>
+
+                <p>
+                  قبل از ثبت تحلیل، چند فاکتور بررسی می‌شوند.
+                </p>
+              </div>
+
+              <div className="score-circle">
+                {meta?.score ?? 0}
+                <small>/100</small>
+              </div>
+
+            </div>
+
+
+            <div className="engine-list">
+
+              {[
+                "Trend",
+                "Market Structure",
+                "Momentum",
+                "Liquidity",
+                "Pullback",
+                "Candle",
+                "Support / Resistance",
+                "Multi-Timeframe",
+                "Session",
+                "News Filter",
+                "Risk Engine",
+              ].map((item) => (
+
+                <div
+                  className="engine-item"
+                  key={item}
+                >
+
+                  <span>
+                    ✓
+                  </span>
+
+                  <strong>
+                    {item}
+                  </strong>
+
+                </div>
+
+              ))}
+
+            </div>
+
+          </div>
+
+
+          {/* MARKET LEVELS */}
+          <div className="card">
+
+            <div className="section-heading">
+
+              <div>
+                <span className="section-kicker">
+                  MARKET STRUCTURE
+                </span>
+
+                <h2>
+                  ساختار بازار
+                </h2>
+
+                <p>
+                  سطوح ثبت‌شده توسط تحلیل AI
+                </p>
+              </div>
+
+            </div>
+
+
+            <div className="structure-list">
+
+              <StructureRow
+                title="Support"
+                value={
+                  meta?.analysis?.support
+                }
+              />
+
+              <StructureRow
+                title="Resistance"
+                value={
+                  meta?.analysis?.resistance
+                }
+              />
+
+              <StructureRow
+                title="ATR"
+                value={
+                  meta?.analysis?.atr
+                }
+              />
+
+              <StructureRow
+                title="Current Price"
+                value={
+                  meta?.currentPrice
+                }
+              />
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+        {/* TRADE EVENTS */}
+        <section className="card events-card">
+
+          <div className="section-heading">
+
+            <div>
+              <span className="section-kicker">
+                TRADE EVENTS
+              </span>
+
+              <h2>
+                رویدادهای معامله
+              </h2>
+
+              <p>
+                TP1، TP2، TP3 و SL هر معامله جداگانه ثبت می‌شوند.
+              </p>
+            </div>
+
+            {meta?.events?.length ? (
+              <span className="event-count">
+                {meta.events.length} رویداد
+              </span>
+            ) : null}
+
+          </div>
+
+
+          {meta?.events?.length ? (
+
+            <div className="events-list">
+
+              {[...meta.events]
+                .reverse()
+                .map((event, index) => (
+
+                  <div
+                    className="event-row"
+                    key={`${event.type}-${event.at}-${index}`}
+                  >
+
+                    <div className="event-symbol">
+                      {eventIcon(event.type)}
+                    </div>
+
+                    <div className="event-info">
+
+                      <strong>
+                        {eventLabel(event.type)}
+                      </strong>
+
+                      <span>
+                        {formatDate(event.at)}
+                      </span>
+
+                    </div>
+
+                    <div className="event-detail">
+
+                      <span>
+                        قیمت
+                      </span>
+
+                      <strong>
+                        {formatPrice(
+                          event.price
+                        )}
+                      </strong>
+
+                    </div>
+
+                    <div className="event-detail">
+
+                      <span>
+                        حجم
+                      </span>
+
+                      <strong>
+                        {event.lotClosed.toFixed(2)}
+                        {" LOT"}
+                      </strong>
+
+                    </div>
+
+                    <div className="event-profit">
+
+                      <strong
+                        className={
+                          event.pnlUsd >= 0
+                            ? "green"
+                            : "red"
+                        }
+                      >
+                        {formatUsd(
+                          event.pnlUsd
+                        )}
+                      </strong>
+
+                      <span>
+                        🇮🇷{" "}
+                        {formatToman(
+                          event.pnlToman
+                        )}
+                      </span>
+
+                    </div>
+
+                  </div>
+
+                ))}
+
+            </div>
+
+          ) : (
+
+            <div className="empty-state">
+              هنوز TP یا SL برای تحلیل فعالی ثبت نشده است.
+            </div>
+
+          )}
+
+        </section>
+
+
+        {/* RECENT ANALYSES */}
+        <section className="card recent-card">
+
+          <div className="section-heading">
+
+            <div>
+              <span className="section-kicker">
+                AI HISTORY
+              </span>
+
+              <h2>
+                آخرین تحلیل‌های هوش مصنوعی
+              </h2>
+
+              <p>
+                فقط XAUUSD
+              </p>
+            </div>
+
+          </div>
+
+
+          {data?.performance?.recent?.length ? (
+
+            <div className="history-list">
+
+              {data.performance.recent.map(
+                (run) => {
+
+                  const runMeta =
+                    run.metadata;
+
+                  const runPnl =
+                    runMeta?.events?.reduce(
+                      (sum, event) =>
+                        sum + Number(
+                          event.pnlUsd || 0
+                        ),
+                      0
+                    ) || 0;
+
+                  return (
+                    <div
+                      className="history-row"
+                      key={run.id}
+                    >
+
+                      <div className="history-date">
+                        {formatDate(
+                          run.createdAt
+                        )}
+                      </div>
+
+                      <div>
+                        {runMeta?.direction ===
+                        "BUY"
+                          ? "🟢 BUY"
+                          : "🔴 SELL"}
+                      </div>
+
+                      <div>
+                        {sessionIcon(
+                          runMeta?.session
+                        )}{" "}
+                        {runMeta?.session ||
+                          "—"}
+                      </div>
+
+                      <div>
+                        {runMeta?.timeframe ||
+                          "—"}
+                      </div>
+
+                      <div>
+                        {runMeta?.score ?? "—"}
+                        /100
+                      </div>
+
+                      <div
+                        className={
+                          runPnl >= 0
+                            ? "green"
+                            : "red"
+                        }
+                      >
+                        {formatUsd(runPnl)}
+                      </div>
+
+                    </div>
+                  );
+
+                }
+              )}
+
+            </div>
+
+          ) : (
+
+            <div className="empty-state">
+              هنوز تحلیل AI ثبت نشده است.
+            </div>
+
+          )}
+
+        </section>
+
+
+        {/* FIXED RULES */}
+        <section className="rules-card">
+
+          <div className="rules-title">
+            ⚙️ قوانین ثابت موتور معامله
+          </div>
+
+          <div className="rules-grid">
+
+            <Rule
+              title="Symbol"
+              value="XAUUSD"
+            />
+
+            <Rule
+              title="Total Lot"
+              value="0.10"
+            />
+
+            <Rule
+              title="TP1"
+              value="0.04 LOT · +$20"
+            />
+
+            <Rule
+              title="TP2"
+              value="0.03 LOT · +$24"
+            />
+
+            <Rule
+              title="TP3"
+              value="0.03 LOT · +$36"
+            />
+
+            <Rule
+              title="Stop Loss"
+              value="0.10 LOT · -$40"
+            />
+
+            <Rule
+              title="Maximum Profit"
+              value="+$80"
+            />
+
+            <Rule
+              title="After TP1"
+              value="Break-even"
+            />
+
+          </div>
+
+        </section>
+
+
+        {/* FOOTER */}
+        <footer className="footer">
+
+          <div>
+            🤖 AI Analysis · XAUUSD
+          </div>
+
+          <div>
+            حجم 0.10 LOT · TP1 0.04 · TP2 0.03 · TP3 0.03
+          </div>
+
+          <div>
+            {lastUpdate
+              ? `آخرین بروزرسانی: ${formatDate(
+                  lastUpdate
+                )}`
+              : "در حال اتصال..."}
+
+          </div>
+
         </footer>
 
       </div>
@@ -1152,1222 +1704,1556 @@ export default function AIAnalysisPage() {
   );
 }
 
-function Level({
+
+/* =========================
+   COMPONENTS
+========================= */
+
+function LevelCard({
+  title,
+  label,
+  value,
+  type,
+  moneyUsd,
+  moneyToman,
+}: {
+  title: string;
+  label: string;
+  value?: number;
+  type: "entry" | "stop" | "tp";
+  moneyUsd?: number;
+  moneyToman?: number;
+}) {
+  return (
+    <div className={`level-card ${type}`}>
+
+      <div className="level-top">
+        <span>
+          {title}
+        </span>
+
+        <small>
+          {label}
+        </small>
+      </div>
+
+      <strong className="level-price">
+        {formatPrice(value)}
+      </strong>
+
+      {moneyUsd !== undefined && (
+        <div
+          className={
+            moneyUsd >= 0
+              ? "level-money green"
+              : "level-money red"
+          }
+        >
+          {formatUsd(moneyUsd)}
+        </div>
+      )}
+
+      {moneyToman !== undefined && (
+        <div className="level-toman">
+          🇮🇷 {formatToman(moneyToman)}
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+
+function SummaryCard({
+  icon,
   title,
   value,
-  cls,
+  sub,
+  danger,
+  success,
+}: {
+  icon: string;
+  title: string;
+  value: string;
+  sub: string;
+  danger?: boolean;
+  success?: boolean;
+}) {
+  return (
+    <div className="summary-card">
+
+      <div className="summary-icon">
+        {icon}
+      </div>
+
+      <span>
+        {title}
+      </span>
+
+      <strong
+        className={
+          danger
+            ? "red"
+            : success
+            ? "green"
+            : ""
+        }
+      >
+        {value}
+      </strong>
+
+      <small>
+        {sub}
+      </small>
+
+    </div>
+  );
+}
+
+
+function Metric({
+  title,
+  value,
+  icon,
+  sub,
+  danger,
+  success,
 }: {
   title: string;
   value: string;
-  cls: string;
+  icon: string;
+  sub?: string;
+  danger?: boolean;
+  success?: boolean;
 }) {
   return (
-    <div
-      className={`level ${cls}`}
-    >
-      <small>
+    <div className="metric">
+
+      <div className="metric-icon">
+        {icon}
+      </div>
+
+      <span>
         {title}
-      </small>
+      </span>
+
+      <strong
+        className={
+          danger
+            ? "red"
+            : success
+            ? "green"
+            : ""
+        }
+      >
+        {value}
+      </strong>
+
+      {sub && (
+        <small>
+          {sub}
+        </small>
+      )}
+
+    </div>
+  );
+}
+
+
+function StructureRow({
+  title,
+  value,
+}: {
+  title: string;
+  value?: number;
+}) {
+  return (
+    <div className="structure-row">
+
+      <span>
+        {title}
+      </span>
+
+      <strong>
+        {value !== undefined
+          ? formatPrice(value)
+          : "—"}
+      </strong>
+
+    </div>
+  );
+}
+
+
+function Rule({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}) {
+  return (
+    <div className="rule">
+
+      <span>
+        {title}
+      </span>
 
       <strong>
         {value}
       </strong>
-    </div>
-  );
-}
-
-function Perf({
-  title,
-  data,
-}: {
-  title: string;
-  data?: Perf;
-}) {
-  return (
-    <div className="perf">
-
-      <div>
-        <b>
-          {title}
-        </b>
-
-        <span>
-          {data?.winRate ?? 0}%
-          Win Rate
-        </span>
-      </div>
-
-      <strong>
-        {money(
-          data?.pnlUsd
-        )}
-      </strong>
-
-      <div className="miniStats">
-
-        <span>
-          Signals
-          <b>
-            {data?.signals ?? 0}
-          </b>
-        </span>
-
-        <span>
-          Wins
-          <b>
-            {data?.wins ?? 0}
-          </b>
-        </span>
-
-        <span>
-          Losses
-          <b>
-            {data?.losses ?? 0}
-          </b>
-        </span>
-
-        <span>
-          Partial
-          <b>
-            {data?.partial ?? 0}
-          </b>
-        </span>
-
-      </div>
-
-      <div className="bar">
-        <i
-          style={{
-            width: `${Math.min(
-              100,
-              data?.winRate ?? 0
-            )}%`,
-          }}
-        />
-      </div>
 
     </div>
   );
 }
 
-const css = `
+
+function calculateEventsPnl(
+  meta: AnalysisMeta | null
+) {
+  if (!meta?.events?.length) {
+    return 0;
+  }
+
+  return meta.events.reduce(
+    (sum, event) =>
+      sum + Number(event.pnlUsd || 0),
+    0
+  );
+}
+
+
+function calculateRemainingLot(
+  meta: AnalysisMeta
+) {
+  let remaining = meta.totalLot;
+
+  for (const event of meta.events || []) {
+    if (
+      event.type === "TP1" ||
+      event.type === "TP2" ||
+      event.type === "TP3"
+    ) {
+      remaining -= event.lotClosed;
+    }
+  }
+
+  return Math.max(
+    0,
+    remaining
+  ).toFixed(2);
+}
+
+
+/* =========================
+   STYLES
+========================= */
+
+const styles = `
 *{
   box-sizing:border-box;
 }
 
-.aiPage{
-  min-height:100vh;
+body{
+  margin:0;
   background:#050607;
-  color:#f4efe3;
+  color:#f5f7fa;
   font-family:Tahoma,Arial,sans-serif;
-  padding:18px;
+}
 
-  background-image:
+button{
+  font-family:inherit;
+}
+
+.ai-page{
+  min-height:100vh;
+  padding:24px;
+  background:
     radial-gradient(
-      circle at 20% 0%,
-      rgba(184,145,48,.12),
-      transparent 30%
+      circle at 15% 0%,
+      rgba(194,147,47,.16),
+      transparent 28%
     ),
     radial-gradient(
-      circle at 100% 40%,
-      rgba(92,61,18,.12),
-      transparent 30%
+      circle at 90% 10%,
+      rgba(37,93,61,.13),
+      transparent 25%
+    ),
+    linear-gradient(
+      145deg,
+      #030405,
+      #090a0c 55%,
+      #050505
     );
 }
 
-button,
-select{
-  font:inherit;
-}
-
-.aiShell{
-  max-width:1250px;
+.page-shell{
+  width:100%;
+  max-width:1500px;
   margin:auto;
 }
 
-.glass{
+
+/* HEADER */
+
+.header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  margin-bottom:20px;
+}
+
+.brand-area{
+  display:flex;
+  align-items:center;
+  gap:16px;
+}
+
+.brand-icon{
+  width:62px;
+  height:62px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:20px;
+  font-size:30px;
   background:
     linear-gradient(
       145deg,
-      rgba(23,23,22,.92),
-      rgba(10,10,10,.82)
+      #e1b74e,
+      #6f5014
     );
-
-  border:1px solid
-    rgba(214,174,69,.16);
-
   box-shadow:
-    0 18px 60px
-    rgba(0,0,0,.32);
-
-  backdrop-filter:blur(18px);
-
-  border-radius:24px;
-}
-
-.topbar{
-  padding:18px 22px;
-
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-
-  gap:15px;
-}
-
-.brandBlock{
-  display:flex;
-  align-items:center;
-  gap:14px;
-}
-
-.brandMark{
-  width:52px;
-  height:52px;
-
-  border-radius:16px;
-
-  display:grid;
-  place-items:center;
-
-  font-weight:900;
-  font-size:18px;
-
-  color:#15110a;
-
-  background:
-    linear-gradient(
-      135deg,
-      #a97920,
-      #f4d67c
-    );
-
-  box-shadow:
-    0 8px 25px
-    rgba(215,170,57,.2);
+    0 15px 40px rgba(208,162,53,.20);
 }
 
 .eyebrow,
-.sectionLabel{
-  font-size:9px;
-  letter-spacing:2px;
-  color:#d6af4e;
-  font-weight:800;
-}
-
-.topbar h1{
-  margin:5px 0;
-  font-size:22px;
-}
-
-.topbar p{
-  margin:0;
-  color:#8d887c;
+.section-kicker{
+  color:#d9ad45;
   font-size:11px;
+  letter-spacing:3px;
+  font-weight:900;
 }
 
-.topActions{
+.header h1{
+  margin:6px 0;
+  font-size:34px;
+  font-weight:950;
+}
+
+.header p{
+  margin:0;
+  color:#8f96a1;
+  font-size:15px;
+}
+
+.header-actions{
   display:flex;
   align-items:center;
   gap:10px;
 }
 
-.liveDot{
-  font-size:10px;
-  color:#a9a394;
+.system-status{
+  padding:12px 15px;
+  border:1px solid rgba(77,215,112,.25);
+  background:#0a1710;
+  color:#6ee58c;
+  border-radius:14px;
+  font-size:13px;
+  font-weight:900;
 }
 
-.liveDot i{
+.status-dot{
+  width:8px;
+  height:8px;
   display:inline-block;
-  width:7px;
-  height:7px;
   border-radius:50%;
-  background:#51c58a;
-  margin-left:6px;
-  box-shadow:
-    0 0 12px
-    #51c58a;
+  background:#53db72;
+  margin-left:7px;
+  box-shadow:0 0 14px #53db72;
 }
 
-.iconBtn{
-  width:38px;
-  height:38px;
-
-  border-radius:12px;
-
-  background:#151513;
-  color:#e8cb78;
-
-  border:1px solid
-    rgba(214,174,69,.18);
-
+.refresh-button{
+  border:1px solid #ffffff16;
+  background:#141619;
+  color:#fff;
+  border-radius:14px;
+  padding:12px 17px;
+  font-weight:900;
   cursor:pointer;
 }
 
-.disclaimer{
-  margin-top:14px;
-  padding:15px 18px;
+.refresh-button:hover{
+  border-color:#d3a63f;
+}
 
+.refresh-button:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
+
+
+/* DISCLAIMER */
+
+.ai-disclaimer{
   display:flex;
-  gap:13px;
-  align-items:flex-start;
-}
-
-.goldEdge{
-  border-color:
-    rgba(214,174,69,.28);
-}
-
-.warn{
-  font-size:20px;
-}
-
-.disclaimer strong{
-  font-size:12px;
-  color:#f0cf72;
-}
-
-.disclaimer p{
-  margin:6px 0 0;
-  color:#938e82;
-  font-size:10px;
-  line-height:1.9;
-}
-
-.controlRow{
-  display:grid;
-  grid-template-columns:
-    1fr 2fr 1fr;
-
-  gap:12px;
-  margin-top:14px;
-}
-
-.symbolBox,
-.riskBox,
-.refreshBox{
-  padding:14px 16px;
-}
-
-.symbolBox>span,
-.refreshBox>span{
-  display:block;
-  color:#777269;
-  font-size:9px;
-}
-
-.symbolBox select{
-  width:100%;
-  margin:7px 0;
-
-  background:#11110f;
-  color:#f3e7c5;
-
-  border:1px solid
-    rgba(214,174,69,.2);
-
-  border-radius:11px;
-
-  padding:10px;
-
-  outline:0;
-}
-
-.symbolBox small,
-.refreshBox small{
-  display:block;
-  color:#615d55;
-  font-size:8px;
-}
-
-.riskBox{
-  display:grid;
-  grid-template-columns:
-    repeat(4,1fr);
-
-  gap:8px;
-}
-
-.riskBox div{
-  padding:8px;
-
-  border-radius:12px;
-
-  background:#0f0f0d;
-
-  border:1px solid
-    rgba(255,255,255,.04);
-}
-
-.riskBox span{
-  display:block;
-  color:#6e695f;
-  font-size:8px;
-}
-
-.riskBox b{
-  display:block;
-  margin-top:5px;
-  color:#d9b658;
-  font-size:14px;
-}
-
-.refreshBox b{
-  display:block;
-  margin:8px 0;
-  color:#eee5d1;
-  font-size:15px;
-}
-
-.error{
-  margin-top:12px;
-  padding:13px;
-  color:#ff9696;
-  font-size:11px;
-  border-color:
-    rgba(239,68,68,.3);
-}
-
-.heroGrid{
-  display:grid;
-
-  grid-template-columns:
-    1.45fr .85fr;
-
-  gap:14px;
-  margin-top:14px;
-}
-
-.decision{
-  padding:20px;
-
-  display:grid;
-
-  grid-template-columns:
-    70px 1fr auto;
-
+  align-items:center;
   gap:15px;
-
-  align-items:center;
-}
-
-.decisionIcon{
-  width:62px;
-  height:62px;
-
+  padding:18px;
+  margin-bottom:18px;
   border-radius:19px;
-
-  display:grid;
-  place-items:center;
-
-  font-size:27px;
-
-  background:#171714;
-}
-
-.decisionIcon.buy{
+  border:1px solid rgba(218,173,69,.20);
   background:
-    rgba(34,197,94,.1);
-
-  border:
-    1px solid
-    rgba(34,197,94,.2);
+    linear-gradient(
+      120deg,
+      rgba(60,45,13,.55),
+      rgba(14,15,17,.90)
+    );
 }
 
-.decisionIcon.sell{
-  background:
-    rgba(239,68,68,.1);
-
-  border:
-    1px solid
-    rgba(239,68,68,.2);
-}
-
-.symbolTitle{
-  color:#807b71;
-  font-size:9px;
-  letter-spacing:1px;
-}
-
-.decision h2{
-  font-size:29px;
-  margin:6px 0;
-}
-
-.decision p{
-  margin:0;
-  color:#817c71;
-  font-size:10px;
-}
-
-.buyText{
-  color:#66d49a;
-}
-
-.sellText{
-  color:#f07171;
-}
-
-.neutralText{
-  color:#e4bf52;
-}
-
-.decisionScore{
-  text-align:center;
-
-  padding:9px 14px;
-
-  border-right:
-    1px solid
-    rgba(255,255,255,.07);
-}
-
-.decisionScore span{
-  display:block;
-  color:#6d675d;
-  font-size:8px;
-}
-
-.decisionScore strong{
-  display:block;
-  color:#e1be59;
-  font-size:31px;
-  margin-top:4px;
-}
-
-.decisionScore small{
-  font-size:10px;
-  color:#777269;
-}
-
-.sessionPanel{
-  padding:18px;
-}
-
-.panelHead{
+.ai-disclaimer-icon{
+  width:48px;
+  height:48px;
   display:flex;
-  justify-content:space-between;
   align-items:center;
-
-  gap:12px;
+  justify-content:center;
+  border-radius:15px;
+  background:#201a0c;
+  font-size:24px;
 }
 
-.panelHead h2,
-.panelHead h3{
-  margin:5px 0 0;
-  font-size:15px;
+.ai-disclaimer strong{
+  color:#e4bd61;
+  font-size:17px;
 }
 
-.sessionNow{
-  color:#d6af4e;
-  font-size:9px;
-}
-
-.sessions{
-  display:grid;
-
-  grid-template-columns:
-    repeat(2,1fr);
-
-  gap:8px;
-  margin-top:14px;
-}
-
-.session{
-  padding:10px;
-
-  border-radius:12px;
-
-  background:#10100e;
-
-  border:1px solid
-    rgba(255,255,255,.04);
-
-  display:grid;
-
-  grid-template-columns:
-    15px 1fr auto;
-
-  align-items:center;
-
-  gap:5px;
-}
-
-.session i{
-  color:#4d4a43;
-  font-size:9px;
-}
-
-.session span{
-  font-size:10px;
-  color:#a29c91;
-}
-
-.session b{
-  font-size:7px;
-  color:#57534b;
-}
-
-.session.active{
-  border-color:
-    rgba(214,174,69,.28);
-
-  background:
-    rgba(214,174,69,.06);
-}
-
-.session.active i{
-  color:#66d49a;
-}
-
-.session.active b{
-  color:#d6af4e;
-}
-
-.chartCard{
-  margin-top:14px;
-  padding:18px;
-}
-
-.priceNow{
-  color:#e3c366;
-  font-size:20px;
-  font-weight:800;
-}
-
-.chartWrap{
-  margin-top:13px;
-
-  border-radius:17px;
-  overflow:hidden;
-
-  background:#080908;
-
-  border:1px solid
-    rgba(255,255,255,.05);
-
-  position:relative;
-}
-
-.chart{
-  width:100%;
-  height:280px;
-  display:block;
-}
-
-.gridLine{
-  stroke:
-    rgba(255,255,255,.055);
-
-  stroke-width:1;
-}
-
-.chartTags{
-  position:absolute;
-
-  right:10px;
-  top:10px;
-
-  display:flex;
-  gap:5px;
-}
-
-.chartTags span{
-  padding:6px 8px;
-
-  border-radius:8px;
-
-  background:#141411;
-  color:#827b6d;
-
-  font-size:8px;
-}
-
-.levels{
-  display:grid;
-
-  grid-template-columns:
-    repeat(3,1fr);
-
-  gap:8px;
-
-  margin-top:10px;
-}
-
-.levels span{
-  padding:10px;
-
-  border-radius:11px;
-
-  background:#10100e;
-
-  color:#6f6a60;
-
-  font-size:9px;
-}
-
-.levels b{
-  float:left;
-  color:#cdb36a;
-}
-
-.signalGrid{
-  display:grid;
-
-  grid-template-columns:
-    1.2fr .8fr;
-
-  gap:14px;
-
-  margin-top:14px;
-}
-
-.tradeCard,
-.confirmCard,
-.analyzers,
-.performance{
-  padding:19px;
-}
-
-.badge{
-  padding:7px 10px;
-
-  border-radius:999px;
-
-  background:#171713;
-
-  color:#777166;
-
-  font-size:8px;
-}
-
-.badge.buy{
-  color:#71dca3;
-
-  background:
-    rgba(34,197,94,.09);
-}
-
-.badge.sell{
-  color:#f77d7d;
-
-  background:
-    rgba(239,68,68,.09);
-}
-
-.levelsGrid{
-  display:grid;
-
-  grid-template-columns:
-    repeat(3,1fr);
-
-  gap:8px;
-
-  margin-top:14px;
-}
-
-.level{
-  padding:12px;
-
-  border-radius:14px;
-
-  background:#0e0e0c;
-
-  border:1px solid
-    rgba(255,255,255,.05);
-}
-
-.level small{
-  display:block;
-  color:#6e695f;
-  font-size:8px;
-}
-
-.level strong{
-  display:block;
-  margin-top:6px;
-  font-size:15px;
-  color:#cfc7b6;
-}
-
-.level.entry{
-  border-color:
-    rgba(91,178,255,.2);
-}
-
-.level.entry strong{
-  color:#76bbff;
-}
-
-.level.sl{
-  border-color:
-    rgba(239,68,68,.22);
-}
-
-.level.sl strong{
-  color:#f77e7e;
-}
-
-.level.tp{
-  border-color:
-    rgba(34,197,94,.14);
-}
-
-.level.tp strong{
-  color:#73dba1;
-}
-
-.level.tp.strong{
-  box-shadow:
-    inset 0 0 20px
-    rgba(34,197,94,.04);
-}
-
-.level.lot strong{
-  color:#e1bd59;
-}
-
-.riskNote{
-  margin-top:12px;
-
-  padding:10px 12px;
-
-  border-radius:11px;
-
-  background:
-    rgba(214,174,69,.05);
-
-  color:#80796d;
-
-  font-size:9px;
-}
-
-.riskNote b{
-  color:#d6b75e;
-}
-
-.confirmCount{
-  color:#d7b85d;
+.ai-disclaimer p{
+  margin:6px 0 0;
+  color:#a5abb5;
+  line-height:1.9;
   font-size:13px;
 }
 
-.confirmList{
-  display:grid;
-  gap:7px;
-
-  margin-top:13px;
-
-  max-height:350px;
-  overflow:auto;
-}
-
-.confirm{
-  display:flex;
-
-  align-items:center;
-
-  gap:8px;
-
-  padding:8px 9px;
-
-  border-radius:11px;
-
-  background:#0e0e0c;
-}
-
-.confirm>span{
-  width:21px;
-  height:21px;
-
-  border-radius:7px;
-
-  display:grid;
-  place-items:center;
-
-  background:#171713;
-
-  color:#59544a;
-
-  font-size:10px;
-}
-
-.confirm.ok{
-  border:
-    1px solid
-    rgba(34,197,94,.08);
-}
-
-.confirm.ok>span{
-  background:
-    rgba(34,197,94,.1);
-
-  color:#69d69d;
-}
-
-.confirm b{
-  display:block;
-
-  font-size:9px;
-  color:#bcb5a7;
-}
-
-.confirm small{
-  display:block;
-
-  color:#676158;
-
-  font-size:8px;
-
-  margin-top:2px;
-}
-
-.analyzers{
-  margin-top:14px;
-}
-
-.muted{
-  color:#716c62;
-  font-size:9px;
-}
-
-.analyzerGrid{
-  display:grid;
-
-  grid-template-columns:
-    repeat(4,1fr);
-
-  gap:8px;
-
-  margin-top:13px;
-}
-
-.analyzer{
-  padding:11px;
-
-  border-radius:13px;
-
-  background:#0e0e0c;
-
-  border:1px solid
-    rgba(255,255,255,.045);
-
-  display:flex;
-
-  align-items:center;
-
-  gap:8px;
-}
-
-.analyzer i{
-  font-style:normal;
-
-  color:#9c7a2a;
-
-  font-size:8px;
-}
-
-.analyzer b{
-  display:block;
-
-  font-size:9px;
-
-  color:#c4bcad;
-}
-
-.analyzer small{
-  display:block;
-
-  color:#656057;
-
-  font-size:7px;
-
-  margin-top:3px;
-}
-
-.analyzer span{
-  margin-right:auto;
-
-  color:#6dd59c;
-
-  font-size:10px;
-}
-
-.performance{
-  margin-top:14px;
-}
-
-.perfGrid{
-  display:grid;
-
-  grid-template-columns:
-    repeat(3,1fr);
-
-  gap:9px;
-
-  margin-top:13px;
-}
-
-.perf{
-  padding:13px;
-
+.error-box{
+  padding:15px 18px;
+  margin-bottom:18px;
   border-radius:15px;
-
-  background:#0d0d0b;
+  background:#241010;
+  border:1px solid #6c2929;
+  color:#ff9a9a;
 }
 
-.perf>div:first-child{
-  display:flex;
 
-  justify-content:space-between;
+/* CARDS */
 
-  align-items:center;
-}
-
-.perf>div:first-child b{
-  font-size:10px;
-}
-
-.perf>div:first-child span{
-  font-size:8px;
-
-  color:#d2b25d;
-}
-
-.perf>strong{
-  display:block;
-
-  color:#e1bd59;
-
-  font-size:22px;
-
-  margin:8px 0;
-}
-
-.miniStats{
-  display:grid !important;
-
-  grid-template-columns:
-    repeat(4,1fr);
-
-  gap:4px;
-}
-
-.miniStats span{
-  font-size:7px;
-  color:#5e5a51;
-}
-
-.miniStats b{
-  display:block;
-
-  color:#aaa194;
-
-  font-size:9px;
-
-  margin-top:3px;
-}
-
-.bar{
-  height:4px;
-
-  background:#1a1915;
-
-  border-radius:9px;
-
-  margin-top:11px;
-
-  overflow:hidden;
-}
-
-.bar i{
-  display:block;
-
-  height:100%;
-
+.card,
+.market-card,
+.level-card,
+.summary-card,
+.session-card{
   background:
     linear-gradient(
-      90deg,
-      #7f5c15,
-      #e0bf61
+      145deg,
+      rgba(20,21,24,.95),
+      rgba(10,11,13,.92)
     );
-
-  border-radius:9px;
+  border:1px solid #ffffff10;
+  box-shadow:
+    0 20px 60px rgba(0,0,0,.45);
+  backdrop-filter:blur(18px);
 }
 
-.history{
-  margin-top:15px;
+
+/* MARKET */
+
+.market-grid{
+  display:grid;
+  grid-template-columns:1.55fr .9fr;
+  gap:16px;
 }
 
-.historyTitle{
-  color:#8a8479;
-  font-size:9px;
+.market-card{
+  min-height:260px;
+  padding:25px;
+  border-radius:23px;
+}
+
+.main-market{
+  background:
+    radial-gradient(
+      circle at 20% 20%,
+      rgba(199,155,54,.12),
+      transparent 40%
+    ),
+    linear-gradient(
+      145deg,
+      #18150e,
+      #0b0d10
+    );
+}
+
+.market-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.symbol{
+  display:flex;
+  align-items:center;
+  gap:13px;
+}
+
+.gold-ball{
+  font-size:34px;
+}
+
+.symbol strong{
+  display:block;
+  font-size:22px;
+}
+
+.symbol small{
+  display:block;
+  color:#767d88;
+  font-size:11px;
+  margin-top:4px;
+}
+
+.direction{
+  padding:10px 14px;
+  border-radius:12px;
+  font-weight:950;
+  font-size:14px;
+}
+
+.direction.buy{
+  color:#62e48b;
+  background:#0c2013;
+  border:1px solid #245a36;
+}
+
+.direction.sell{
+  color:#ff7777;
+  background:#230d0d;
+  border:1px solid #642525;
+}
+
+.direction.neutral{
+  color:#aeb4be;
+  background:#16181b;
+  border:1px solid #ffffff0d;
+}
+
+.live-price-label{
+  color:#7e858f;
+  margin-top:35px;
+  font-size:13px;
+}
+
+.live-price{
+  margin-top:7px;
+  font-size:57px;
+  font-weight:950;
+  letter-spacing:1px;
+}
+
+.price-source{
+  color:#676e79;
+  margin-top:5px;
+  font-size:12px;
+}
+
+.market-meta{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+  margin-top:28px;
+  padding-top:17px;
+  border-top:1px solid #ffffff0d;
+}
+
+.market-meta span{
+  display:block;
+  color:#747b86;
+  font-size:12px;
+  margin-bottom:6px;
+}
+
+.market-meta strong{
+  color:#e9edf2;
+  font-size:14px;
+}
+
+.gold-text{
+  color:#e2b650 !important;
+}
+
+.currency-card{
+  background:
+    radial-gradient(
+      circle at 90% 0%,
+      rgba(218,172,67,.13),
+      transparent 38%
+    ),
+    #0d0f11;
+}
+
+.currency-title{
+  color:#aeb4bd;
+  font-size:14px;
+}
+
+.currency-big{
+  color:#e5bd5b;
+  font-size:38px;
+  font-weight:950;
+  margin-top:20px;
+}
+
+.currency-unit{
+  color:#818894;
+  font-size:13px;
+}
+
+.currency-date{
+  margin-top:22px;
+  color:#8d949e;
+  line-height:1.8;
+  font-size:12px;
+}
+
+.real-rate{
+  margin-top:18px;
+  padding:12px;
+  border-radius:12px;
+  background:#141209;
+  color:#b8aa84;
+  line-height:1.9;
+  font-size:11px;
+}
+
+
+/* SECTION */
+
+.section{
+  margin-top:25px;
+}
+
+.section-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:15px;
+  margin-bottom:16px;
+}
+
+.section-heading h2{
+  margin:5px 0;
+  font-size:23px;
+}
+
+.section-heading p{
+  margin:0;
+  color:#818894;
+  font-size:13px;
+}
+
+.contract-badge,
+.event-count{
+  padding:10px 13px;
+  border-radius:12px;
+  color:#d9ae48;
+  background:#19150a;
+  border:1px solid #4c3a15;
+  font-size:12px;
+  font-weight:900;
+}
+
+
+/* LEVELS */
+
+.levels-grid{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:12px;
+}
+
+.level-card{
+  padding:18px;
+  min-height:160px;
+  border-radius:19px;
+}
+
+.level-card.entry{
+  border-color:#ffffff12;
+}
+
+.level-card.stop{
+  border-color:#692929;
+  background:
+    linear-gradient(
+      145deg,
+      #211011,
+      #0d0c0d
+    );
+}
+
+.level-card.tp{
+  border-color:#584418;
+  background:
+    linear-gradient(
+      145deg,
+      #1e180c,
+      #0d0d0d
+    );
+}
+
+.level-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+}
+
+.level-top span{
+  color:#e6e9ed;
+  font-size:14px;
+  font-weight:950;
+}
+
+.level-top small{
+  color:#858c97;
+  font-size:10px;
+  text-align:left;
+}
+
+.level-price{
+  display:block;
+  margin:22px 0 10px;
+  font-size:29px;
+}
+
+.level-card.stop .level-price{
+  color:#ff7777;
+}
+
+.level-card.tp .level-price{
+  color:#e2b650;
+}
+
+.level-money{
+  font-size:16px;
+  font-weight:950;
+}
+
+.level-toman{
+  margin-top:6px;
+  color:#aeb4bd;
+  font-size:11px;
+}
+
+
+/* SUMMARY */
+
+.summary-grid{
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:10px;
+  margin-top:16px;
+}
+
+.summary-card{
+  border-radius:17px;
+  padding:17px;
+}
+
+.summary-icon{
+  font-size:22px;
+  margin-bottom:13px;
+}
+
+.summary-card > span{
+  display:block;
+  color:#858c97;
+  font-size:12px;
+}
+
+.summary-card > strong{
+  display:block;
+  margin:8px 0;
+  font-size:23px;
+}
+
+.summary-card > small{
+  color:#9299a3;
+  font-size:11px;
+}
+
+
+/* CURRENT TRADE */
+
+.current-trade{
+  margin-top:16px;
+  padding:22px;
+  border-radius:22px;
+}
+
+.be-badge{
+  padding:10px 14px;
+  border-radius:12px;
+  color:#8d949d;
+  background:#15171a;
+  border:1px solid #ffffff0d;
+  font-size:12px;
+  font-weight:900;
+}
+
+.be-badge.active{
+  color:#6de28b;
+  background:#0c1d12;
+  border-color:#275b38;
+}
+
+.trade-status{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+}
+
+.trade-state{
+  padding:16px;
+  border-radius:15px;
+  background:#0c0e11;
+  border:1px solid #ffffff0b;
+}
+
+.trade-state span{
+  display:block;
+  color:#737a85;
+  font-size:12px;
   margin-bottom:8px;
 }
 
-.historyRow{
-  display:grid;
+.trade-state strong{
+  font-size:16px;
+}
 
-  grid-template-columns:
-    1.3fr .7fr .5fr .6fr;
 
+/* PERFORMANCE */
+
+.performance{
+  margin-top:16px;
+  padding:23px;
+  border-radius:22px;
+}
+
+.period-tabs{
+  display:flex;
   gap:7px;
-
-  padding:10px;
-
-  border-bottom:
-    1px solid
-    rgba(255,255,255,.045);
-
-  font-size:8px;
-
-  color:#716c62;
 }
 
-.historyRow b{
-  color:#bfb7a8;
+.period-tabs button{
+  border:1px solid #ffffff10;
+  background:#111316;
+  color:#aeb4bd;
+  border-radius:11px;
+  padding:10px 14px;
+  cursor:pointer;
+  font-weight:900;
 }
 
-.historyRow em{
-  font-style:normal;
-  color:#d0ad55;
+.period-tabs button:hover{
+  border-color:#c69a38;
 }
 
-.empty{
-  text-align:center;
+.period-tabs button.selected{
+  color:#171208;
+  background:#d5aa43;
+  border-color:#d5aa43;
+}
 
-  padding:25px;
+.performance-grid{
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  gap:9px;
+}
 
-  color:#625e56;
+.metric{
+  padding:15px;
+  border-radius:15px;
+  background:#0b0d10;
+  border:1px solid #ffffff0b;
+}
 
+.metric-icon{
+  font-size:18px;
+  margin-bottom:10px;
+}
+
+.metric span{
+  display:block;
+  color:#747b86;
+  font-size:11px;
+}
+
+.metric strong{
+  display:block;
+  margin-top:7px;
+  font-size:24px;
+}
+
+.metric small{
+  display:block;
+  margin-top:4px;
+  color:#838a95;
+  font-size:10px;
+}
+
+.net-profit{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+  margin-top:12px;
+}
+
+.net-profit > div{
+  padding:18px;
+  border-radius:16px;
+  background:#111316;
+  border:1px solid #ffffff0b;
+}
+
+.net-profit span{
+  display:block;
+  color:#777e88;
+  font-size:12px;
+}
+
+.net-profit strong{
+  display:block;
+  margin-top:8px;
+  font-size:25px;
+}
+
+.chart-card{
+  margin-top:15px;
+  padding:18px;
+  border-radius:17px;
+  background:#0a0c0f;
+  border:1px solid #ffffff0b;
+}
+
+.chart-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.chart-header strong{
+  display:block;
+}
+
+.chart-header span{
+  display:block;
+  color:#737a85;
+  font-size:11px;
+  margin-top:4px;
+}
+
+.chart{
+  height:190px;
+  display:flex;
+  justify-content:center;
+  align-items:flex-end;
+  gap:45px;
+  margin-top:15px;
+}
+
+.chart-column{
+  height:100%;
+  width:80px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  gap:7px;
+}
+
+.chart-column > span{
+  color:#808792;
+  font-size:11px;
+}
+
+.chart-column > b{
+  font-size:11px;
+}
+
+.chart-track{
+  height:135px;
+  width:34px;
+  display:flex;
+  align-items:flex-end;
+  overflow:hidden;
+  background:#17191d;
+  border-radius:10px;
+}
+
+.chart-profit{
+  width:100%;
+  background:linear-gradient(
+    180deg,
+    #58df83,
+    #153b23
+  );
+  border-radius:10px 10px 0 0;
+}
+
+.chart-loss{
+  width:100%;
+  background:linear-gradient(
+    180deg,
+    #ff7272,
+    #4b1b1b
+  );
+  border-radius:10px 10px 0 0;
+}
+
+
+/* SESSIONS */
+
+.sessions-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+}
+
+.session-card{
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:17px;
+  border-radius:18px;
+}
+
+.session-card.active{
+  border-color:#c39a39;
+  box-shadow:
+    0 0 0 1px rgba(195,154,57,.12),
+    0 18px 50px rgba(0,0,0,.45);
+}
+
+.session-icon{
+  width:46px;
+  height:46px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:14px;
+  background:#17191c;
+  font-size:22px;
+}
+
+.session-content{
+  min-width:0;
+}
+
+.session-content strong{
+  display:block;
+  font-size:15px;
+}
+
+.session-content span{
+  display:block;
+  color:#c8a64e;
+  font-size:11px;
+  margin-top:4px;
+}
+
+.session-content small{
+  display:block;
+  color:#737a84;
+  font-size:10px;
+  margin-top:4px;
+}
+
+.session-live,
+.session-wait{
+  margin-right:auto;
+  font-size:10px;
+  white-space:nowrap;
+}
+
+.session-live{
+  color:#6ce18b;
+}
+
+.session-wait{
+  color:#6f7680;
+}
+
+
+/* ANALYSIS */
+
+.analysis-grid{
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:16px;
+  margin-top:25px;
+}
+
+.analysis-grid .card{
+  padding:23px;
+  border-radius:22px;
+}
+
+.score-circle{
+  min-width:70px;
+  height:70px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  border-radius:50%;
+  color:#e2b650;
+  background:#181307;
+  border:2px solid #765b1e;
+  font-size:22px;
+  font-weight:950;
+}
+
+.score-circle small{
+  color:#777e88;
   font-size:9px;
 }
 
-footer{
+.engine-list{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:8px;
+}
+
+.engine-item{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:11px;
+  border-radius:12px;
+  background:#0c0e11;
+  border:1px solid #ffffff0b;
+}
+
+.engine-item span{
+  color:#61dd87;
+  font-weight:950;
+}
+
+.engine-item strong{
+  font-size:12px;
+  color:#c8cdd4;
+}
+
+.structure-list{
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+
+.structure-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:14px;
+  border-radius:13px;
+  background:#0c0e11;
+  border:1px solid #ffffff0b;
+}
+
+.structure-row span{
+  color:#858c96;
+  font-size:12px;
+}
+
+.structure-row strong{
+  font-size:17px;
+  color:#e3e7eb;
+}
+
+
+/* EVENTS */
+
+.events-card{
+  margin-top:16px;
+  padding:23px;
+  border-radius:22px;
+}
+
+.events-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.event-row{
+  display:grid;
+  grid-template-columns:45px 1.5fr 1fr 1fr 1fr;
+  align-items:center;
+  gap:10px;
+  padding:13px;
+  border-radius:14px;
+  background:#0b0d10;
+  border:1px solid #ffffff0a;
+}
+
+.event-symbol{
+  width:36px;
+  height:36px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:10px;
+  background:#16181c;
+  font-size:18px;
+}
+
+.event-info strong{
+  display:block;
+  font-size:13px;
+}
+
+.event-info span{
+  display:block;
+  margin-top:4px;
+  color:#707781;
+  font-size:10px;
+}
+
+.event-detail span{
+  display:block;
+  color:#6f7680;
+  font-size:10px;
+}
+
+.event-detail strong{
+  display:block;
+  margin-top:4px;
+  font-size:13px;
+}
+
+.event-profit{
+  text-align:left;
+}
+
+.event-profit strong{
+  display:block;
+  font-size:15px;
+}
+
+.event-profit span{
+  display:block;
+  color:#838a94;
+  margin-top:4px;
+  font-size:10px;
+}
+
+
+/* HISTORY */
+
+.recent-card{
+  margin-top:16px;
+  padding:23px;
+  border-radius:22px;
+}
+
+.history-list{
+  display:flex;
+  flex-direction:column;
+}
+
+.history-row{
+  display:grid;
+  grid-template-columns:1.4fr .7fr .9fr .7fr .6fr .7fr;
+  gap:8px;
+  padding:14px 8px;
+  border-bottom:1px solid #ffffff0a;
+  color:#c4cad2;
+  font-size:12px;
+}
+
+.history-row:first-child{
+  border-top:1px solid #ffffff0a;
+}
+
+.history-date{
+  color:#818893;
+}
+
+
+/* RULES */
+
+.rules-card{
+  margin-top:16px;
+  padding:21px;
+  border-radius:21px;
+  border:1px solid #ffffff10;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(24,20,10,.92),
+      rgba(12,13,15,.94)
+    );
+}
+
+.rules-title{
+  color:#dfb652;
+  font-size:16px;
+  font-weight:950;
+  margin-bottom:14px;
+}
+
+.rules-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:9px;
+}
+
+.rule{
+  padding:13px;
+  border-radius:12px;
+  background:#0c0e10;
+  border:1px solid #ffffff0a;
+}
+
+.rule span{
+  display:block;
+  color:#777e87;
+  font-size:10px;
+}
+
+.rule strong{
+  display:block;
+  color:#e3e7eb;
+  margin-top:6px;
+  font-size:12px;
+}
+
+
+/* EMPTY */
+
+.empty-state{
+  padding:45px 15px;
   text-align:center;
-
-  padding:18px;
-
-  color:#57534b;
-
-  font-size:8px;
-
-  line-height:2;
+  color:#737a84;
+  font-size:13px;
 }
 
-@media(max-width:950px){
 
-  .controlRow{
-    grid-template-columns:
-      1fr 1.5fr;
-  }
+/* COLORS */
 
-  .refreshBox{
-    display:none;
-  }
-
-  .heroGrid,
-  .signalGrid{
-    grid-template-columns:1fr;
-  }
-
-  .analyzerGrid{
-    grid-template-columns:
-      repeat(2,1fr);
-  }
+.green{
+  color:#62e18a !important;
 }
 
-@media(max-width:650px){
+.red{
+  color:#ff7171 !important;
+}
 
-  .aiPage{
-    padding:9px;
+
+/* FOOTER */
+
+.footer{
+  display:flex;
+  justify-content:space-between;
+  gap:15px;
+  flex-wrap:wrap;
+  padding:20px 5px 35px;
+  color:#5e6670;
+  font-size:10px;
+}
+
+
+/* TABLET */
+
+@media(max-width:1200px){
+
+  .summary-grid{
+    grid-template-columns:repeat(3,1fr);
   }
 
-  .topbar{
-    padding:14px;
-    border-radius:18px;
+  .performance-grid{
+    grid-template-columns:repeat(4,1fr);
   }
 
-  .brandMark{
-    width:44px;
-    height:44px;
+  .levels-grid{
+    grid-template-columns:repeat(3,1fr);
   }
 
-  .topbar h1{
-    font-size:18px;
+  .sessions-grid{
+    grid-template-columns:repeat(2,1fr);
   }
 
-  .topActions .liveDot{
-    display:none;
+}
+
+
+/* MOBILE */
+
+@media(max-width:800px){
+
+  .ai-page{
+    padding:12px;
   }
 
-  .disclaimer{
-    border-radius:17px;
+  .header{
+    flex-direction:column;
+    align-items:stretch;
   }
 
-  .controlRow{
-    grid-template-columns:1fr;
+  .header-actions{
+    width:100%;
+    justify-content:space-between;
   }
 
-  .riskBox{
-    grid-template-columns:
-      repeat(4,1fr);
+  .header h1{
+    font-size:27px;
   }
 
-  .decision{
-    grid-template-columns:
-      55px 1fr;
+  .header p{
+    font-size:12px;
+    line-height:1.8;
   }
 
-  .decisionIcon{
+  .brand-icon{
     width:52px;
     height:52px;
-  }
-
-  .decisionScore{
-    grid-column:1/-1;
-
-    border-right:0;
-
-    border-top:
-      1px solid
-      rgba(255,255,255,.06);
-
-    padding-top:10px;
-  }
-
-  .decision h2{
     font-size:24px;
   }
 
-  .chart{
-    height:220px;
+  .ai-disclaimer{
+    align-items:flex-start;
   }
 
-  .levelsGrid{
-    grid-template-columns:
-      repeat(2,1fr);
-  }
-
-  .analyzerGrid{
+  .market-grid{
     grid-template-columns:1fr;
   }
 
-  .perfGrid{
+  .market-meta{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .live-price{
+    font-size:45px;
+  }
+
+  .levels-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .summary-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .trade-status{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .section-heading{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .performance-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .net-profit{
     grid-template-columns:1fr;
   }
 
-  .historyRow{
-    grid-template-columns:
-      1.2fr .7fr .6fr .6fr;
+  .period-tabs{
+    width:100%;
   }
 
-  .sessionPanel,
-  .tradeCard,
-  .confirmCard,
-  .analyzers,
-  .performance,
-  .chartCard{
-    padding:14px;
+  .period-tabs button{
+    flex:1;
   }
+
+  .analysis-grid{
+    grid-template-columns:1fr;
+  }
+
+  .sessions-grid{
+    grid-template-columns:1fr;
+  }
+
+  .engine-list{
+    grid-template-columns:1fr;
+  }
+
+  .event-row{
+    grid-template-columns:40px 1fr 1fr;
+  }
+
+  .event-detail{
+    display:none;
+  }
+
+  .event-profit{
+    text-align:left;
+  }
+
+  .history-row{
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+
+  .rules-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+}
+
+
+/* SMALL MOBILE */
+
+@media(max-width:500px){
+
+  .brand-area{
+    align-items:flex-start;
+  }
+
+  .ai-disclaimer{
+    flex-direction:column;
+  }
+
+  .levels-grid{
+    grid-template-columns:1fr;
+  }
+
+  .summary-grid{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .summary-card > strong{
+    font-size:20px;
+  }
+
+  .market-card{
+    padding:18px;
+  }
+
+  .currency-big{
+    font-size:30px;
+  }
+
+  .trade-status{
+    grid-template-columns:1fr;
+  }
+
+  .footer{
+    flex-direction:column;
+  }
+
 }
 `;
