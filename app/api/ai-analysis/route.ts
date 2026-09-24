@@ -25,67 +25,51 @@ type Analysis = {
   symbol: string;
   price: number;
   direction: "BUY" | "SELL" | "NO_TRADE";
-
   score: number;
   confirmations: number;
-
   session: string;
   sessions: SessionInfo[];
-
   entry?: number;
   stopLoss?: number;
   tp1?: number;
   tp2?: number;
   tp3?: number;
-
   lotSize?: number;
   actualRisk?: number;
   rr?: number;
-
   mtf: string;
-
   support: number;
   resistance: number;
   atr: number;
-
   reasons: string[];
-
   confirmationsList: {
     name: string;
     ok: boolean;
     value: string;
   }[];
-
   candles: Candle[];
-
   timeframe: "1min";
-
   newsBlocked: boolean;
   newsReason: string;
 };
 
 type Meta = {
   userId: string;
-
   kind: "AI_SCALP";
-
   symbol: string;
   direction: "BUY" | "SELL";
 
   entry: number;
   stopLoss: number;
-
   tp1: number;
   tp2: number;
   tp3: number;
 
   lotSize: number;
-
   riskUsd: number;
   actualRisk: number;
 
   session: string;
-
   score: number;
   confirmations: number;
   mtf: string;
@@ -131,7 +115,6 @@ const TF = ["4h", "1h", "15min", "1min"] as const;
 
 function num(value: unknown, fallback = 0) {
   const n = Number(value);
-
   return Number.isFinite(n) ? n : fallback;
 }
 
@@ -141,9 +124,8 @@ function avg(values: number[]) {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-function round(value: number, digits = 5) {
-  const p = 10 ** digits;
-
+function round(value: number, decimals = 5) {
+  const p = 10 ** decimals;
   return Math.round(value * p) / p;
 }
 
@@ -156,26 +138,22 @@ function esc(value: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;");
+    .replace(/"/g, "&quot;");
 }
 
 function symbolApi(symbol: string) {
-  const value = symbol.replace(/\s/g, "").toUpperCase();
+  const clean = symbol.replace(/\s/g, "").toUpperCase();
 
-  if (value.length === 6) {
-    return `${value.slice(0, 3)}/${value.slice(3)}`;
+  if (clean.length === 6) {
+    return `${clean.slice(0, 3)}/${clean.slice(3)}`;
   }
 
-  return value;
+  return clean;
 }
 
 function decimals(symbol: string) {
   return symbol.includes("JPY") ? 3 : 5;
 }
-
-/* -------------------------------------------------------
-   Twelve Data
-------------------------------------------------------- */
 
 async function td(
   path: string,
@@ -184,17 +162,17 @@ async function td(
   const key = process.env.TWELVE_DATA_API_KEY;
 
   if (!key) {
-    throw new Error(
-      "TWELVE_DATA_API_KEY وجود ندارد."
-    );
+    throw new Error("TWELVE_DATA_API_KEY وجود ندارد.");
   }
 
   const url = new URL(TD + path);
 
-  for (const [keyName, value] of Object.entries({
+  const finalParams = {
     ...params,
     apikey: key,
-  })) {
+  };
+
+  for (const [keyName, value] of Object.entries(finalParams)) {
     url.searchParams.set(keyName, String(value));
   }
 
@@ -224,12 +202,12 @@ async function td(
 async function candles(
   symbol: string,
   interval: string,
-  outputsize = 180
+  count = 180
 ): Promise<Candle[]> {
   const data = await td("/time_series", {
     symbol: symbolApi(symbol),
     interval,
-    outputsize,
+    outputsize: count,
     order: "asc",
     timezone: "UTC",
   });
@@ -244,42 +222,33 @@ async function candles(
   }
 
   return data.values
-    .map((x: any) => ({
-      datetime: String(x.datetime),
-      open: num(x.open),
-      high: num(x.high),
-      low: num(x.low),
-      close: num(x.close),
+    .map((item: any) => ({
+      datetime: String(item.datetime),
+      open: num(item.open),
+      high: num(item.high),
+      low: num(item.low),
+      close: num(item.close),
       volume:
-        x.volume == null
+        item.volume == null
           ? undefined
-          : num(x.volume),
+          : num(item.volume),
     }))
     .filter(
-      (x: Candle) =>
-        x.open &&
-        x.high &&
-        x.low &&
-        x.close
+      (item: Candle) =>
+        item.open &&
+        item.high &&
+        item.low &&
+        item.close
     );
 }
-
-/* -------------------------------------------------------
-   Indicators
-------------------------------------------------------- */
 
 function ema(values: number[], period: number) {
   if (values.length < period) return 0;
 
   let result = avg(values.slice(0, period));
-
   const multiplier = 2 / (period + 1);
 
-  for (
-    let i = period;
-    i < values.length;
-    i++
-  ) {
+  for (let i = period; i < values.length; i++) {
     result =
       values[i] * multiplier +
       result * (1 - multiplier);
@@ -291,22 +260,22 @@ function ema(values: number[], period: number) {
 function rsi(values: number[], period = 14) {
   if (values.length <= period) return 50;
 
-  let gain = 0;
-  let loss = 0;
+  let gains = 0;
+  let losses = 0;
 
   for (let i = 1; i <= period; i++) {
     const difference =
       values[i] - values[i - 1];
 
     if (difference >= 0) {
-      gain += difference;
+      gains += difference;
     } else {
-      loss -= difference;
+      losses -= difference;
     }
   }
 
-  let averageGain = gain / period;
-  let averageLoss = loss / period;
+  let averageGain = gains / period;
+  let averageLoss = losses / period;
 
   for (
     let i = period + 1;
@@ -336,13 +305,8 @@ function rsi(values: number[], period = 14) {
   );
 }
 
-function atr(
-  candlesData: Candle[],
-  period = 14
-) {
-  if (candlesData.length <= period) {
-    return 0;
-  }
+function atr(candlesData: Candle[], period = 14) {
+  if (candlesData.length <= period) return 0;
 
   const trueRanges: number[] = [];
 
@@ -374,10 +338,6 @@ function macd(values: number[]) {
     ema(values, 26)
   );
 }
-
-/* -------------------------------------------------------
-   Structure
-------------------------------------------------------- */
 
 function swings(candlesData: Candle[]) {
   const highs: number[] = [];
@@ -425,17 +385,12 @@ function swings(candlesData: Candle[]) {
       ...highs.slice(-6),
       last.high
     ),
-
     support: Math.min(
       ...lows.slice(-6),
       last.low
     ),
   };
 }
-
-/* -------------------------------------------------------
-   Candle confirmation
-------------------------------------------------------- */
 
 function candleConfirm(
   candlesData: Candle[],
@@ -514,33 +469,24 @@ function candleConfirm(
   };
 }
 
-/* -------------------------------------------------------
-   Sessions
-   Uses local business hours so DST is handled by
-   Intl time zones.
-------------------------------------------------------- */
-
 function localHour(zone: string) {
   const parts =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: zone,
-        hour: "2-digit",
-        hour12: false,
-        minute: "2-digit",
-      }
-    ).formatToParts(new Date());
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hour: "2-digit",
+      hour12: false,
+      minute: "2-digit",
+    }).formatToParts(new Date());
 
   const hour = Number(
     parts.find(
-      (part) => part.type === "hour"
+      (item) => item.type === "hour"
     )?.value ?? 0
   );
 
   const minute = Number(
     parts.find(
-      (part) => part.type === "minute"
+      (item) => item.type === "minute"
     )?.value ?? 0
   );
 
@@ -549,36 +495,35 @@ function localHour(zone: string) {
 
 function sessionState(): SessionInfo[] {
   const definitions = [
-    ["Australia/Sydney", "Sydney", "سیدنی"],
-    ["Asia/Tokyo", "Tokyo", "توکیو"],
-    ["Europe/London", "London", "لندن"],
-    [
-      "America/New_York",
-      "New York",
-      "نیویورک",
-    ],
+    ["Asia/Sydney", "Sydney"],
+    ["Asia/Tokyo", "Tokyo"],
+    ["Europe/London", "London"],
+    ["America/New_York", "New York"],
   ] as const;
 
   return definitions.map(
-    ([zone, name, fa]) => {
+    ([zone, name]) => {
       const hour = localHour(zone);
 
       return {
         name,
-        fa,
-        open: hour >= 8 && hour < 17,
+        fa:
+          name === "Sydney"
+            ? "سیدنی"
+            : name === "Tokyo"
+            ? "توکیو"
+            : name === "London"
+            ? "لندن"
+            : "نیویورک",
+        open:
+          hour >= 8 &&
+          hour < 17,
       };
     }
   );
 }
 
-/* -------------------------------------------------------
-   Economic news filter
-------------------------------------------------------- */
-
-async function newsCheck(
-  symbol: string
-) {
+async function newsCheck(symbol: string) {
   const currencies = [
     symbol.slice(0, 3),
     symbol.slice(3),
@@ -598,7 +543,6 @@ async function newsCheck(
             now.getTime() -
               10 * 60 * 1000
           ),
-
           lte: new Date(
             now.getTime() +
               30 * 60 * 1000
@@ -634,56 +578,42 @@ async function newsCheck(
   };
 }
 
-/* -------------------------------------------------------
-   Risk model
-
-   Target:
-   SL = $4
-   TP1 = $5
-   TP2 = $8
-   TP3 = $12
-
-   Volume is calculated from structural stop distance.
-------------------------------------------------------- */
-
 function makeLevels(
   symbol: string,
   direction: "BUY" | "SELL",
   entry: number,
   atrValue: number,
-  supportResistance: {
+  sr: {
     support: number;
     resistance: number;
   }
 ) {
-  const structureDistance =
+  const structure =
     direction === "BUY"
-      ? entry -
-        supportResistance.support
-      : supportResistance.resistance -
-        entry;
+      ? entry - sr.support
+      : sr.resistance - entry;
 
-  const minimumDistance = Math.max(
-    atrValue * 0.15,
-    entry * 0.00015
-  );
+  const minimum =
+    Math.max(
+      atrValue * 0.15,
+      entry * 0.00015
+    );
 
-  const maximumDistance =
+  const maximum =
     atrValue * 0.65;
 
   if (
-    structureDistance <
-      minimumDistance ||
-    structureDistance >
-      maximumDistance
+    structure < minimum ||
+    structure > maximum
   ) {
     return null;
   }
 
-  const stopDistance = Math.max(
-    structureDistance,
-    atrValue * 0.18
-  );
+  const stopDistance =
+    Math.max(
+      structure,
+      atrValue * 0.18
+    );
 
   const contractSize = 100000;
 
@@ -692,15 +622,11 @@ function makeLevels(
     (stopDistance * contractSize);
 
   lot =
-    Math.floor(lot * 100) / 100;
+    Math.floor(lot * 100) /
+    100;
 
-  if (lot < 0.01) {
-    lot = 0.01;
-  }
-
-  if (lot > 0.05) {
-    return null;
-  }
+  if (lot < 0.01) lot = 0.01;
+  if (lot > 0.05) return null;
 
   const actualRisk =
     stopDistance *
@@ -708,13 +634,16 @@ function makeLevels(
     contractSize;
 
   const tp1Distance =
-    5 / (lot * contractSize);
+    5 /
+    (lot * contractSize);
 
   const tp2Distance =
-    8 / (lot * contractSize);
+    8 /
+    (lot * contractSize);
 
   const tp3Distance =
-    12 / (lot * contractSize);
+    12 /
+    (lot * contractSize);
 
   return {
     entry,
@@ -740,31 +669,30 @@ function makeLevels(
         : entry - tp3Distance,
 
     lot,
-
     actual: actualRisk,
 
     rr:
       12 /
-      Math.max(actualRisk, 0.01),
+      Math.max(
+        actualRisk,
+        0.01
+      ),
   };
 }
-
-/* -------------------------------------------------------
-   Main AI analysis
-------------------------------------------------------- */
 
 async function analyze(
   symbol: string
 ): Promise<Analysis> {
-  const data = await Promise.all(
-    TF.map((timeframe) =>
-      candles(
-        symbol,
-        timeframe,
-        180
+  const data =
+    await Promise.all(
+      TF.map((timeframe) =>
+        candles(
+          symbol,
+          timeframe,
+          180
+        )
       )
-    )
-  );
+    );
 
   const market: Record<
     string,
@@ -773,47 +701,49 @@ async function analyze(
 
   TF.forEach(
     (timeframe, index) => {
-      market[timeframe] = data[index];
+      market[timeframe] =
+        data[index];
     }
   );
 
-  const oneMinute =
+  const main =
     market["1min"];
 
   const last =
-    oneMinute[
-      oneMinute.length - 1
-    ];
+    main[main.length - 1];
 
   const closes =
-    oneMinute.map(
-      (candle) => candle.close
+    main.map(
+      (item) => item.close
     );
 
-  const ema20 = ema(closes, 20);
-  const ema50 = ema(closes, 50);
+  const ema20 =
+    ema(closes, 20);
+
+  const ema50 =
+    ema(closes, 50);
 
   const rsiValue =
-    rsi(closes, 14);
+    rsi(closes);
 
   const macdValue =
     macd(closes);
 
   const atrValue =
-    atr(oneMinute, 14);
+    atr(main);
 
-  const sr =
-    swings(oneMinute);
+  const structure =
+    swings(main);
 
   const sessions =
     sessionState();
 
   const activeSessions =
     sessions.filter(
-      (session) => session.open
+      (item) => item.open
     );
 
-  const session =
+  const currentSession =
     activeSessions.length > 1
       ? activeSessions
           .map(
@@ -826,27 +756,24 @@ async function analyze(
   const news =
     await newsCheck(symbol);
 
-  /* MTF trend */
-
   const trendVotes =
     TF.slice(0, 3).map(
       (timeframe) => {
         const candlesData =
           market[timeframe];
 
-        const current =
+        const candle =
           candlesData[
             candlesData.length - 1
           ];
 
-        const values =
+        const timeframeCloses =
           candlesData.map(
-            (candle) =>
-              candle.close
+            (item) => item.close
           );
 
-        return current.close >
-          ema(values, 20)
+        return candle.close >
+          ema(timeframeCloses, 20)
           ? 1
           : -1;
       }
@@ -862,27 +789,25 @@ async function analyze(
       (value) => value < 0
     ).length;
 
-  /* Trend */
-
-  const upTrend =
+  const bullishTrend =
     ema20 > ema50 &&
     last.close > ema20;
 
-  const downTrend =
+  const bearishTrend =
     ema20 < ema50 &&
     last.close < ema20;
 
-  /* Liquidity */
+  const liquidityLow =
+    last.low <
+      structure.support &&
+    last.close >
+      structure.support;
 
-  const sweepLow =
-    last.low < sr.support &&
-    last.close > sr.support;
-
-  const sweepHigh =
-    last.high > sr.resistance &&
-    last.close < sr.resistance;
-
-  /* Pullback */
+  const liquidityHigh =
+    last.high >
+      structure.resistance &&
+    last.close <
+      structure.resistance;
 
   const pullbackBuy =
     last.low <=
@@ -894,95 +819,90 @@ async function analyze(
       ema20 - atrValue * 0.35 &&
     last.close < ema20;
 
-  /* Candle */
-
-  const buyCandle =
+  const candleBuy =
     candleConfirm(
-      oneMinute,
+      main,
       "BUY"
     );
 
-  const sellCandle =
+  const candleSell =
     candleConfirm(
-      oneMinute,
+      main,
       "SELL"
     );
 
-  /* Tick volume */
-
-  const volume =
-    oneMinute
+  const volumes =
+    main
       .map(
-        (candle) =>
-          candle.volume ?? 0
+        (item) =>
+          item.volume ?? 0
       )
       .slice(-21);
 
   const averageVolume =
-    avg(volume.slice(0, -1));
+    avg(
+      volumes.slice(0, -1)
+    );
 
   const volumeConfirmed =
-    averageVolume > 0
-      ? (last.volume ?? 0) >=
-        averageVolume * 0.9
-      : false;
+    averageVolume <= 0
+      ? false
+      : (last.volume ?? 0) >=
+        averageVolume * 0.9;
 
-  /* BUY votes */
+  const buyScore =
+    [
+      bullishTrend,
+      rsiValue > 50,
+      macdValue > 0,
+      bullishMtf >= 2,
+      liquidityLow ||
+        pullbackBuy,
+      candleBuy.ok,
+      volumeConfirmed,
+      activeSessions.length > 0,
+      !news.blocked,
+    ].filter(Boolean).length;
 
-  const buyVotes = [
-    upTrend,
-    rsiValue > 50,
-    macdValue > 0,
-    bullishMtf >= 2,
-    sweepLow || pullbackBuy,
-    buyCandle.ok,
-    volumeConfirmed,
-    activeSessions.length > 0,
-    !news.blocked,
-  ].filter(Boolean).length;
+  const sellScore =
+    [
+      bearishTrend,
+      rsiValue < 50,
+      macdValue < 0,
+      bearishMtf >= 2,
+      liquidityHigh ||
+        pullbackSell,
+      candleSell.ok,
+      volumeConfirmed,
+      activeSessions.length > 0,
+      !news.blocked,
+    ].filter(Boolean).length;
 
-  /* SELL votes */
-
-  const sellVotes = [
-    downTrend,
-    rsiValue < 50,
-    macdValue < 0,
-    bearishMtf >= 2,
-    sweepHigh || pullbackSell,
-    sellCandle.ok,
-    volumeConfirmed,
-    activeSessions.length > 0,
-    !news.blocked,
-  ].filter(Boolean).length;
-
-  let direction:
-    | "BUY"
-    | "SELL"
-    | "NO_TRADE";
-
-  if (buyVotes > sellVotes) {
-    direction = "BUY";
-  } else if (sellVotes > buyVotes) {
-    direction = "SELL";
-  } else {
-    direction = "NO_TRADE";
-  }
+  let direction: Analysis["direction"] =
+    buyScore > sellScore
+      ? "BUY"
+      : sellScore > buyScore
+      ? "SELL"
+      : "NO_TRADE";
 
   const votes =
     direction === "BUY"
-      ? buyVotes
+      ? buyScore
       : direction === "SELL"
-      ? sellVotes
+      ? sellScore
       : Math.max(
-          buyVotes,
-          sellVotes
+          buyScore,
+          sellScore
         );
 
-  let score = Math.round(
-    (votes / 9) * 100
-  );
+  let score =
+    Math.round(
+      (votes / 9) * 100
+    );
 
-  if (activeSessions.length > 1) {
+  if (
+    activeSessions.length > 1
+  ) {
     score += 4;
   }
 
@@ -994,8 +914,10 @@ async function analyze(
   }
 
   if (
-    (sweepLow || sweepHigh) &&
-    (pullbackBuy || pullbackSell)
+    (liquidityLow ||
+      liquidityHigh) &&
+    (pullbackBuy ||
+      pullbackSell)
   ) {
     score += 4;
   }
@@ -1006,7 +928,7 @@ async function analyze(
     100
   );
 
-  const confirmationsList = [
+  const confirmations = [
     {
       name: "روند چند تایم‌فریمی",
       ok:
@@ -1025,9 +947,9 @@ async function analyze(
       name: "EMA 20/50",
       ok:
         direction === "BUY"
-          ? upTrend
+          ? bullishTrend
           : direction === "SELL"
-          ? downTrend
+          ? bearishTrend
           : false,
       value: `${round(
         ema20,
@@ -1070,9 +992,9 @@ async function analyze(
       name: "Liquidity sweep",
       ok:
         direction === "BUY"
-          ? sweepLow
+          ? liquidityLow
           : direction === "SELL"
-          ? sweepHigh
+          ? liquidityHigh
           : false,
       value:
         direction === "BUY"
@@ -1098,14 +1020,14 @@ async function analyze(
       name: "Candle confirmation",
       ok:
         direction === "BUY"
-          ? buyCandle.ok
+          ? candleBuy.ok
           : direction === "SELL"
-          ? sellCandle.ok
+          ? candleSell.ok
           : false,
       value:
         direction === "BUY"
-          ? buyCandle.name
-          : sellCandle.name,
+          ? candleBuy.name
+          : candleSell.name,
     },
 
     {
@@ -1119,9 +1041,8 @@ async function analyze(
     {
       name: "Session",
       ok:
-        activeSessions.length >
-        0,
-      value: session,
+        activeSessions.length > 0,
+      value: currentSession,
     },
 
     {
@@ -1131,37 +1052,39 @@ async function analyze(
     },
   ];
 
-  const confirmations =
-    confirmationsList.filter(
+  const goodConfirmations =
+    confirmations.filter(
       (item) => item.ok
     ).length;
 
+  const finalDirection =
+    direction;
+
   let levels:
-    | ReturnType<
-        typeof makeLevels
-      >
+    | ReturnType<typeof makeLevels>
     | null = null;
 
   if (
-    (direction === "BUY" ||
-      direction === "SELL") &&
+    (finalDirection === "BUY" ||
+      finalDirection === "SELL") &&
     score >= 88 &&
-    confirmations >= 7 &&
+    goodConfirmations >= 7 &&
     (
-      direction === "BUY"
+      finalDirection === "BUY"
         ? bullishMtf
         : bearishMtf
     ) >= 3 &&
     activeSessions.length > 0 &&
     !news.blocked
   ) {
-    levels = makeLevels(
-      symbol,
-      direction,
-      last.close,
-      atrValue,
-      sr
-    );
+    levels =
+      makeLevels(
+        symbol,
+        finalDirection,
+        last.close,
+        atrValue,
+        structure
+      );
   }
 
   if (!levels) {
@@ -1169,7 +1092,7 @@ async function analyze(
   }
 
   const reasons =
-    confirmationsList
+    confirmations
       .filter(
         (item) => item.ok
       )
@@ -1180,58 +1103,69 @@ async function analyze(
   return {
     symbol,
     price: last.close,
-
     direction,
-
     score,
-
-    confirmations,
-
-    session,
-
+    confirmations:
+      goodConfirmations,
+    session: currentSession,
     sessions,
-
-    entry: levels?.entry,
-    stopLoss: levels?.sl,
-
-    tp1: levels?.tp1,
-    tp2: levels?.tp2,
-    tp3: levels?.tp3,
-
-    lotSize: levels?.lot,
-    actualRisk: levels?.actual,
-    rr: levels?.rr,
-
+    entry:
+      levels?.entry ??
+      last.close,
+    stopLoss:
+      levels?.sl,
+    tp1:
+      levels?.tp1,
+    tp2:
+      levels?.tp2,
+    tp3:
+      levels?.tp3,
+    lotSize:
+      levels?.lot,
+    actualRisk:
+      levels?.actual,
+    rr:
+      levels?.rr,
     mtf: `${Math.max(
       bullishMtf,
       bearishMtf
     )}/3`,
-
-    support: sr.support,
-    resistance: sr.resistance,
-
+    support:
+      structure.support,
+    resistance:
+      structure.resistance,
     atr: atrValue,
-
     reasons,
-
-    confirmationsList,
-
+    confirmationsList:
+      confirmations,
     candles:
-      oneMinute.slice(-80),
-
+      main.slice(-80),
     timeframe: "1min",
-
     newsBlocked:
       news.blocked,
-
     newsReason:
       news.reason,
   };
 }
 
-/* -------------------------------------------------------
-   Telegram
-------------------------------------------------------- */
+/*
+ * مهم:
+ * این تابع همان چیزی است که خطای Render
+ * Cannot find name 'activeMeta'
+ * مربوط به آن بود.
+ */
+function activeMeta(
+  value: unknown
+): Meta | null {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return null;
+  }
+
+  return value as Meta;
+}
 
 async function sendTelegram(
   analysis: Analysis
@@ -1245,19 +1179,18 @@ async function sendTelegram(
   if (!token || !chat) {
     return {
       ok: false,
-      error:
-        "Telegram env missing",
+      error: "Telegram env missing",
     };
   }
 
-  const buy =
+  const isBuy =
     analysis.direction === "BUY";
 
-  const icon = buy
+  const icon = isBuy
     ? "🟢📈"
     : "🔻📉";
 
-  const name = buy
+  const name = isBuy
     ? "BUY"
     : "SELL";
 
@@ -1268,7 +1201,9 @@ async function sendTelegram(
 
   const text = `
 ${icon} <b>AI ANALYSIS — ${name}</b>
+
 ━━━━━━━━━━━━━━
+
 ⚠️ <b>این تحلیل هوش مصنوعی است؛ سیگنال مستقیم یا تضمین سود نیست.</b>
 
 📌 <b>${esc(
@@ -1290,14 +1225,13 @@ ${icon} <b>AI ANALYSIS — ${name}</b>
     precision
   )}</b>
 
-💵 Risk target:
+💰 Risk target:
 <b>-$4.00</b>
 
-💵 Model risk:
-<b>-${
-    analysis.actualRisk?.toFixed(2) ??
-    "—"
-  }</b>
+📊 Model risk:
+<b>-$${analysis.actualRisk?.toFixed(
+    2
+  )}</b>
 
 🟢 TP1:
 <b>${analysis.tp1?.toFixed(
@@ -1325,15 +1259,12 @@ ${icon} <b>AI ANALYSIS — ${name}</b>
 🧭 MTF:
 <b>${analysis.mtf}</b>
 
-💼 Lot:
-<b>${
-    analysis.lotSize?.toFixed(2) ??
-    "—"
-  }</b>
+💼 Lot model:
+<b>${analysis.lotSize?.toFixed(
+    2
+  )}</b>
 
-━━━━━━━━━━━━━━
-
-<b>تاییدیه‌های فعال:</b>
+<b>تاییدیه‌ها:</b>
 
 ${analysis.reasons
   .map(
@@ -1344,9 +1275,7 @@ ${analysis.reasons
 
 ━━━━━━━━━━━━━━
 
-⚠️ ریسک هدف $4 است و حجم با حداقل 0.01 لات گرد می‌شود.
-
-⚠️ این خروجی تحلیل بازار است و اجرای معامله توسط این بخش انجام نمی‌شود.
+⚠️ ریسک هدف $4 است؛ حجم با حداقل 0.01 لات گرد می‌شود و ریسک واقعی مدل در کارت نمایش داده می‌شود.
 `;
 
   const response =
@@ -1381,9 +1310,10 @@ ${analysis.reasons
   ) {
     return {
       ok: true,
-      messageId: String(
-        data.result.message_id
-      ),
+      messageId:
+        String(
+          data.result.message_id
+        ),
     };
   }
 
@@ -1396,10 +1326,6 @@ ${analysis.reasons
   };
 }
 
-/* -------------------------------------------------------
-   Existing AI analysis guard
-------------------------------------------------------- */
-
 async function previousPending(
   userId: string,
   symbol: string
@@ -1409,11 +1335,11 @@ async function previousPending(
       {
         where: {
           botId: null,
-
           startedAt: {
             gte: new Date(
               Date.now() -
-                2 * 86400000
+                2 *
+                  86400000
             ),
           },
         },
@@ -1426,29 +1352,31 @@ async function previousPending(
       }
     );
 
-  return rows.find((row) => {
-    const metadata =
-      activeMeta(
-        row.metadata
+  return rows.find(
+    (row) => {
+      const metadata =
+        activeMeta(
+          row.metadata
+        );
+
+      return (
+        metadata?.userId ===
+          userId &&
+        metadata?.kind ===
+          "AI_SCALP" &&
+        metadata.symbol ===
+          symbol &&
+        [
+          "AI_PENDING",
+          "AI_TP1",
+          "AI_TP2",
+        ].includes(
+          row.status
+        )
       );
-
-    return (
-      metadata?.userId === userId &&
-      metadata?.kind ===
-        "AI_SCALP" &&
-      metadata.symbol === symbol &&
-      [
-        "AI_PENDING",
-        "AI_TP1",
-        "AI_TP2",
-      ].includes(row.status)
-    );
-  });
+    }
+  );
 }
-
-/* -------------------------------------------------------
-   Monitor AI analysis
-------------------------------------------------------- */
 
 async function monitor(
   userId: string
@@ -1470,7 +1398,8 @@ async function monitor(
           startedAt: {
             gte: new Date(
               Date.now() -
-                8 * 3600000
+                8 *
+                  3600000
             ),
           },
         },
@@ -1493,24 +1422,27 @@ async function monitor(
 
     if (
       !metadata ||
-      metadata.userId !== userId
+      metadata.userId !==
+        userId
     ) {
       continue;
     }
 
     try {
-      const data =
+      const latest =
         await candles(
           metadata.symbol,
           "1min",
           2
         );
 
-      const latest =
-        data[data.length - 1];
+      const candle =
+        latest[
+          latest.length - 1
+        ];
 
       metadata.lastPrice =
-        latest.close;
+        candle.close;
 
       let hit = "";
 
@@ -1519,9 +1451,9 @@ async function monitor(
         (
           metadata.direction ===
           "BUY"
-            ? latest.low <=
+            ? candle.low <=
               metadata.stopLoss
-            : latest.high >=
+            : candle.high >=
               metadata.stopLoss
         )
       ) {
@@ -1531,9 +1463,9 @@ async function monitor(
         (
           metadata.direction ===
           "BUY"
-            ? latest.high >=
+            ? candle.high >=
               metadata.tp1
-            : latest.low <=
+            : candle.low <=
               metadata.tp1
         )
       ) {
@@ -1544,9 +1476,9 @@ async function monitor(
         (
           metadata.direction ===
           "BUY"
-            ? latest.high >=
+            ? candle.high >=
               metadata.tp2
-            : latest.low <=
+            : candle.low <=
               metadata.tp2
         )
       ) {
@@ -1557,9 +1489,9 @@ async function monitor(
         (
           metadata.direction ===
           "BUY"
-            ? latest.high >=
+            ? candle.high >=
               metadata.tp3
-            : latest.low <=
+            : candle.low <=
               metadata.tp3
         )
       ) {
@@ -1576,7 +1508,7 @@ async function monitor(
             ? 8
             : 12;
 
-        const price =
+        const hitPrice =
           hit === "SL"
             ? metadata.stopLoss
             : hit === "TP1"
@@ -1587,25 +1519,29 @@ async function monitor(
 
         metadata.events.push({
           type: hit,
-          price,
+          price: hitPrice,
           pnlUsd: pnl,
           at: new Date().toISOString(),
         });
 
         if (hit === "SL") {
-          metadata.state.sl = true;
+          metadata.state.sl =
+            true;
         }
 
         if (hit === "TP1") {
-          metadata.state.tp1 = true;
+          metadata.state.tp1 =
+            true;
         }
 
         if (hit === "TP2") {
-          metadata.state.tp2 = true;
+          metadata.state.tp2 =
+            true;
         }
 
         if (hit === "TP3") {
-          metadata.state.tp3 = true;
+          metadata.state.tp3 =
+            true;
         }
 
         const closed =
@@ -1653,18 +1589,16 @@ async function monitor(
           const text = `
 ${icon} <b>AI ANALYSIS ${hit}</b>
 
-${esc(
-            metadata.symbol
-          )} · ${
-            metadata.direction
-          }
+${esc(metadata.symbol)} · ${metadata.direction}
 
-🎯 Price:
-<b>${price}</b>
+Price:
+<b>${hitPrice}</b>
 
-💵 Stage P/L:
+Stage P/L:
 <b>${
-            pnl >= 0 ? "+" : ""
+            pnl >= 0
+              ? "+"
+              : ""
           }$${pnl}</b>
 
 ℹ️ نتیجه مرحله‌ای تحلیل AI ثبت شد.
@@ -1683,7 +1617,8 @@ ${esc(
               body: JSON.stringify({
                 chat_id: chat,
                 text,
-                parse_mode: "HTML",
+                parse_mode:
+                  "HTML",
               }),
             }
           ).catch(() => {});
@@ -1721,15 +1656,11 @@ ${esc(
   return output;
 }
 
-/* -------------------------------------------------------
-   Performance
-------------------------------------------------------- */
-
 function performance(
   rows: any[],
   from: Date
 ) {
-  let signals = 0;
+  let count = 0;
   let wins = 0;
   let losses = 0;
   let partial = 0;
@@ -1761,20 +1692,31 @@ function performance(
 
     const net =
       events.reduce(
-        (sum, event) =>
-          sum +
-          num(event.pnlUsd),
+        (
+          total: number,
+          event: {
+            pnlUsd?: number;
+          }
+        ) =>
+          total +
+          num(
+            event.pnlUsd
+          ),
         0
       );
 
-    const final =
-      events[events.length - 1];
+    const finalEvent =
+      events[
+        events.length - 1
+      ];
 
     if (
-      final.type === "TP3" ||
-      final.type === "SL"
+      finalEvent.type ===
+        "TP3" ||
+      finalEvent.type ===
+        "SL"
     ) {
-      signals++;
+      count++;
 
       pnl += net;
 
@@ -1785,11 +1727,13 @@ function performance(
       }
 
       if (
-        final.type !== "TP3" &&
-        events.some((event) =>
-          event.type.startsWith(
-            "TP"
-          )
+        finalEvent.type !==
+          "TP3" &&
+        events.some(
+          (event) =>
+            event.type.startsWith(
+              "TP"
+            )
         )
       ) {
         partial++;
@@ -1798,28 +1742,22 @@ function performance(
   }
 
   return {
-    signals,
+    signals: count,
     wins,
     losses,
     partial,
-
     winRate:
-      signals
+      count
         ? round(
-            (wins / signals) *
+            (wins / count) *
               100,
             2
           )
         : 0,
-
     pnlUsd:
       round(pnl, 2),
   };
 }
-
-/* -------------------------------------------------------
-   GET
-------------------------------------------------------- */
 
 export async function GET(
   request: Request
@@ -1897,7 +1835,9 @@ export async function GET(
     ).toUpperCase();
 
   if (
-    !FX_SYMBOLS.includes(symbol)
+    !FX_SYMBOLS.includes(
+      symbol
+    )
   ) {
     return NextResponse.json(
       {
@@ -1911,15 +1851,15 @@ export async function GET(
   }
 
   try {
-    /* First monitor previous AI analyses */
-
     const monitored =
-      await monitor(userId);
-
-    /* Then analyze current market */
+      await monitor(
+        userId
+      );
 
     const analysis =
-      await analyze(symbol);
+      await analyze(
+        symbol
+      );
 
     let generated:
       | {
@@ -1927,18 +1867,6 @@ export async function GET(
           telegram: any;
         }
       | null = null;
-
-    /*
-      Very strict gate.
-
-      No Telegram alert unless:
-      - score >= 88
-      - confirmations >= 7
-      - 3/3 MTF agreement
-      - active session
-      - no high-impact news
-      - valid structural risk model
-    */
 
     if (
       analysis.direction !==
@@ -1964,13 +1892,15 @@ export async function GET(
               startedAt: {
                 gte: new Date(
                   Date.now() -
-                    45 * 60000
+                    45 *
+                      60000
                 ),
               },
             },
 
             orderBy: {
-              startedAt: "desc",
+              startedAt:
+                "desc",
             },
           }
         );
@@ -1982,15 +1912,14 @@ export async function GET(
             )
           : null;
 
-      const sameUserRecent =
-        recentMeta?.userId ===
-          userId &&
-        recentMeta.symbol ===
-          symbol;
-
       if (
         !pending &&
-        !sameUserRecent
+        !(
+          recentMeta?.userId ===
+            userId &&
+          recentMeta.symbol ===
+            symbol
+        )
       ) {
         const metadata: Meta = {
           userId,
@@ -2018,7 +1947,8 @@ export async function GET(
             analysis.tp3,
 
           lotSize:
-            analysis.lotSize ?? 0.01,
+            analysis.lotSize ??
+            0.01,
 
           riskUsd: 4,
 
@@ -2057,11 +1987,6 @@ export async function GET(
             analysis.price,
         };
 
-        /*
-          Send only confirmed AI analysis
-          to Telegram.
-        */
-
         const telegram =
           await sendTelegram(
             analysis
@@ -2072,21 +1997,15 @@ export async function GET(
             {
               data: {
                 botId: null,
-
                 symbol,
-
                 timeframe:
                   "1min",
-
                 status:
                   "AI_PENDING",
-
                 signalGenerated:
                   true,
-
                 startedAt:
                   new Date(),
-
                 metadata:
                   metadata as any,
               },
@@ -2099,10 +2018,6 @@ export async function GET(
         };
       }
     }
-
-    /*
-      Performance history.
-    */
 
     const rows =
       await prisma.analysisRun.findMany(
@@ -2142,8 +2057,7 @@ export async function GET(
         );
       });
 
-    const now =
-      new Date();
+    const now = new Date();
 
     const day =
       new Date(now);
