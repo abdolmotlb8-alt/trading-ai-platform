@@ -27,28 +27,38 @@ type Analysis = {
   direction: "BUY" | "SELL" | "NO_TRADE";
   score: number;
   confirmations: number;
+
   session: string;
   sessions: SessionInfo[];
+
   entry?: number;
   stopLoss?: number;
   tp1?: number;
   tp2?: number;
   tp3?: number;
+
   lotSize?: number;
   actualRisk?: number;
   rr?: number;
+
   mtf: string;
+
   support: number;
   resistance: number;
   atr: number;
+
   reasons: string[];
+
   confirmationsList: {
     name: string;
     ok: boolean;
     value: string;
   }[];
+
   candles: Candle[];
-  timeframe: "1min";
+
+  timeframe: string;
+
   newsBlocked: boolean;
   newsReason: string;
 };
@@ -56,20 +66,24 @@ type Analysis = {
 type Meta = {
   userId: string;
   kind: "AI_SCALP";
+
   symbol: string;
   direction: "BUY" | "SELL";
 
   entry: number;
   stopLoss: number;
+
   tp1: number;
   tp2: number;
   tp3: number;
 
   lotSize: number;
+
   riskUsd: number;
   actualRisk: number;
 
   session: string;
+
   score: number;
   confirmations: number;
   mtf: string;
@@ -101,6 +115,11 @@ type Meta = {
 
 const TD = "https://api.twelvedata.com";
 
+/**
+ * نمادهای قابل تحلیل
+ *
+ * فارکس + طلا
+ */
 const FX_SYMBOLS = [
   "EURUSD",
   "GBPUSD",
@@ -109,24 +128,30 @@ const FX_SYMBOLS = [
   "USDCAD",
   "USDCHF",
   "NZDUSD",
+  "XAUUSD",
 ];
 
-const TF = ["4h", "1h", "15min", "1min"] as const;
+/**
+ * تایم‌فریم‌های پایه موتور
+ */
+const TF = ["4h", "1h", "15min", "5min", "1min"] as const;
 
-function num(value: unknown, fallback = 0) {
-  const n = Number(value);
+function num(v: unknown, fallback = 0) {
+  const n = Number(v);
+
   return Number.isFinite(n) ? n : fallback;
 }
 
 function avg(values: number[]) {
   if (!values.length) return 0;
 
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  return values.reduce((x, y) => x + y, 0) / values.length;
 }
 
 function round(value: number, decimals = 5) {
-  const p = 10 ** decimals;
-  return Math.round(value * p) / p;
+  const power = 10 ** decimals;
+
+  return Math.round(value * power) / power;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -141,20 +166,38 @@ function esc(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * تبدیل EURUSD به EUR/USD
+ * و XAUUSD به XAU/USD
+ */
 function symbolApi(symbol: string) {
-  const clean = symbol.replace(/\s/g, "").toUpperCase();
+  const value = symbol.replace(/\s/g, "").toUpperCase();
 
-  if (clean.length === 6) {
-    return `${clean.slice(0, 3)}/${clean.slice(3)}`;
+  if (value.length === 6) {
+    return `${value.slice(0, 3)}/${value.slice(3)}`;
   }
 
-  return clean;
+  return value;
 }
 
+/**
+ * تعداد اعشار قیمت
+ */
 function decimals(symbol: string) {
-  return symbol.includes("JPY") ? 3 : 5;
+  if (symbol === "XAUUSD") {
+    return 2;
+  }
+
+  if (symbol.includes("JPY")) {
+    return 3;
+  }
+
+  return 5;
 }
 
+/**
+ * درخواست به Twelve Data
+ */
 async function td(
   path: string,
   params: Record<string, string | number>
@@ -167,12 +210,12 @@ async function td(
 
   const url = new URL(TD + path);
 
-  const finalParams = {
+  const allParams = {
     ...params,
     apikey: key,
   };
 
-  for (const [keyName, value] of Object.entries(finalParams)) {
+  for (const [keyName, value] of Object.entries(allParams)) {
     url.searchParams.set(keyName, String(value));
   }
 
@@ -199,6 +242,9 @@ async function td(
   return data;
 }
 
+/**
+ * دریافت کندل‌ها
+ */
 async function candles(
   symbol: string,
   interval: string,
@@ -242,10 +288,16 @@ async function candles(
     );
 }
 
+/**
+ * EMA
+ */
 function ema(values: number[], period: number) {
-  if (values.length < period) return 0;
+  if (values.length < period) {
+    return 0;
+  }
 
   let result = avg(values.slice(0, period));
+
   const multiplier = 2 / (period + 1);
 
   for (let i = period; i < values.length; i++) {
@@ -257,8 +309,13 @@ function ema(values: number[], period: number) {
   return result;
 }
 
+/**
+ * RSI
+ */
 function rsi(values: number[], period = 14) {
-  if (values.length <= period) return 50;
+  if (values.length <= period) {
+    return 50;
+  }
 
   let gains = 0;
   let losses = 0;
@@ -286,17 +343,19 @@ function rsi(values: number[], period = 14) {
       values[i] - values[i - 1];
 
     averageGain =
-      ((averageGain * (period - 1)) +
+      (averageGain * (period - 1) +
         (difference > 0 ? difference : 0)) /
       period;
 
     averageLoss =
-      ((averageLoss * (period - 1)) +
+      (averageLoss * (period - 1) +
         (difference < 0 ? -difference : 0)) /
       period;
   }
 
-  if (averageLoss === 0) return 100;
+  if (averageLoss === 0) {
+    return 100;
+  }
 
   return (
     100 -
@@ -305,14 +364,19 @@ function rsi(values: number[], period = 14) {
   );
 }
 
-function atr(candlesData: Candle[], period = 14) {
-  if (candlesData.length <= period) return 0;
+/**
+ * ATR
+ */
+function atr(candlesList: Candle[], period = 14) {
+  if (candlesList.length <= period) {
+    return 0;
+  }
 
   const trueRanges: number[] = [];
 
-  for (let i = 1; i < candlesData.length; i++) {
-    const current = candlesData[i];
-    const previous = candlesData[i - 1];
+  for (let i = 1; i < candlesList.length; i++) {
+    const current = candlesList[i];
+    const previous = candlesList[i - 1];
 
     trueRanges.push(
       Math.max(
@@ -332,6 +396,9 @@ function atr(candlesData: Candle[], period = 14) {
   );
 }
 
+/**
+ * MACD ساده
+ */
 function macd(values: number[]) {
   return (
     ema(values, 12) -
@@ -339,52 +406,56 @@ function macd(values: number[]) {
   );
 }
 
-function swings(candlesData: Candle[]) {
+/**
+ * پیدا کردن حمایت و مقاومت
+ */
+function swings(candlesList: Candle[]) {
   const highs: number[] = [];
   const lows: number[] = [];
 
   for (
     let i = 2;
-    i < candlesData.length - 2;
+    i < candlesList.length - 2;
     i++
   ) {
-    const current = candlesData[i];
+    const current = candlesList[i];
 
     if (
       current.high >
-        candlesData[i - 1].high &&
+        candlesList[i - 1].high &&
       current.high >
-        candlesData[i - 2].high &&
+        candlesList[i - 2].high &&
       current.high >
-        candlesData[i + 1].high &&
+        candlesList[i + 1].high &&
       current.high >
-        candlesData[i + 2].high
+        candlesList[i + 2].high
     ) {
       highs.push(current.high);
     }
 
     if (
       current.low <
-        candlesData[i - 1].low &&
+        candlesList[i - 1].low &&
       current.low <
-        candlesData[i - 2].low &&
+        candlesList[i - 2].low &&
       current.low <
-        candlesData[i + 1].low &&
+        candlesList[i + 1].low &&
       current.low <
-        candlesData[i + 2].low
+        candlesList[i + 2].low
     ) {
       lows.push(current.low);
     }
   }
 
   const last =
-    candlesData[candlesData.length - 1];
+    candlesList[candlesList.length - 1];
 
   return {
     resistance: Math.max(
       ...highs.slice(-6),
       last.high
     ),
+
     support: Math.min(
       ...lows.slice(-6),
       last.low
@@ -392,18 +463,26 @@ function swings(candlesData: Candle[]) {
   };
 }
 
+/**
+ * تأیید کندلی
+ */
 function candleConfirm(
-  candlesData: Candle[],
+  candlesList: Candle[],
   direction: "BUY" | "SELL"
 ) {
   const previous =
-    candlesData[candlesData.length - 2];
+    candlesList[candlesList.length - 2];
 
   const current =
-    candlesData[candlesData.length - 1];
+    candlesList[candlesList.length - 1];
 
   const body = Math.abs(
     current.close - current.open
+  );
+
+  const range = Math.max(
+    current.high - current.low,
+    1e-9
   );
 
   const upper =
@@ -469,60 +548,126 @@ function candleConfirm(
   };
 }
 
-function localHour(zone: string) {
-  const parts =
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: zone,
-      hour: "2-digit",
-      hour12: false,
-      minute: "2-digit",
-    }).formatToParts(new Date());
-
-  const hour = Number(
-    parts.find(
-      (item) => item.type === "hour"
-    )?.value ?? 0
-  );
-
-  const minute = Number(
-    parts.find(
-      (item) => item.type === "minute"
-    )?.value ?? 0
-  );
-
-  return hour + minute / 60;
-}
-
+/**
+ * وضعیت سشن‌ها
+ *
+ * عمداً بدون Asia/Sydney timezone
+ * تا خطای:
+ * Invalid time zone specified: Asia/Sydney
+ * ایجاد نشود.
+ */
 function sessionState(): SessionInfo[] {
-  const definitions = [
-    ["Asia/Sydney", "Sydney"],
-    ["Asia/Tokyo", "Tokyo"],
-    ["Europe/London", "London"],
-    ["America/New_York", "New York"],
-  ] as const;
+  const now = new Date();
 
-  return definitions.map(
-    ([zone, name]) => {
-      const hour = localHour(zone);
+  const utc =
+    now.getUTCHours() +
+    now.getUTCMinutes() / 60;
 
-      return {
-        name,
-        fa:
-          name === "Sydney"
-            ? "سیدنی"
-            : name === "Tokyo"
-            ? "توکیو"
-            : name === "London"
-            ? "لندن"
-            : "نیویورک",
-        open:
-          hour >= 8 &&
-          hour < 17,
-      };
+  const year = now.getUTCFullYear();
+
+  /**
+   * آخرین یکشنبه ماه
+   */
+  const lastSunday = (month: number) => {
+    const date = new Date(
+      Date.UTC(
+        year,
+        month + 1,
+        0
+      )
+    );
+
+    while (date.getUTCDay() !== 0) {
+      date.setUTCDate(
+        date.getUTCDate() - 1
+      );
     }
+
+    return date;
+  };
+
+  /**
+   * اروپا
+   */
+  const euStart = lastSunday(2);
+  const euEnd = lastSunday(9);
+
+  const euDst =
+    now >= euStart &&
+    now < euEnd;
+
+  /**
+   * اولین یکشنبه ماه
+   */
+  const firstSunday = (month: number) => {
+    const date = new Date(
+      Date.UTC(
+        year,
+        month,
+        1
+      )
+    );
+
+    while (date.getUTCDay() !== 0) {
+      date.setUTCDate(
+        date.getUTCDate() + 1
+      );
+    }
+
+    return date;
+  };
+
+  /**
+   * آمریکا
+   */
+  const usStart = new Date(
+    firstSunday(2)
   );
+
+  usStart.setUTCDate(
+    usStart.getUTCDate() + 7
+  );
+
+  const usEnd = firstSunday(10);
+
+  const usDst =
+    now >= usStart &&
+    now < usEnd;
+
+  return [
+    {
+      name: "Sydney",
+      fa: "سیدنی",
+      open: utc >= 21 || utc < 6,
+    },
+
+    {
+      name: "Tokyo",
+      fa: "توکیو",
+      open: utc >= 0 && utc < 9,
+    },
+
+    {
+      name: "London",
+      fa: "لندن",
+      open:
+        utc >= (euDst ? 7 : 8) &&
+        utc < (euDst ? 16 : 17),
+    },
+
+    {
+      name: "New York",
+      fa: "نیویورک",
+      open:
+        utc >= (usDst ? 12 : 13) &&
+        utc < (usDst ? 21 : 22),
+    },
+  ];
 }
 
+/**
+ * بررسی اخبار مهم
+ */
 async function newsCheck(symbol: string) {
   const currencies = [
     symbol.slice(0, 3),
@@ -543,6 +688,7 @@ async function newsCheck(symbol: string) {
             now.getTime() -
               10 * 60 * 1000
           ),
+
           lte: new Date(
             now.getTime() +
               30 * 60 * 1000
@@ -551,10 +697,13 @@ async function newsCheck(symbol: string) {
 
         OR: [
           {
-            currency: currencies[0],
+            currency:
+              currencies[0],
           },
+
           {
-            currency: currencies[1],
+            currency:
+              currencies[1],
           },
         ],
       },
@@ -571,79 +720,99 @@ async function newsCheck(symbol: string) {
   return {
     blocked: events.length > 0,
 
-    reason:
-      events.length > 0
-        ? `خبر پرریسک نزدیک است: ${events[0].currency} ${events[0].event}`
-        : "خبر پرریسک در پنجره فعلی پیدا نشد",
+    reason: events.length
+      ? `خبر پرریسک نزدیک است: ${events[0].currency} ${events[0].event}`
+      : "خبر پرریسک در پنجره فعلی پیدا نشد",
   };
 }
 
+/**
+ * ساخت Entry / SL / TP
+ */
 function makeLevels(
   symbol: string,
   direction: "BUY" | "SELL",
   entry: number,
   atrValue: number,
-  sr: {
+  supportResistance: {
     support: number;
     resistance: number;
   }
 ) {
   const structure =
     direction === "BUY"
-      ? entry - sr.support
-      : sr.resistance - entry;
+      ? entry -
+        supportResistance.support
+      : supportResistance.resistance -
+        entry;
 
-  const minimum =
-    Math.max(
-      atrValue * 0.15,
-      entry * 0.00015
-    );
+  const minDistance = Math.max(
+    atrValue * 0.15,
+    entry * 0.00015
+  );
 
-  const maximum =
+  const maxDistance =
     atrValue * 0.65;
 
   if (
-    structure < minimum ||
-    structure > maximum
+    structure < minDistance ||
+    structure > maxDistance
   ) {
     return null;
   }
 
-  const stopDistance =
-    Math.max(
-      structure,
-      atrValue * 0.18
-    );
+  const stopDistance = Math.max(
+    structure,
+    atrValue * 0.18
+  );
 
-  const contractSize = 100000;
+  /**
+   * Forex = 100000
+   * Gold = 100
+   */
+  const contract =
+    symbol === "XAUUSD"
+      ? 100
+      : 100000;
 
+  /**
+   * هدف ریسک مدل = $4
+   */
   let lot =
     4 /
-    (stopDistance * contractSize);
+    (stopDistance * contract);
 
   lot =
-    Math.floor(lot * 100) /
-    100;
+    Math.floor(lot * 100) / 100;
 
-  if (lot < 0.01) lot = 0.01;
-  if (lot > 0.05) return null;
+  if (lot < 0.01) {
+    lot = 0.01;
+  }
+
+  if (lot > 0.05) {
+    return null;
+  }
 
   const actualRisk =
     stopDistance *
     lot *
-    contractSize;
+    contract;
 
-  const tp1Distance =
-    5 /
-    (lot * contractSize);
+  /**
+   * TP ها:
+   *
+   * TP1 = +$5
+   * TP2 = +$8
+   * TP3 = +$12
+   */
+  const distanceTP1 =
+    5 / (lot * contract);
 
-  const tp2Distance =
-    8 /
-    (lot * contractSize);
+  const distanceTP2 =
+    8 / (lot * contract);
 
-  const tp3Distance =
-    12 /
-    (lot * contractSize);
+  const distanceTP3 =
+    12 / (lot * contract);
 
   return {
     entry,
@@ -655,42 +824,74 @@ function makeLevels(
 
     tp1:
       direction === "BUY"
-        ? entry + tp1Distance
-        : entry - tp1Distance,
+        ? entry + distanceTP1
+        : entry - distanceTP1,
 
     tp2:
       direction === "BUY"
-        ? entry + tp2Distance
-        : entry - tp2Distance,
+        ? entry + distanceTP2
+        : entry - distanceTP2,
 
     tp3:
       direction === "BUY"
-        ? entry + tp3Distance
-        : entry - tp3Distance,
+        ? entry + distanceTP3
+        : entry - distanceTP3,
 
     lot,
+
     actual: actualRisk,
 
     rr:
       12 /
-      Math.max(
-        actualRisk,
-        0.01
-      ),
+      Math.max(actualRisk, 0.01),
   };
 }
 
+/**
+ * موتور اصلی تحلیل
+ */
 async function analyze(
-  symbol: string
+  symbol: string,
+  requestedTimeframe: string
 ): Promise<Analysis> {
+  const selected = [
+    "1min",
+    "5min",
+    "15min",
+    "1h",
+    "4h",
+  ].includes(requestedTimeframe)
+    ? requestedTimeframe
+    : "1min";
+
+  /**
+   * MTF:
+   * 4H
+   * 1H
+   * 15M
+   * 1M
+   *
+   * و تایم‌فریم انتخابی
+   */
+  const fetchTimeframes = [
+    ...new Set([
+      "4h",
+      "1h",
+      "15min",
+      "1min",
+      selected,
+    ]),
+  ];
+
   const data =
     await Promise.all(
-      TF.map((timeframe) =>
-        candles(
-          symbol,
-          timeframe,
-          180
-        )
+      fetchTimeframes.map(
+        (timeframe) =>
+          candles(
+            symbol,
+            timeframe,
+            180
+          )
       )
     );
 
@@ -699,7 +900,7 @@ async function analyze(
     Candle[]
   > = {};
 
-  TF.forEach(
+  fetchTimeframes.forEach(
     (timeframe, index) => {
       market[timeframe] =
         data[index];
@@ -707,14 +908,14 @@ async function analyze(
   );
 
   const main =
-    market["1min"];
+    market[selected] as Candle[];
 
   const last =
     main[main.length - 1];
 
   const closes =
     main.map(
-      (item) => item.close
+      (candle) => candle.close
     );
 
   const ema20 =
@@ -732,7 +933,7 @@ async function analyze(
   const atrValue =
     atr(main);
 
-  const structure =
+  const supportResistance =
     swings(main);
 
   const sessions =
@@ -743,12 +944,10 @@ async function analyze(
       (item) => item.open
     );
 
-  const currentSession =
+  const session =
     activeSessions.length > 1
       ? activeSessions
-          .map(
-            (item) => item.fa
-          )
+          .map((item) => item.fa)
           .join(" + ")
       : activeSessions[0]?.fa ??
         "خارج از سشن اصلی";
@@ -756,59 +955,75 @@ async function analyze(
   const news =
     await newsCheck(symbol);
 
-  const trendVotes =
-    TF.slice(0, 3).map(
-      (timeframe) => {
-        const candlesData =
-          market[timeframe];
+  /**
+   * رأی تایم‌فریم‌های بالاتر
+   */
+  const trendVotes = [
+    "4h",
+    "1h",
+    "15min",
+  ].map((timeframe) => {
+    const candlesTF =
+      market[timeframe];
 
-        const candle =
-          candlesData[
-            candlesData.length - 1
-          ];
+    const current =
+      candlesTF[
+        candlesTF.length - 1
+      ];
 
-        const timeframeCloses =
-          candlesData.map(
-            (item) => item.close
-          );
+    const timeframeCloses =
+      candlesTF.map(
+        (candle) => candle.close
+      );
 
-        return candle.close >
-          ema(timeframeCloses, 20)
-          ? 1
-          : -1;
-      }
-    );
+    return current.close >
+      ema(
+        timeframeCloses,
+        20
+      )
+      ? 1
+      : -1;
+  });
 
-  const bullishMtf =
+  const bullishMTF =
     trendVotes.filter(
       (value) => value > 0
     ).length;
 
-  const bearishMtf =
+  const bearishMTF =
     trendVotes.filter(
       (value) => value < 0
     ).length;
 
-  const bullishTrend =
+  /**
+   * روند
+   */
+  const upTrend =
     ema20 > ema50 &&
     last.close > ema20;
 
-  const bearishTrend =
+  const downTrend =
     ema20 < ema50 &&
     last.close < ema20;
 
-  const liquidityLow =
+  /**
+   * Liquidity sweep
+   */
+  const sweepLow =
     last.low <
-      structure.support &&
+      supportResistance.support &&
     last.close >
-      structure.support;
+      supportResistance.support;
 
-  const liquidityHigh =
+  const sweepHigh =
     last.high >
-      structure.resistance &&
+      supportResistance.resistance &&
     last.close <
-      structure.resistance;
+      supportResistance.resistance;
 
+  /**
+   * Pullback
+   */
   const pullbackBuy =
     last.low <=
       ema20 + atrValue * 0.35 &&
@@ -819,66 +1034,86 @@ async function analyze(
       ema20 - atrValue * 0.35 &&
     last.close < ema20;
 
-  const candleBuy =
+  /**
+   * Candle
+   */
+  const buyCandle =
     candleConfirm(
       main,
       "BUY"
     );
 
-  const candleSell =
+  const sellCandle =
     candleConfirm(
       main,
       "SELL"
     );
 
-  const volumes =
-    main
-      .map(
-        (item) =>
-          item.volume ?? 0
-      )
-      .slice(-21);
+  /**
+   * Volume
+   */
+  const volumes = main
+    .map(
+      (candle) =>
+        candle.volume ?? 0
+    )
+    .slice(-21);
 
   const averageVolume =
     avg(
       volumes.slice(0, -1)
     );
 
-  const volumeConfirmed =
+  const volumeOk =
     averageVolume <= 0
       ? false
       : (last.volume ?? 0) >=
         averageVolume * 0.9;
 
+  /**
+   * BUY score
+   */
+  const buyConditions = [
+    upTrend,
+    rsiValue > 50,
+    macdValue > 0,
+    bullishMTF >= 2,
+    sweepLow || pullbackBuy,
+    buyCandle.ok,
+    volumeOk,
+    activeSessions.length > 0,
+    !news.blocked,
+  ];
+
+  /**
+   * SELL score
+   */
+  const sellConditions = [
+    downTrend,
+    rsiValue < 50,
+    macdValue < 0,
+    bearishMTF >= 2,
+    sweepHigh || pullbackSell,
+    sellCandle.ok,
+    volumeOk,
+    activeSessions.length > 0,
+    !news.blocked,
+  ];
+
   const buyScore =
-    [
-      bullishTrend,
-      rsiValue > 50,
-      macdValue > 0,
-      bullishMtf >= 2,
-      liquidityLow ||
-        pullbackBuy,
-      candleBuy.ok,
-      volumeConfirmed,
-      activeSessions.length > 0,
-      !news.blocked,
-    ].filter(Boolean).length;
+    buyConditions.filter(
+      Boolean
+    ).length;
 
   const sellScore =
-    [
-      bearishTrend,
-      rsiValue < 50,
-      macdValue < 0,
-      bearishMtf >= 2,
-      liquidityHigh ||
-        pullbackSell,
-      candleSell.ok,
-      volumeConfirmed,
-      activeSessions.length > 0,
-      !news.blocked,
-    ].filter(Boolean).length;
+    sellConditions.filter(
+      Boolean
+    ).length;
 
-  let direction: Analysis["direction"] =
+  let direction:
+    | "BUY"
+    | "SELL"
+    | "NO_TRADE" =
     buyScore > sellScore
       ? "BUY"
       : sellScore > buyScore
@@ -895,29 +1130,33 @@ async function analyze(
           sellScore
         );
 
-  let score =
-    Math.round(
-      (votes / 9) * 100
-    );
+  let score = Math.round(
+    (votes / 9) * 100
+  );
 
-  if (
-    activeSessions.length > 1
-  ) {
+  /**
+   * امتیاز سشن‌های همپوشان
+   */
+  if (activeSessions.length > 1) {
     score += 4;
   }
 
+  /**
+   * تأیید کامل MTF
+   */
   if (
-    bullishMtf >= 3 ||
-    bearishMtf >= 3
+    bullishMTF >= 3 ||
+    bearishMTF >= 3
   ) {
     score += 5;
   }
 
+  /**
+   * Sweep + Pullback
+   */
   if (
-    (liquidityLow ||
-      liquidityHigh) &&
-    (pullbackBuy ||
-      pullbackSell)
+    (sweepLow || sweepHigh) &&
+    (pullbackBuy || pullbackSell)
   ) {
     score += 4;
   }
@@ -928,29 +1167,37 @@ async function analyze(
     100
   );
 
-  const confirmations = [
+  /**
+   * لیست تأییدیه‌ها
+   */
+  const confirmationsList = [
     {
-      name: "روند چند تایم‌فریمی",
+      name:
+        "روند چند تایم‌فریمی",
+
       ok:
         direction === "BUY"
-          ? bullishMtf >= 3
+          ? bullishMTF >= 3
           : direction === "SELL"
-          ? bearishMtf >= 3
+          ? bearishMTF >= 3
           : false,
+
       value: `${Math.max(
-        bullishMtf,
-        bearishMtf
+        bullishMTF,
+        bearishMTF
       )}/3`,
     },
 
     {
       name: "EMA 20/50",
+
       ok:
         direction === "BUY"
-          ? bullishTrend
+          ? upTrend
           : direction === "SELL"
-          ? bearishTrend
+          ? downTrend
           : false,
+
       value: `${round(
         ema20,
         decimals(symbol)
@@ -962,6 +1209,7 @@ async function analyze(
 
     {
       name: "RSI 14",
+
       ok:
         direction === "BUY"
           ? rsiValue > 50 &&
@@ -970,18 +1218,21 @@ async function analyze(
           ? rsiValue < 50 &&
             rsiValue > 28
           : false,
+
       value:
         rsiValue.toFixed(1),
     },
 
     {
       name: "MACD",
+
       ok:
         direction === "BUY"
           ? macdValue > 0
           : direction === "SELL"
           ? macdValue < 0
           : false,
+
       value:
         macdValue.toFixed(
           decimals(symbol)
@@ -989,13 +1240,16 @@ async function analyze(
     },
 
     {
-      name: "Liquidity sweep",
+      name:
+        "Liquidity sweep",
+
       ok:
         direction === "BUY"
-          ? liquidityLow
+          ? sweepLow
           : direction === "SELL"
-          ? liquidityHigh
+          ? sweepHigh
           : false,
+
       value:
         direction === "BUY"
           ? "Sweep low"
@@ -1004,12 +1258,14 @@ async function analyze(
 
     {
       name: "Pullback",
+
       ok:
         direction === "BUY"
           ? pullbackBuy
           : direction === "SELL"
           ? pullbackSell
           : false,
+
       value:
         direction === "BUY"
           ? "EMA pullback"
@@ -1017,82 +1273,96 @@ async function analyze(
     },
 
     {
-      name: "Candle confirmation",
+      name:
+        "Candle confirmation",
+
       ok:
         direction === "BUY"
-          ? candleBuy.ok
+          ? buyCandle.ok
           : direction === "SELL"
-          ? candleSell.ok
+          ? sellCandle.ok
           : false,
+
       value:
         direction === "BUY"
-          ? candleBuy.name
-          : candleSell.name,
+          ? buyCandle.name
+          : sellCandle.name,
     },
 
     {
       name: "Volume",
-      ok: volumeConfirmed,
-      value: volumeConfirmed
+
+      ok: volumeOk,
+
+      value: volumeOk
         ? "Tick volume confirmed"
         : "Unavailable / not counted",
     },
 
     {
       name: "Session",
+
       ok:
         activeSessions.length > 0,
-      value: currentSession,
+
+      value: session,
     },
 
     {
-      name: "News filter",
+      name:
+        "News filter",
+
       ok: !news.blocked,
+
       value: news.reason,
     },
   ];
 
-  const goodConfirmations =
-    confirmations.filter(
+  const confirmations =
+    confirmationsList.filter(
       (item) => item.ok
     ).length;
 
   const finalDirection =
     direction;
 
-  let levels:
-    | ReturnType<typeof makeLevels>
-    | null = null;
+  let levels: ReturnType<
+    typeof makeLevels
+  > = null;
 
+  /**
+   * شرایط ساخت تحلیل معتبر
+   */
   if (
     (finalDirection === "BUY" ||
       finalDirection === "SELL") &&
     score >= 88 &&
-    goodConfirmations >= 7 &&
-    (
-      finalDirection === "BUY"
-        ? bullishMtf
-        : bearishMtf
-    ) >= 3 &&
+    confirmations >= 7 &&
+    (finalDirection === "BUY"
+      ? bullishMTF
+      : bearishMTF) >= 3 &&
     activeSessions.length > 0 &&
     !news.blocked
   ) {
-    levels =
-      makeLevels(
-        symbol,
-        finalDirection,
-        last.close,
-        atrValue,
-        structure
-      );
+    levels = makeLevels(
+      symbol,
+      finalDirection,
+      last.close,
+      atrValue,
+      supportResistance
+    );
   }
 
+  /**
+   * اگر شرایط کامل نباشد:
+   * NO TRADE
+   */
   if (!levels) {
     direction = "NO_TRADE";
   }
 
   const reasons =
-    confirmations
+    confirmationsList
       .filter(
         (item) => item.ok
       )
@@ -1102,57 +1372,76 @@ async function analyze(
 
   return {
     symbol,
+
     price: last.close,
+
     direction,
+
     score,
-    confirmations:
-      goodConfirmations,
-    session: currentSession,
+
+    confirmations,
+
+    session,
+
     sessions,
+
     entry:
       levels?.entry ??
       last.close,
+
     stopLoss:
       levels?.sl,
+
     tp1:
       levels?.tp1,
+
     tp2:
       levels?.tp2,
+
     tp3:
       levels?.tp3,
+
     lotSize:
       levels?.lot,
+
     actualRisk:
       levels?.actual,
+
     rr:
       levels?.rr,
+
     mtf: `${Math.max(
-      bullishMtf,
-      bearishMtf
+      bullishMTF,
+      bearishMTF
     )}/3`,
+
     support:
-      structure.support,
+      supportResistance.support,
+
     resistance:
-      structure.resistance,
+      supportResistance.resistance,
+
     atr: atrValue,
+
     reasons,
-    confirmationsList:
-      confirmations,
+
+    confirmationsList,
+
     candles:
       main.slice(-80),
-    timeframe: "1min",
+
+    timeframe: selected,
+
     newsBlocked:
       news.blocked,
+
     newsReason:
       news.reason,
   };
 }
 
-/*
- * مهم:
- * این تابع همان چیزی است که خطای Render
- * Cannot find name 'activeMeta'
- * مربوط به آن بود.
+/**
+ * خواندن metadata
  */
 function activeMeta(
   value: unknown
@@ -1167,14 +1456,19 @@ function activeMeta(
   return value as Meta;
 }
 
+/**
+ * ارسال تحلیل به Telegram
+ */
 async function sendTelegram(
   analysis: Analysis
 ) {
   const token =
-    process.env.TELEGRAM_BOT_TOKEN;
+    process.env
+      .TELEGRAM_BOT_TOKEN;
 
   const chat =
-    process.env.TELEGRAM_SIGNAL_CHAT_ID;
+    process.env
+      .TELEGRAM_SIGNAL_CHAT_ID;
 
   if (!token || !chat) {
     return {
@@ -1190,17 +1484,18 @@ async function sendTelegram(
     ? "🟢📈"
     : "🔻📉";
 
-  const name = isBuy
-    ? "BUY"
-    : "SELL";
+  const direction =
+    isBuy
+      ? "BUY"
+      : "SELL";
 
-  const precision =
+  const priceDecimals =
     decimals(
       analysis.symbol
     );
 
   const text = `
-${icon} <b>AI ANALYSIS — ${name}</b>
+${icon} <b>AI ANALYSIS — ${direction}</b>
 
 ━━━━━━━━━━━━━━
 
@@ -1208,7 +1503,9 @@ ${icon} <b>AI ANALYSIS — ${name}</b>
 
 📌 <b>${esc(
     analysis.symbol
-  )}</b> · <b>1m Scalping</b>
+  )}</b> · <b>${
+    analysis.timeframe
+  } Scalping</b>
 
 🕒 Session:
 <b>${esc(
@@ -1217,36 +1514,39 @@ ${icon} <b>AI ANALYSIS — ${name}</b>
 
 🎯 Entry:
 <b>${analysis.entry?.toFixed(
-    precision
+    priceDecimals
   )}</b>
 
 🛑 SL:
 <b>${analysis.stopLoss?.toFixed(
-    precision
+    priceDecimals
   )}</b>
 
 💰 Risk target:
 <b>-$4.00</b>
 
-📊 Model risk:
+💼 Model risk:
 <b>-$${analysis.actualRisk?.toFixed(
     2
   )}</b>
 
 🟢 TP1:
 <b>${analysis.tp1?.toFixed(
-    precision
-  )}</b> | +$5
+    priceDecimals
+  )}</b>
+ | +$5
 
 🟢 TP2:
 <b>${analysis.tp2?.toFixed(
-    precision
-  )}</b> | +$8
+    priceDecimals
+  )}</b>
+ | +$8
 
 🟢 TP3:
 <b>${analysis.tp3?.toFixed(
-    precision
-  )}</b> | +$12
+    priceDecimals
+  )}</b>
+ | +$12
 
 ━━━━━━━━━━━━━━
 
@@ -1263,6 +1563,8 @@ ${icon} <b>AI ANALYSIS — ${name}</b>
 <b>${analysis.lotSize?.toFixed(
     2
   )}</b>
+
+━━━━━━━━━━━━━━
 
 <b>تاییدیه‌ها:</b>
 
@@ -1319,6 +1621,7 @@ ${analysis.reasons
 
   return {
     ok: false,
+
     error: String(
       data?.description ??
         `Telegram HTTP ${response.status}`
@@ -1326,6 +1629,9 @@ ${analysis.reasons
   };
 }
 
+/**
+ * پیدا کردن تحلیل فعال قبلی
+ */
 async function previousPending(
   userId: string,
   symbol: string
@@ -1335,6 +1641,7 @@ async function previousPending(
       {
         where: {
           botId: null,
+
           startedAt: {
             gte: new Date(
               Date.now() -
@@ -1352,32 +1659,31 @@ async function previousPending(
       }
     );
 
-  return rows.find(
-    (row) => {
-      const metadata =
-        activeMeta(
-          row.metadata
-        );
-
-      return (
-        metadata?.userId ===
-          userId &&
-        metadata?.kind ===
-          "AI_SCALP" &&
-        metadata.symbol ===
-          symbol &&
-        [
-          "AI_PENDING",
-          "AI_TP1",
-          "AI_TP2",
-        ].includes(
-          row.status
-        )
+  return rows.find((row) => {
+    const metadata =
+      activeMeta(
+        row.metadata
       );
-    }
-  );
+
+    return (
+      metadata?.userId ===
+        userId &&
+      metadata?.kind ===
+        "AI_SCALP" &&
+      metadata.symbol ===
+        symbol &&
+      [
+        "AI_PENDING",
+        "AI_TP1",
+        "AI_TP2",
+      ].includes(row.status)
+    );
+  });
 }
 
+/**
+ * مانیتور کردن TP / SL
+ */
 async function monitor(
   userId: string
 ) {
@@ -1422,76 +1728,97 @@ async function monitor(
 
     if (
       !metadata ||
-      metadata.userId !==
-        userId
+      metadata.userId !== userId
     ) {
       continue;
     }
 
     try {
-      const latest =
+      /**
+       * برای مانیتورینگ
+       * همیشه قیمت 1 دقیقه‌ای گرفته می‌شود.
+       */
+      const candles1m =
         await candles(
           metadata.symbol,
           "1min",
           2
         );
 
-      const candle =
-        latest[
-          latest.length - 1
+      const current =
+        candles1m[
+          candles1m.length - 1
         ];
 
       metadata.lastPrice =
-        candle.close;
+        current.close;
 
       let hit = "";
 
+      /**
+       * SL
+       */
       if (
         !metadata.state.sl &&
         (
           metadata.direction ===
           "BUY"
-            ? candle.low <=
+            ? current.low <=
               metadata.stopLoss
-            : candle.high >=
+            : current.high >=
               metadata.stopLoss
         )
       ) {
         hit = "SL";
-      } else if (
+      }
+
+      /**
+       * TP1
+       */
+      else if (
         !metadata.state.tp1 &&
         (
           metadata.direction ===
           "BUY"
-            ? candle.high >=
+            ? current.high >=
               metadata.tp1
-            : candle.low <=
+            : current.low <=
               metadata.tp1
         )
       ) {
         hit = "TP1";
-      } else if (
+      }
+
+      /**
+       * TP2
+       */
+      else if (
         metadata.state.tp1 &&
         !metadata.state.tp2 &&
         (
           metadata.direction ===
           "BUY"
-            ? candle.high >=
+            ? current.high >=
               metadata.tp2
-            : candle.low <=
+            : current.low <=
               metadata.tp2
         )
       ) {
         hit = "TP2";
-      } else if (
+      }
+
+      /**
+       * TP3
+       */
+      else if (
         metadata.state.tp2 &&
         !metadata.state.tp3 &&
         (
           metadata.direction ===
           "BUY"
-            ? candle.high >=
+            ? current.high >=
               metadata.tp3
-            : candle.low <=
+            : current.low <=
               metadata.tp3
         )
       ) {
@@ -1519,29 +1846,29 @@ async function monitor(
 
         metadata.events.push({
           type: hit,
+
           price: hitPrice,
+
           pnlUsd: pnl,
-          at: new Date().toISOString(),
+
+          at:
+            new Date().toISOString(),
         });
 
         if (hit === "SL") {
-          metadata.state.sl =
-            true;
+          metadata.state.sl = true;
         }
 
         if (hit === "TP1") {
-          metadata.state.tp1 =
-            true;
+          metadata.state.tp1 = true;
         }
 
         if (hit === "TP2") {
-          metadata.state.tp2 =
-            true;
+          metadata.state.tp2 = true;
         }
 
         if (hit === "TP3") {
-          metadata.state.tp3 =
-            true;
+          metadata.state.tp3 = true;
         }
 
         const closed =
@@ -1559,7 +1886,7 @@ async function monitor(
                 ? hit === "TP3"
                   ? "AI_TP3"
                   : "AI_SL"
-                : `AI_${hit}`,
+                : (`AI_${hit}`),
 
               finishedAt:
                 closed
@@ -1572,6 +1899,9 @@ async function monitor(
           }
         );
 
+        /**
+         * ارسال نتیجه مرحله به تلگرام
+         */
         const token =
           process.env
             .TELEGRAM_BOT_TOKEN;
@@ -1589,7 +1919,9 @@ async function monitor(
           const text = `
 ${icon} <b>AI ANALYSIS ${hit}</b>
 
-${esc(metadata.symbol)} · ${metadata.direction}
+${esc(metadata.symbol)} · ${
+            metadata.direction
+          }
 
 Price:
 <b>${hitPrice}</b>
@@ -1645,6 +1977,7 @@ Stage P/L:
     } catch (error) {
       output.push({
         id: row.id,
+
         error:
           error instanceof Error
             ? error.message
@@ -1656,6 +1989,9 @@ Stage P/L:
   return output;
 }
 
+/**
+ * محاسبه عملکرد
+ */
 function performance(
   rows: any[],
   from: Date
@@ -1693,10 +2029,8 @@ function performance(
     const net =
       events.reduce(
         (
-          total: number,
-          event: {
-            pnlUsd?: number;
-          }
+          total,
+          event
         ) =>
           total +
           num(
@@ -1705,16 +2039,14 @@ function performance(
         0
       );
 
-    const finalEvent =
+    const final =
       events[
         events.length - 1
       ];
 
     if (
-      finalEvent.type ===
-        "TP3" ||
-      finalEvent.type ===
-        "SL"
+      final.type === "TP3" ||
+      final.type === "SL"
     ) {
       count++;
 
@@ -1727,8 +2059,7 @@ function performance(
       }
 
       if (
-        finalEvent.type !==
-          "TP3" &&
+        final.type !== "TP3" &&
         events.some(
           (event) =>
             event.type.startsWith(
@@ -1743,27 +2074,42 @@ function performance(
 
   return {
     signals: count,
+
     wins,
+
     losses,
+
     partial,
-    winRate:
-      count
-        ? round(
-            (wins / count) *
-              100,
-            2
-          )
-        : 0,
-    pnlUsd:
-      round(pnl, 2),
+
+    winRate: count
+      ? round(
+          (wins / count) *
+            100,
+          2
+        )
+      : 0,
+
+    pnlUsd: round(
+      pnl,
+      2
+    ),
   };
 }
 
+/**
+ * GET
+ *
+ * مثال:
+ *
+ * /api/ai-analysis?symbol=XAUUSD&timeframe=5min
+ */
 export async function GET(
   request: Request
 ) {
   const url =
-    new URL(request.url);
+    new URL(
+      request.url
+    );
 
   const cron =
     url.searchParams.get(
@@ -1773,6 +2119,9 @@ export async function GET(
   const session =
     await getSession();
 
+  /**
+   * احراز هویت
+   */
   if (
     !cron &&
     !session?.userId
@@ -1788,6 +2137,9 @@ export async function GET(
     );
   }
 
+  /**
+   * بررسی Cron Secret
+   */
   if (
     cron &&
     process.env
@@ -1827,13 +2179,26 @@ export async function GET(
     );
   }
 
-  const symbol =
-    (
-      url.searchParams.get(
-        "symbol"
-      ) ?? "EURUSD"
-    ).toUpperCase();
+  /**
+   * نماد
+   */
+  const symbol = (
+    url.searchParams.get(
+      "symbol"
+    ) ?? "EURUSD"
+  ).toUpperCase();
 
+  /**
+   * تایم‌فریم
+   */
+  const timeframe =
+    url.searchParams.get(
+      "timeframe"
+    ) ?? "1min";
+
+  /**
+   * فقط فارکس + طلا
+   */
   if (
     !FX_SYMBOLS.includes(
       symbol
@@ -1842,7 +2207,7 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "این موتور فقط جفت‌ارزهای فارکس را تحلیل می‌کند.",
+          "این موتور فقط فارکس و طلا را تحلیل می‌کند.",
       },
       {
         status: 400,
@@ -1851,23 +2216,29 @@ export async function GET(
   }
 
   try {
+    /**
+     * اول وضعیت تحلیل‌های قبلی
+     * و TP/SL را بررسی می‌کنیم.
+     */
     const monitored =
-      await monitor(
-        userId
-      );
+      await monitor(userId);
 
+    /**
+     * تحلیل جدید
+     */
     const analysis =
       await analyze(
-        symbol
+        symbol,
+        timeframe
       );
 
-    let generated:
-      | {
-          id: string;
-          telegram: any;
-        }
-      | null = null;
+    let generated: any =
+      null;
 
+    /**
+     * فقط وقتی تحلیل معتبر شد
+     * در دیتابیس ثبت و تلگرام ارسال شود.
+     */
     if (
       analysis.direction !==
         "NO_TRADE" &&
@@ -1877,12 +2248,19 @@ export async function GET(
       analysis.tp2 &&
       analysis.tp3
     ) {
+      /**
+       * تحلیل فعال قبلی
+       */
       const pending =
         await previousPending(
           userId,
           symbol
         );
 
+      /**
+       * جلوگیری از ارسال چند تحلیل
+       * پشت سر هم
+       */
       const recent =
         await prisma.analysisRun.findFirst(
           {
@@ -1905,7 +2283,7 @@ export async function GET(
           }
         );
 
-      const recentMeta =
+      const recentMetadata =
         recent
           ? activeMeta(
               recent.metadata
@@ -1915,9 +2293,9 @@ export async function GET(
       if (
         !pending &&
         !(
-          recentMeta?.userId ===
+          recentMetadata?.userId ===
             userId &&
-          recentMeta.symbol ===
+          recentMetadata.symbol ===
             symbol
         )
       ) {
@@ -1987,25 +2365,37 @@ export async function GET(
             analysis.price,
         };
 
+        /**
+         * ارسال Telegram
+         */
         const telegram =
           await sendTelegram(
             analysis
           );
 
+        /**
+         * ثبت در دیتابیس
+         */
         const row =
           await prisma.analysisRun.create(
             {
               data: {
                 botId: null,
+
                 symbol,
+
                 timeframe:
-                  "1min",
+                  analysis.timeframe,
+
                 status:
                   "AI_PENDING",
+
                 signalGenerated:
                   true,
+
                 startedAt:
                   new Date(),
+
                 metadata:
                   metadata as any,
               },
@@ -2014,11 +2404,15 @@ export async function GET(
 
         generated = {
           id: row.id,
+
           telegram,
         };
       }
     }
 
+    /**
+     * تاریخچه 31 روز
+     */
     const rows =
       await prisma.analysisRun.findMany(
         {
@@ -2035,7 +2429,8 @@ export async function GET(
           },
 
           orderBy: {
-            startedAt: "desc",
+            startedAt:
+              "desc",
           },
 
           take: 500,
@@ -2057,8 +2452,12 @@ export async function GET(
         );
       });
 
-    const now = new Date();
+    const now =
+      new Date();
 
+    /**
+     * روزانه
+     */
     const day =
       new Date(now);
 
@@ -2069,18 +2468,26 @@ export async function GET(
       0
     );
 
+    /**
+     * هفتگی
+     */
     const week =
       new Date(day);
 
     week.setDate(
-      week.getDate() - 6
+      week.getDate() -
+        6
     );
 
+    /**
+     * ماهانه
+     */
     const month =
       new Date(day);
 
     month.setDate(
-      month.getDate() - 29
+      month.getDate() -
+        29
     );
 
     return NextResponse.json({
@@ -2123,10 +2530,13 @@ export async function GET(
           .slice(0, 20)
           .map((row) => ({
             id: row.id,
+
             startedAt:
               row.startedAt,
+
             status:
               row.status,
+
             metadata:
               row.metadata,
           })),
