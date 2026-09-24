@@ -6,59 +6,162 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/* =========================================================
-   AI ANALYSIS ENGINE
-   XAUUSD / GOLD
-   ---------------------------------------------------------
-   - Real Twelve Data market price
-   - Real NetArz USD/IRT rate
-   - Server-side monitoring
-   - TP1 / TP2 / TP3
-   - Partial close tracking
-   - Break-even after TP1
-   - SL event recording
-   - Telegram event notifications
-   - Performance statistics
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| Trading AI - XAUUSD AI Analysis Engine
+|--------------------------------------------------------------------------
+| بازار:
+| XAUUSD / Gold
+|
+| حجم:
+| 0.10 Lot
+|
+| مدیریت سود:
+| TP1 = 0.04 Lot = +$20
+| TP2 = 0.03 Lot = +$24
+| TP3 = 0.03 Lot = +$36
+| Full TP = +$80
+|
+| ریسک:
+| SL = -$4
+|
+| بعد از TP1:
+| 0.04 Lot بسته می‌شود
+| 0.06 Lot باقی می‌ماند
+| SL -> Entry
+|
+| نکته:
+| هیچ سفارش بروکری در این API ارسال نمی‌شود.
+| این موتور تحلیل، سیگنال، مانیتور و اعلان تلگرام را مدیریت می‌کند.
+|--------------------------------------------------------------------------
+*/
 
-const TD_BASE = "https://api.twelvedata.com";
-const NETARZ_BASE = "https://netarz.ir/api/fx/v1";
+const SYMBOL = "XAU/USD";
+const DISPLAY_SYMBOL = "XAUUSD";
 
-const SYMBOL = "XAUUSD";
-const TD_SYMBOL = "XAU/USD";
+/* قرارداد استاندارد */
+const CONTRACT_SIZE = 100;
 
-/* -------------------------
-   LOT PLAN
-   ------------------------- */
-
+/* حجم کل */
 const TOTAL_LOT = 0.10;
 
+/* حجم هر TP */
 const TP1_LOT = 0.04;
 const TP2_LOT = 0.03;
 const TP3_LOT = 0.03;
 
-const REMAINING_AFTER_TP1 = 0.06;
-const REMAINING_AFTER_TP2 = 0.03;
-const REMAINING_AFTER_TP3 = 0;
-
+/* مبالغ واقعی مدل */
 const STOP_USD = 4;
-const TP1_USD = 5;
-const TP2_USD = 8;
-const TP3_USD = 12;
+const TP1_USD = 20;
+const TP2_USD = 24;
+const TP3_USD = 36;
 
-const MIN_SCORE = 70;
-const MIN_CONFIRMATIONS = 2;
+const TOTAL_POTENTIAL_USD =
+  TP1_USD +
+  TP2_USD +
+  TP3_USD;
 
-const ACTIVE_STATUSES = [
-  "WAITING",
-  "ACTIVE",
-  "TP1_HIT",
-  "TP2_HIT",
-];
+/*
+ * فاصله قیمتی XAUUSD
+ *
+ * 0.10 lot * 100 oz = $10 به ازای هر $1 حرکت
+ *
+ * بنابراین:
+ * $4 ضرر = 0.40 حرکت قیمت
+ * $20 روی 0.04 lot = $5 حرکت
+ * $24 روی 0.03 lot = $8 حرکت
+ * $36 روی 0.03 lot = $12 حرکت
+ */
 
-/* =========================================================
-   TYPES
-   ========================================================= */
+const STOP_DISTANCE =
+  STOP_USD / (TOTAL_LOT * CONTRACT_SIZE);
+
+const TP1_DISTANCE =
+  TP1_USD / (TP1_LOT * CONTRACT_SIZE);
+
+const TP2_DISTANCE =
+  TP2_USD / (TP2_LOT * CONTRACT_SIZE);
+
+const TP3_DISTANCE =
+  TP3_USD / (TP3_LOT * CONTRACT_SIZE);
+
+/* تحلیل */
+const SCORE_TO_SIGNAL = 80;
+const MIN_CONFIRMATIONS = 3;
+
+/* خبر مهم */
+const DEFAULT_NEWS_MINUTES = 30;
+
+/* Environment */
+const TD_KEY = process.env.TWELVE_DATA_API_KEY;
+const NETARZ_KEY = process.env.NETARZ_API_KEY;
+
+const CRON_SECRET =
+  process.env.AI_CRON_SECRET ||
+  process.env.NEWS_CRON_SECRET ||
+  process.env.SIGNALS_CRON_SECRET;
+
+/*
+|--------------------------------------------------------------------------
+| Sessions
+|--------------------------------------------------------------------------
+| زمان‌ها بر اساس ساعت محلی همان کشور هستند.
+| استفاده از Intl باعث می‌شود DST لندن/نیویورک نیز درست محاسبه شود.
+|--------------------------------------------------------------------------
+*/
+
+type SessionName =
+  | "Sydney"
+  | "Tokyo"
+  | "London"
+  | "New York";
+
+type SessionConfig = {
+  fa: string;
+  flag: string;
+  country: string;
+  timezone: string;
+  startHour: number;
+  endHour: number;
+};
+
+const SESSIONS: Record<SessionName, SessionConfig> = {
+  Sydney: {
+    fa: "سیدنی",
+    flag: "🇦🇺",
+    country: "استرالیا",
+    timezone: "Australia/Sydney",
+    startHour: 8,
+    endHour: 17,
+  },
+
+  Tokyo: {
+    fa: "توکیو",
+    flag: "🇯🇵",
+    country: "ژاپن",
+    timezone: "Asia/Tokyo",
+    startHour: 9,
+    endHour: 18,
+  },
+
+  London: {
+    fa: "لندن",
+    flag: "🇬🇧",
+    country: "بریتانیا",
+    timezone: "Europe/London",
+    startHour: 8,
+    endHour: 17,
+  },
+
+  "New York": {
+    fa: "نیویورک",
+    flag: "🇺🇸",
+    country: "آمریکا",
+    timezone: "America/New_York",
+    startHour: 8,
+    endHour: 17,
+  },
+};
 
 type Direction = "BUY" | "SELL";
 
@@ -68,3117 +171,4376 @@ type Candle = {
   high: number;
   low: number;
   close: number;
-  volume?: number;
+  volume: number;
 };
 
-type MarketSession =
-  | "TOKYO"
-  | "LONDON"
-  | "NEW_YORK"
-  | "SYDNEY"
-  | "CLOSED";
-
 type EventType =
-  | "TP1_HIT"
-  | "TP2_HIT"
-  | "TP3_HIT"
-  | "SL_HIT"
-  | "BREAKEVEN_HIT";
+  | "TP1"
+  | "TP2"
+  | "TP3"
+  | "SL"
+  | "BREAKEVEN";
 
-type TelegramEvent = {
+type EventRecord = {
   type: EventType;
   at: string;
   price: number;
+  lotClosed: number;
   pnlUsd: number;
   pnlToman: number;
-  lotClosed: number;
-  remainingLot: number;
   usdToToman: number;
-  telegramSent?: boolean;
-  telegramMessageId?: number | null;
-  telegramError?: string | null;
+  rateAsOf: string;
+  rateDelayed: boolean;
+  rateDelayedMinutes: number;
 };
 
-type SignalState = {
-  tp1Hit: boolean;
-  tp2Hit: boolean;
-  tp3Hit: boolean;
-  slHit: boolean;
-  breakEvenArmed: boolean;
-  breakEvenHit: boolean;
-  closed: boolean;
-  currentStop: number;
-  remainingLot: number;
+type FxRate = {
+  rate: number;
+  asOf: string;
+  delayed: boolean;
+  delayedMinutes: number;
+  plan: string;
+  source: string;
 };
 
-type SignalMeta = {
-  version: number;
+type SessionSnapshot = {
+  active: SessionName;
+  activeFa: string;
+  flag: string;
+  country: string;
+  localTime: string;
+  iranTime: string;
+  sessions: Record<
+    string,
+    {
+      name: string;
+      flag: string;
+      country: string;
+      localTime: string;
+      active: boolean;
+    }
+  >;
+};
+
+type RunMeta = {
+  kind: "AI_SCALP";
+
+  userId?: string;
 
   symbol: string;
+
   direction: Direction;
-  timeframe: string;
 
-  score: number;
-  confirmations: number;
-  confirmationNames: string[];
-
-  session: MarketSession;
+  strength:
+    | "ضعیف"
+    | "متوسط"
+    | "حرفه‌ای";
 
   entry: number;
+
   stopLoss: number;
+
   tp1: number;
+
   tp2: number;
+
   tp3: number;
 
   totalLot: number;
+
   tp1Lot: number;
+
   tp2Lot: number;
+
   tp3Lot: number;
 
-  stopUsd: number;
+  remainingAfterTp1: number;
+
+  riskUsd: number;
+
   tp1Usd: number;
+
   tp2Usd: number;
+
   tp3Usd: number;
 
-  tp1CloseUsd: number;
-  tp2CloseUsd: number;
-  tp3CloseUsd: number;
-
-  remainingAfterTp1: number;
-  remainingAfterTp2: number;
-  remainingAfterTp3: number;
-
-  lastPrice: number;
-  lastPriceAt: string;
+  totalPotentialUsd: number;
 
   usdToToman: number;
-  usdToTomanAsOf?: string | null;
-  usdToTomanDelayed?: boolean;
-  usdToTomanDelayedMinutes?: number | null;
 
-  state: SignalState;
+  rateAsOf: string;
 
-  events: TelegramEvent[];
+  rateDelayed: boolean;
 
-  telegramInitialSent?: boolean;
-  telegramInitialError?: string | null;
+  rateDelayedMinutes: number;
 
-  support?: number[];
-  resistance?: number[];
+  riskToman: number;
 
-  reasons?: string[];
+  tp1Toman: number;
 
-  engineLastRun?: string;
-  engineLastError?: string | null;
+  tp2Toman: number;
+
+  tp3Toman: number;
+
+  totalPotentialToman: number;
+
+  session: SessionName;
+
+  sessionFa: string;
+
+  sessionFlag: string;
+
+  sessionCountry: string;
+
+  sessionLocalTime: string;
+
+  iranTime: string;
+
+  score: number;
+
+  confirmations: number;
+
+  timeframe: string;
+
+  state:
+    | "AI_PENDING"
+    | "AI_TP1"
+    | "AI_TP2"
+    | "AI_TP3"
+    | "AI_SL"
+    | "AI_BE";
+
+  breakeven: boolean;
+
+  currentPrice: number;
+
+  events: EventRecord[];
+
+  analysis: Record<string, unknown>;
+
+  createdAt: string;
+
+  lastUpdate: string;
 };
 
-/* =========================================================
-   BASIC HELPERS
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| Utility
+|--------------------------------------------------------------------------
+*/
 
-function num(value: unknown, fallback = 0): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+function num(value: unknown): number {
+  const n =
+    typeof value === "number"
+      ? value
+      : Number(value);
+
+  return Number.isFinite(n) ? n : 0;
 }
 
-function round(value: number, digits = 2): number {
+function round(
+  value: number,
+  digits = 2
+): number {
   const p = 10 ** digits;
   return Math.round(value * p) / p;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
+function money(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
-function avg(values: number[]): number {
-  if (!values.length) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+function toman(value: number): number {
+  return Math.round(value);
+}
+
+function formatUsd(value: number): string {
+  const sign = value >= 0 ? "+" : "-";
+
+  return `${sign}$${new Intl.NumberFormat(
+    "en-US",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }
+  ).format(Math.abs(value))}`;
+}
+
+function formatToman(value: number): string {
+  const sign = value >= 0 ? "+" : "-";
+
+  return `${sign}${new Intl.NumberFormat(
+    "fa-IR"
+  ).format(Math.round(Math.abs(value)))} تومان`;
+}
+
+function formatPrice(value: number): string {
+  return value.toFixed(2);
+}
+
+function faNumber(value: number): string {
+  return new Intl.NumberFormat("fa-IR").format(value);
 }
 
 function esc(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
-function parseObject(value: unknown): Record<string, any> {
-  if (!value) return {};
+/*
+|--------------------------------------------------------------------------
+| Time / Sessions
+|--------------------------------------------------------------------------
+*/
 
-  if (typeof value === "object") {
-    return value as Record<string, any>;
-  }
+function timeInZone(
+  date: Date,
+  timezone: string
+): string {
+  return new Intl.DateTimeFormat(
+    "fa-IR",
+    {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }
+  ).format(date);
+}
 
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object") {
-        return parsed;
-      }
-    } catch {
-      return {};
+function iranDateTime(
+  date = new Date()
+): string {
+  return new Intl.DateTimeFormat(
+    "fa-IR",
+    {
+      timeZone: "Asia/Tehran",
+      dateStyle: "short",
+      timeStyle: "medium",
+    }
+  ).format(date);
+}
+
+function hourInZone(
+  date: Date,
+  timezone: string
+): number {
+  const parts = new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: timezone,
+      hour: "2-digit",
+      hour12: false,
+    }
+  ).formatToParts(date);
+
+  const hour = Number(
+    parts.find((p) => p.type === "hour")?.value
+  );
+
+  return hour === 24 ? 0 : hour;
+}
+
+function isSessionActive(
+  config: SessionConfig,
+  date = new Date()
+): boolean {
+  const hour = hourInZone(
+    date,
+    config.timezone
+  );
+
+  return (
+    hour >= config.startHour &&
+    hour < config.endHour
+  );
+}
+
+function currentSession(
+  date = new Date()
+): SessionName {
+  /*
+   * اولویت در زمان همپوشانی:
+   * New York
+   * London
+   * Tokyo
+   * Sydney
+   */
+
+  const priority: SessionName[] = [
+    "New York",
+    "London",
+    "Tokyo",
+    "Sydney",
+  ];
+
+  for (const name of priority) {
+    if (
+      isSessionActive(
+        SESSIONS[name],
+        date
+      )
+    ) {
+      return name;
     }
   }
 
-  return {};
+  /*
+   * اگر هیچ سشنی فعال نبود،
+   * نزدیک‌ترین سشن را برمی‌گردانیم.
+   */
+
+  return "Sydney";
 }
 
-function normalizeTf(value: unknown): string {
-  const raw = String(value || "1min").toLowerCase();
+function sessionSnapshot(
+  date = new Date()
+): SessionSnapshot {
+  const active = currentSession(date);
 
-  if (raw === "1m") return "1min";
-  if (raw === "5m") return "5min";
-  if (raw === "15m") return "15min";
-  if (raw === "30m") return "30min";
-  if (raw === "1h") return "1h";
-  if (raw === "4h") return "4h";
-  if (raw === "1d") return "1day";
+  const sessions: SessionSnapshot["sessions"] =
+    {};
 
-  return raw;
-}
-
-function iranTime(date = new Date()): string {
-  return new Intl.DateTimeFormat("fa-IR", {
-    timeZone: "Asia/Tehran",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-/* =========================================================
-   MARKET SESSION
-   IMPORTANT:
-   This is NOT getSession().
-   getSession() belongs to authentication.
-   ========================================================= */
-
-function getMarketSession(date = new Date()): MarketSession {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "UTC",
-      hour: "2-digit",
-      hour12: false,
-    }).format(date),
-  );
-
-  if (hour >= 0 && hour < 7) return "TOKYO";
-  if (hour >= 7 && hour < 12) return "LONDON";
-  if (hour >= 12 && hour < 21) return "NEW_YORK";
-  if (hour >= 21 && hour < 24) return "SYDNEY";
-
-  return "CLOSED";
-}
-
-/* =========================================================
-   TWELVE DATA
-   ========================================================= */
-
-async function td(
-  endpoint: string,
-  params: Record<string, string | number>,
-): Promise<any> {
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("TWELVE_DATA_API_KEY is not configured");
+  for (const [
+    name,
+    config,
+  ] of Object.entries(SESSIONS) as [
+    SessionName,
+    SessionConfig
+  ][]) {
+    sessions[name] = {
+      name: config.fa,
+      flag: config.flag,
+      country: config.country,
+      localTime: timeInZone(
+        date,
+        config.timezone
+      ),
+      active:
+        name === active &&
+        isSessionActive(config, date),
+    };
   }
 
-  const url = new URL(`${TD_BASE}${endpoint}`);
+  const config = SESSIONS[active];
 
-  Object.entries(params).forEach(([key, value]) => {
-    url.searchParams.set(key, String(value));
-  });
+  return {
+    active,
+    activeFa: config.fa,
+    flag: config.flag,
+    country: config.country,
+    localTime: timeInZone(
+      date,
+      config.timezone
+    ),
+    iranTime: iranDateTime(date),
+    sessions,
+  };
+}
 
-  url.searchParams.set("apikey", apiKey);
+/*
+|--------------------------------------------------------------------------
+| Twelve Data
+|--------------------------------------------------------------------------
+*/
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    cache: "no-store",
-    signal: AbortSignal.timeout(10000),
-  });
-
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
+async function td(
+  url: string
+): Promise<any> {
+  if (!TD_KEY) {
     throw new Error(
-      `Twelve Data HTTP ${response.status}: ${
-        data?.message || "Unknown error"
-      }`,
+      "TWELVE_DATA_API_KEY در Environment Variables تنظیم نشده است."
     );
   }
 
-  if (data?.status === "error") {
-    throw new Error(data?.message || "Twelve Data error");
+  const separator = url.includes("?")
+    ? "&"
+    : "?";
+
+  const fullUrl =
+    `${url}${separator}apikey=${encodeURIComponent(
+      TD_KEY
+    )}`;
+
+  const response = await fetch(
+    fullUrl,
+    {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    }
+  );
+
+  const data = await response.json();
+
+  if (
+    !response.ok ||
+    data?.status === "error" ||
+    data?.code
+  ) {
+    throw new Error(
+      data?.message ||
+        `Twelve Data error ${response.status}`
+    );
   }
 
   return data;
 }
 
-/* =========================================================
-   REAL GOLD PRICE
-   ========================================================= */
+async function candles(
+  interval: string,
+  outputsize: number
+): Promise<Candle[]> {
+  const data = await td(
+    `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(
+      SYMBOL
+    )}&interval=${encodeURIComponent(
+      interval
+    )}&outputsize=${outputsize}&order=ASC&timezone=UTC`
+  );
 
-async function getLatestBar(
-  symbol = TD_SYMBOL,
-): Promise<Candle | null> {
-  const data = await td("/time_series", {
-    symbol,
-    interval: "1min",
-    outputsize: 2,
-    order: "desc",
-    timezone: "UTC",
-  });
-
-  const values = Array.isArray(data?.values) ? data.values : [];
-
-  if (!values.length) {
-    return null;
+  if (!Array.isArray(data?.values)) {
+    throw new Error(
+      `داده کندل ${interval} دریافت نشد.`
+    );
   }
 
-  const row = values[0];
-
-  return {
-    datetime: String(row.datetime),
-    open: num(row.open),
-    high: num(row.high),
-    low: num(row.low),
-    close: num(row.close),
-    volume: num(row.volume),
-  };
+  return data.values
+    .map((item: any) => ({
+      datetime: String(
+        item.datetime
+      ),
+      open: num(item.open),
+      high: num(item.high),
+      low: num(item.low),
+      close: num(item.close),
+      volume: num(item.volume),
+    }))
+    .filter(
+      (item: Candle) =>
+        item.close > 0 &&
+        item.high > 0 &&
+        item.low > 0
+    )
+    .sort(
+      (a: Candle, b: Candle) =>
+        a.datetime.localeCompare(
+          b.datetime
+        )
+    );
 }
 
-async function getLivePrice(
-  symbol = TD_SYMBOL,
-): Promise<{
-  price: number;
-  source: string;
-  asOf: string;
-}> {
+async function latestPrice(): Promise<number> {
   try {
-    const data = await td("/price", {
-      symbol,
-      dp: 5,
-    });
+    const data = await td(
+      `https://api.twelvedata.com/price?symbol=${encodeURIComponent(
+        SYMBOL
+      )}&dp=5`
+    );
 
     const price = num(data?.price);
 
     if (price > 0) {
-      return {
-        price,
-        source: "Twelve Data /price",
-        asOf: new Date().toISOString(),
-      };
+      return price;
     }
   } catch {
-    /* fallback below */
+    /*
+     * fallback پایین‌تر
+     */
   }
 
-  const bar = await getLatestBar(symbol);
+  /*
+   * اگر endpoint قیمت لحظه‌ای مشکل داشت،
+   * آخرین کندل را می‌گیریم.
+   */
 
-  if (!bar || bar.close <= 0) {
-    throw new Error("Unable to obtain XAUUSD price");
-  }
+  const fallback = await candles(
+    "1min",
+    2
+  );
 
-  return {
-    price: bar.close,
-    source: "Twelve Data /time_series",
-    asOf: bar.datetime,
-  };
-}
+  const price =
+    fallback.at(-1)?.close ?? 0;
 
-async function getCandles(
-  symbol: string,
-  interval: string,
-  outputsize = 220,
-): Promise<Candle[]> {
-  const data = await td("/time_series", {
-    symbol,
-    interval,
-    outputsize,
-    order: "desc",
-    timezone: "UTC",
-  });
-
-  const values = Array.isArray(data?.values) ? data.values : [];
-
-  return values
-    .map((row: any) => ({
-      datetime: String(row.datetime),
-      open: num(row.open),
-      high: num(row.high),
-      low: num(row.low),
-      close: num(row.close),
-      volume: num(row.volume),
-    }))
-    .filter(
-      (c: Candle) =>
-        c.open > 0 &&
-        c.high > 0 &&
-        c.low > 0 &&
-        c.close > 0,
-    )
-    .reverse();
-}
-
-/* =========================================================
-   USD / TOMAN
-   ========================================================= */
-
-async function getUsdToman(): Promise<{
-  rate: number;
-  asOf: string | null;
-  delayed: boolean;
-  delayedMinutes: number | null;
-  source: string;
-  error: string | null;
-}> {
-  const apiKey = process.env.NETARZ_API_KEY;
-
-  if (!apiKey) {
-    return {
-      rate: 0,
-      asOf: null,
-      delayed: false,
-      delayedMinutes: null,
-      source: "NetArz",
-      error: "NETARZ_API_KEY is not configured",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `${NETARZ_BASE}/rates/USD`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
-        cache: "no-store",
-        signal: AbortSignal.timeout(8000),
-      },
+  if (!price) {
+    throw new Error(
+      "قیمت XAUUSD دریافت نشد."
     );
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      throw new Error(
-        `NetArz HTTP ${response.status}: ${
-          data?.message || "Unknown error"
-        }`,
-      );
-    }
-
-    const rate = num(
-      data?.data?.mid ??
-        data?.data?.sell ??
-        data?.data?.buy ??
-        data?.meta?.usd_irt,
-    );
-
-    if (rate <= 0) {
-      throw new Error("NetArz returned an invalid USD/IRT rate");
-    }
-
-    return {
-      rate,
-      asOf: data?.meta?.as_of
-        ? String(data.meta.as_of)
-        : new Date().toISOString(),
-      delayed: Boolean(data?.meta?.is_delayed),
-      delayedMinutes:
-        data?.meta?.delayed_minutes != null
-          ? num(data.meta.delayed_minutes)
-          : null,
-      source: "NetArz /rates/USD",
-      error: null,
-    };
-  } catch (error) {
-    return {
-      rate: 0,
-      asOf: null,
-      delayed: false,
-      delayedMinutes: null,
-      source: "NetArz /rates/USD",
-      error:
-        error instanceof Error
-          ? error.message
-          : "USD/IRT request failed",
-    };
   }
+
+  return price;
 }
 
-/* =========================================================
-   INDICATORS
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| Indicators
+|--------------------------------------------------------------------------
+*/
 
-function ema(values: number[], period: number): number[] {
-  if (!values.length) return [];
+function sma(
+  values: number[],
+  period: number
+): number {
+  if (!values.length) return 0;
 
-  const result: number[] = [];
-  const multiplier = 2 / (period + 1);
+  if (values.length < period) {
+    return (
+      values.reduce(
+        (sum, value) =>
+          sum + value,
+        0
+      ) / values.length
+    );
+  }
 
-  let previous = values[0];
-  result.push(previous);
+  const slice =
+    values.slice(-period);
 
-  for (let i = 1; i < values.length; i++) {
-    const current =
-      (values[i] - previous) * multiplier + previous;
+  return (
+    slice.reduce(
+      (sum, value) =>
+        sum + value,
+      0
+    ) / slice.length
+  );
+}
 
-    result.push(current);
-    previous = current;
+function ema(
+  values: number[],
+  period: number
+): number {
+  if (!values.length) return 0;
+
+  const multiplier =
+    2 / (period + 1);
+
+  let result = values[0];
+
+  for (
+    let i = 1;
+    i < values.length;
+    i++
+  ) {
+    result =
+      values[i] * multiplier +
+      result * (1 - multiplier);
   }
 
   return result;
 }
 
-function rsi(values: number[], period = 14): number {
-  if (values.length < period + 1) return 50;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = values[i] - values[i - 1];
-
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
+function rsi(
+  values: number[],
+  period = 14
+): number {
+  if (values.length <= period) {
+    return 50;
   }
 
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
+  let gain = 0;
+  let loss = 0;
 
-  for (let i = period + 1; i < values.length; i++) {
-    const diff = values[i] - values[i - 1];
+  for (
+    let i = 1;
+    i <= period;
+    i++
+  ) {
+    const change =
+      values[i] -
+      values[i - 1];
 
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? Math.abs(diff) : 0;
-
-    avgGain =
-      (avgGain * (period - 1) + gain) / period;
-
-    avgLoss =
-      (avgLoss * (period - 1) + loss) / period;
+    if (change >= 0) {
+      gain += change;
+    } else {
+      loss -= change;
+    }
   }
 
-  if (avgLoss === 0) return 100;
+  gain /= period;
+  loss /= period;
 
-  const rs = avgGain / avgLoss;
+  for (
+    let i = period + 1;
+    i < values.length;
+    i++
+  ) {
+    const change =
+      values[i] -
+      values[i - 1];
 
-  return 100 - 100 / (1 + rs);
+    const currentGain =
+      Math.max(change, 0);
+
+    const currentLoss =
+      Math.max(-change, 0);
+
+    gain =
+      (gain * (period - 1) +
+        currentGain) /
+      period;
+
+    loss =
+      (loss * (period - 1) +
+        currentLoss) /
+      period;
+  }
+
+  if (loss === 0) {
+    return 100;
+  }
+
+  return (
+    100 -
+    100 /
+      (1 + gain / loss)
+  );
 }
 
 function atr(
-  candles: Candle[],
-  period = 14,
+  candlesData: Candle[],
+  period = 14
 ): number {
-  if (candles.length < period + 1) return 0;
+  if (
+    candlesData.length <
+    period + 1
+  ) {
+    return 0;
+  }
 
-  const trs: number[] = [];
+  const ranges: number[] = [];
 
-  for (let i = 1; i < candles.length; i++) {
-    const current = candles[i];
-    const previous = candles[i - 1];
+  for (
+    let i = 1;
+    i < candlesData.length;
+    i++
+  ) {
+    const current =
+      candlesData[i];
 
-    trs.push(
+    const previous =
+      candlesData[i - 1];
+
+    const trueRange =
       Math.max(
-        current.high - current.low,
-        Math.abs(current.high - previous.close),
-        Math.abs(current.low - previous.close),
-      ),
+        current.high -
+          current.low,
+        Math.abs(
+          current.high -
+            previous.close
+        ),
+        Math.abs(
+          current.low -
+            previous.close
+        )
+      );
+
+    ranges.push(trueRange);
+  }
+
+  return sma(ranges, period);
+}
+
+function macd(
+  values: number[]
+): number {
+  return (
+    ema(values, 12) -
+    ema(values, 26)
+  );
+}
+
+function swings(
+  data: Candle[],
+  lookback = 30
+) {
+  const slice =
+    data.slice(-lookback);
+
+  if (!slice.length) {
+    return {
+      support: 0,
+      resistance: 0,
+    };
+  }
+
+  return {
+    support: Math.min(
+      ...slice.map(
+        (item) => item.low
+      )
+    ),
+
+    resistance: Math.max(
+      ...slice.map(
+        (item) => item.high
+      )
+    ),
+  };
+}
+
+function candleBias(
+  data: Candle[]
+): number {
+  const previous =
+    data.at(-2);
+
+  const current =
+    data.at(-1);
+
+  if (!previous || !current) {
+    return 0;
+  }
+
+  const body = Math.abs(
+    current.close -
+      current.open
+  );
+
+  const range = Math.max(
+    current.high -
+      current.low,
+    0.0001
+  );
+
+  const bullish =
+    current.close >
+      current.open &&
+    (
+      body / range > 0.55 ||
+      current.close >
+        previous.high
+    );
+
+  const bearish =
+    current.close <
+      current.open &&
+    (
+      body / range > 0.55 ||
+      current.close <
+        previous.low
+    );
+
+  if (bullish) return 1;
+  if (bearish) return -1;
+
+  return 0;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Trend
+|--------------------------------------------------------------------------
+*/
+
+function trendScore(
+  data: Candle[]
+) {
+  const closes =
+    data.map(
+      (item) => item.close
+    );
+
+  const ema20 = ema(
+    closes,
+    20
+  );
+
+  const ema50 = ema(
+    closes,
+    50
+  );
+
+  const currentRsi =
+    rsi(closes);
+
+  const currentMacd =
+    macd(closes);
+
+  const buy =
+    ema20 > ema50 &&
+    currentRsi >= 52 &&
+    currentRsi <= 72 &&
+    currentMacd > 0;
+
+  const sell =
+    ema20 < ema50 &&
+    currentRsi <= 48 &&
+    currentRsi >= 28 &&
+    currentMacd < 0;
+
+  if (buy) {
+    return {
+      direction:
+        "BUY" as Direction,
+      score: 25,
+      ema20,
+      ema50,
+      rsi: currentRsi,
+      macd: currentMacd,
+    };
+  }
+
+  if (sell) {
+    return {
+      direction:
+        "SELL" as Direction,
+      score: 25,
+      ema20,
+      ema50,
+      rsi: currentRsi,
+      macd: currentMacd,
+    };
+  }
+
+  return {
+    direction: null,
+    score: 0,
+    ema20,
+    ema50,
+    rsi: currentRsi,
+    macd: currentMacd,
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Market Analysis
+|--------------------------------------------------------------------------
+*/
+
+function analyzeMarket(
+  m1: Candle[],
+  m5: Candle[],
+  m15: Candle[],
+  h1: Candle[]
+) {
+  const t1 =
+    trendScore(m1);
+
+  const t5 =
+    trendScore(m5);
+
+  const t15 =
+    trendScore(m15);
+
+  const t60 =
+    trendScore(h1);
+
+  const directions = [
+    t5.direction,
+    t15.direction,
+    t60.direction,
+  ].filter(
+    Boolean
+  ) as Direction[];
+
+  const buyVotes =
+    directions.filter(
+      (item) =>
+        item === "BUY"
+    ).length;
+
+  const sellVotes =
+    directions.filter(
+      (item) =>
+        item === "SELL"
+    ).length;
+
+  let direction:
+    | Direction
+    | null = null;
+
+  if (buyVotes >= 2) {
+    direction = "BUY";
+  } else if (
+    sellVotes >= 2
+  ) {
+    direction = "SELL";
+  }
+
+  const reasons: string[] =
+    [];
+
+  let score = 0;
+  let confirmations = 0;
+
+  /*
+   * 1. MTF
+   */
+  if (direction) {
+    score += 25;
+    confirmations++;
+
+    reasons.push(
+      "هم‌جهتی تایم‌فریم‌های اصلی"
     );
   }
 
-  return avg(trs.slice(-period));
+  /*
+   * 2. M1
+   */
+  if (
+    direction &&
+    t1.direction === direction
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "تأیید روند تایم‌فریم 1 دقیقه"
+    );
+  }
+
+  /*
+   * 3. 15M + 1H
+   */
+  if (
+    direction &&
+    t15.direction ===
+      direction &&
+    t60.direction ===
+      direction
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "تأیید 15 دقیقه و 1 ساعت"
+    );
+  }
+
+  const currentPrice =
+    m5.at(-1)?.close ?? 0;
+
+  const structure =
+    swings(m5, 30);
+
+  const currentAtr =
+    atr(m5);
+
+  /*
+   * 4. Support / Resistance
+   */
+  const nearSupport =
+    direction === "BUY" &&
+    currentPrice -
+      structure.support <=
+      Math.max(
+        currentAtr * 1.5,
+        8
+      );
+
+  const nearResistance =
+    direction === "SELL" &&
+    structure.resistance -
+      currentPrice <=
+      Math.max(
+        currentAtr * 1.5,
+        8
+      );
+
+  if (
+    nearSupport ||
+    nearResistance
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "قیمت نزدیک ناحیه ساختاری معتبر"
+    );
+  }
+
+  /*
+   * 5. Candle
+   */
+  const candle =
+    candleBias(m5);
+
+  if (
+    (
+      direction === "BUY" &&
+      candle > 0
+    ) ||
+    (
+      direction === "SELL" &&
+      candle < 0
+    )
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "تأیید کندلی"
+    );
+  }
+
+  /*
+   * 6. Volume
+   */
+  const currentVolume =
+    m5.at(-1)?.volume ??
+    0;
+
+  const averageVolume =
+    sma(
+      m5
+        .slice(0, -1)
+        .map(
+          (item) =>
+            item.volume
+        ),
+      20
+    );
+
+  if (
+    currentVolume > 0 &&
+    averageVolume > 0 &&
+    currentVolume >=
+      averageVolume * 1.05
+  ) {
+    score += 5;
+    confirmations++;
+
+    reasons.push(
+      "حجم بالاتر از میانگین"
+    );
+  }
+
+  /*
+   * 7. Momentum
+   */
+  if (
+    direction === "BUY" &&
+    t5.rsi >= 52 &&
+    t5.rsi <= 68
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "مومنتوم خرید"
+    );
+  }
+
+  if (
+    direction === "SELL" &&
+    t5.rsi <= 48 &&
+    t5.rsi >= 32
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "مومنتوم فروش"
+    );
+  }
+
+  /*
+   * 8. EMA
+   */
+  if (
+    direction &&
+    (
+      (
+        direction === "BUY" &&
+        currentPrice >
+          t5.ema20
+      ) ||
+      (
+        direction === "SELL" &&
+        currentPrice <
+          t5.ema20
+      )
+    )
+  ) {
+    score += 10;
+    confirmations++;
+
+    reasons.push(
+      "موقعیت مناسب قیمت نسبت به EMA20"
+    );
+  }
+
+  /*
+   * 9. Structure Range
+   */
+  if (
+    currentAtr > 0 &&
+    structure.resistance -
+      structure.support >=
+      currentAtr * 2
+  ) {
+    score += 5;
+    confirmations++;
+
+    reasons.push(
+      "دامنه ساختاری مناسب"
+    );
+  }
+
+  return {
+    direction,
+
+    score: Math.min(
+      score,
+      100
+    ),
+
+    confirmations,
+
+    reasons,
+
+    support:
+      structure.support,
+
+    resistance:
+      structure.resistance,
+
+    atr: currentAtr,
+
+    candle,
+
+    t5,
+    t15,
+    t60,
+  };
 }
 
-function macd(values: number[]): {
-  macd: number;
-  signal: number;
-  histogram: number;
-} {
-  if (values.length < 35) {
+/*
+|--------------------------------------------------------------------------
+| News Filter
+|--------------------------------------------------------------------------
+*/
+
+async function newsBlock() {
+  const now =
+    new Date();
+
+  const until =
+    new Date(
+      now.getTime() +
+        DEFAULT_NEWS_MINUTES *
+          60_000
+    );
+
+  return prisma.economicEvent.findMany(
+    {
+      where: {
+        eventTime: {
+          gte: now,
+          lte: until,
+        },
+
+        importance: {
+          gte: 3,
+        },
+      },
+
+      orderBy: {
+        eventTime: "asc",
+      },
+
+      take: 10,
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| USD -> Toman
+|--------------------------------------------------------------------------
+|
+| از mid استفاده می‌کنیم.
+| نرخ و زمان نرخ در رویداد ذخیره می‌شود.
+|--------------------------------------------------------------------------
+*/
+
+let fxCache:
+  | {
+      value: FxRate;
+      cachedAt: number;
+    }
+  | null = null;
+
+async function getUsdToTomanRate(): Promise<FxRate> {
+  /*
+   * برای جلوگیری از مصرف بی‌دلیل سهمیه API
+   * نرخ را حداکثر 60 ثانیه در حافظه نگه می‌داریم.
+   */
+
+  if (
+    fxCache &&
+    Date.now() -
+      fxCache.cachedAt <
+      60_000
+  ) {
+    return fxCache.value;
+  }
+
+  if (!NETARZ_KEY) {
+    throw new Error(
+      "NETARZ_API_KEY در Render تنظیم نشده است."
+    );
+  }
+
+  const response =
+    await fetch(
+      "https://netarz.ir/api/fx/v1/rates/USD",
+      {
+        headers: {
+          Authorization:
+            `Bearer ${NETARZ_KEY}`,
+        },
+
+        cache: "no-store",
+
+        signal:
+          AbortSignal.timeout(
+            10000
+          ),
+      }
+    );
+
+  const data =
+    await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error?.message ||
+        "دریافت نرخ دلار ناموفق بود."
+    );
+  }
+
+  const rate =
+    num(
+      data?.data?.mid ??
+        data?.meta?.usd_irt
+    );
+
+  if (!rate) {
+    throw new Error(
+      "نرخ USD/IRT از NetArz دریافت نشد."
+    );
+  }
+
+  const result: FxRate = {
+    rate: Math.round(rate),
+
+    asOf:
+      String(
+        data?.meta?.as_of ??
+          new Date().toISOString()
+      ),
+
+    delayed:
+      Boolean(
+        data?.meta?.is_delayed
+      ),
+
+    delayedMinutes:
+      num(
+        data?.meta
+          ?.delayed_minutes
+      ),
+
+    plan:
+      String(
+        data?.meta?.plan ??
+          "unknown"
+      ),
+
+    source:
+      String(
+        data?.meta?.source ??
+          "netarz.ir"
+      ),
+  };
+
+  fxCache = {
+    value: result,
+    cachedAt: Date.now(),
+  };
+
+  return result;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Price Levels
+|--------------------------------------------------------------------------
+*/
+
+function levels(
+  entry: number,
+  direction: Direction
+) {
+  if (direction === "BUY") {
     return {
-      macd: 0,
-      signal: 0,
-      histogram: 0,
+      stopLoss: round(
+        entry -
+          STOP_DISTANCE
+      ),
+
+      tp1: round(
+        entry +
+          TP1_DISTANCE
+      ),
+
+      tp2: round(
+        entry +
+          TP2_DISTANCE
+      ),
+
+      tp3: round(
+        entry +
+          TP3_DISTANCE
+      ),
     };
   }
 
-  const fast = ema(values, 12);
-  const slow = ema(values, 26);
+  return {
+    stopLoss: round(
+      entry +
+        STOP_DISTANCE
+    ),
 
-  const line = values.map(
-    (_, index) => fast[index] - slow[index],
+    tp1: round(
+      entry -
+        TP1_DISTANCE
+    ),
+
+    tp2: round(
+      entry -
+        TP2_DISTANCE
+    ),
+
+    tp3: round(
+      entry -
+        TP3_DISTANCE
+    ),
+  };
+}
+
+function hitTarget(
+  direction: Direction,
+  price: number,
+  target: number
+) {
+  return direction === "BUY"
+    ? price >= target
+    : price <= target;
+}
+
+function hitStop(
+  direction: Direction,
+  price: number,
+  stop: number
+) {
+  return direction === "BUY"
+    ? price <= stop
+    : price >= stop;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Strength
+|--------------------------------------------------------------------------
+*/
+
+function strengthFromScore(
+  score: number,
+  confirmations: number
+):
+  | "ضعیف"
+  | "متوسط"
+  | "حرفه‌ای" {
+  if (
+    score >= 90 &&
+    confirmations >= 6
+  ) {
+    return "حرفه‌ای";
+  }
+
+  if (
+    score >= 80 &&
+    confirmations >= 3
+  ) {
+    return "متوسط";
+  }
+
+  return "ضعیف";
+}
+
+/*
+|--------------------------------------------------------------------------
+| P/L Event
+|--------------------------------------------------------------------------
+*/
+
+function eventPnl(
+  type: EventType
+) {
+  switch (type) {
+    case "TP1":
+      return {
+        lotClosed: TP1_LOT,
+        pnlUsd: TP1_USD,
+      };
+
+    case "TP2":
+      return {
+        lotClosed: TP2_LOT,
+        pnlUsd: TP2_USD,
+      };
+
+    case "TP3":
+      return {
+        lotClosed: TP3_LOT,
+        pnlUsd: TP3_USD,
+      };
+
+    case "SL":
+      return {
+        lotClosed: TOTAL_LOT,
+        pnlUsd: -STOP_USD,
+      };
+
+    case "BREAKEVEN":
+      return {
+        lotClosed: 0,
+        pnlUsd: 0,
+      };
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Telegram
+|--------------------------------------------------------------------------
+*/
+
+async function sendTelegram(
+  text: string
+): Promise<string> {
+  const token =
+    process.env.TELEGRAM_BOT_TOKEN;
+
+  const chatId =
+    process.env.TELEGRAM_SIGNAL_CHAT_ID;
+
+  if (!token || !chatId) {
+    throw new Error(
+      "TELEGRAM_BOT_TOKEN یا TELEGRAM_SIGNAL_CHAT_ID تنظیم نشده است."
+    );
+  }
+
+  const response =
+    await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+
+        body: JSON.stringify({
+          chat_id: chatId,
+
+          text,
+
+          parse_mode: "HTML",
+
+          disable_web_page_preview:
+            true,
+        }),
+
+        signal:
+          AbortSignal.timeout(
+            10000
+          ),
+      }
+    );
+
+  const data =
+    await response.json();
+
+  if (
+    !response.ok ||
+    !data?.ok
+  ) {
+    throw new Error(
+      data?.description ||
+        "ارسال پیام Telegram ناموفق بود."
+    );
+  }
+
+  return String(
+    data?.result?.message_id ??
+      ""
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Historical Performance
+|--------------------------------------------------------------------------
+*/
+
+async function historicalPerformance() {
+  const rows =
+    await prisma.analysisRun.findMany(
+      {
+        where: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          signalGenerated:
+            true,
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+
+        take: 100,
+      }
+    );
+
+  let closed = 0;
+  let wins = 0;
+  let losses = 0;
+  let breakevens = 0;
+
+  let pnlUsd = 0;
+  let pnlToman = 0;
+
+  for (const row of rows) {
+    const meta =
+      row.metadata as RunMeta | null;
+
+    if (
+      !meta ||
+      meta.kind !==
+        "AI_SCALP"
+    ) {
+      continue;
+    }
+
+    const events =
+      Array.isArray(
+        meta.events
+      )
+        ? meta.events
+        : [];
+
+    let final:
+      | EventType
+      | null = null;
+
+    for (const event of events) {
+      if (
+        event.type === "TP1" ||
+        event.type === "TP2" ||
+        event.type === "TP3" ||
+        event.type === "SL" ||
+        event.type ===
+          "BREAKEVEN"
+      ) {
+        final =
+          event.type;
+      }
+
+      if (
+        event.type !==
+        "BREAKEVEN"
+      ) {
+        pnlUsd +=
+          num(
+            event.pnlUsd
+          );
+
+        pnlToman +=
+          num(
+            event.pnlToman
+          );
+      }
+    }
+
+    if (!final) {
+      continue;
+    }
+
+    if (
+      final === "SL"
+    ) {
+      losses++;
+      closed++;
+    } else if (
+      final ===
+        "BREAKEVEN"
+    ) {
+      breakevens++;
+      closed++;
+    } else if (
+      final === "TP3"
+    ) {
+      wins++;
+      closed++;
+    }
+  }
+
+  const winRate =
+    closed > 0
+      ? round(
+          (wins /
+            closed) *
+            100,
+          1
+        )
+      : null;
+
+  return {
+    closed,
+    wins,
+    losses,
+    breakevens,
+    winRate,
+    pnlUsd:
+      money(pnlUsd),
+    pnlToman:
+      Math.round(
+        pnlToman
+      ),
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Telegram - New Signal
+|--------------------------------------------------------------------------
+*/
+
+function buildSignalTelegram(
+  meta: RunMeta,
+  history: Awaited<
+    ReturnType<
+      typeof historicalPerformance
+    >
+  >
+) {
+  const directionText =
+    meta.direction ===
+    "BUY"
+      ? "🟢 خرید"
+      : "🔴 فروش";
+
+  const rateStatus =
+    meta.rateDelayed
+      ? `⚠️ نرخ با ${meta.rateDelayedMinutes} دقیقه تأخیر`
+      : "🟢 نرخ بدون تأخیر";
+
+  const historicalText =
+    history.closed > 0
+      ? `${history.winRate}% از معاملات بسته‌شده`
+      : "هنوز داده کافی ثبت نشده";
+
+  return [
+    "🤖 <b>━━━ سیگنال هوش مصنوعی طلا ━━━</b>",
+    "",
+
+    `🪙 <b>XAUUSD | طلا</b>`,
+    `${directionText} | قدرت: <b>${esc(
+      meta.strength
+    )}</b>`,
+
+    "",
+
+    "━━━━━━━━━━━━━━━━━━",
+
+    `📍 <b>نقطه ورود:</b> ${formatPrice(
+      meta.entry
+    )}`,
+
+    `🛑 <b>حد ضرر:</b> ${formatPrice(
+      meta.stopLoss
+    )}`,
+    `💔 ریسک کل: <b>${formatUsd(
+      -meta.riskUsd
+    )}</b> | 🇮🇷 ${formatToman(
+      -meta.riskToman
+    )}`,
+
+    "",
+
+    "🎯 <b>اهداف سود</b>",
+
+    `1️⃣ TP1 → <b>${formatPrice(
+      meta.tp1
+    )}</b>`,
+    `💰 +$20 | 📦 0.04 لات | 🇮🇷 ${formatToman(
+      meta.tp1Toman
+    )}`,
+
+    "",
+
+    `2️⃣ TP2 → <b>${formatPrice(
+      meta.tp2
+    )}</b>`,
+    `💰 +$24 | 📦 0.03 لات | 🇮🇷 ${formatToman(
+      meta.tp2Toman
+    )}`,
+
+    "",
+
+    `3️⃣ TP3 → <b>${formatPrice(
+      meta.tp3
+    )}</b>`,
+    `💰 +$36 | 📦 0.03 لات | 🇮🇷 ${formatToman(
+      meta.tp3Toman
+    )}`,
+
+    "",
+
+    "━━━━━━━━━━━━━━━━━━",
+
+    `📊 <b>حجم کل:</b> ${meta.totalLot.toFixed(
+      2
+    )} لات`,
+
+    `💵 <b>سود کامل:</b> +$80 | 🇮🇷 ${formatToman(
+      meta.totalPotentialToman
+    )}`,
+
+    "",
+
+    "🛡️ <b>مدیریت معامله و ریسک‌فری</b>",
+
+    "بعد از رسیدن قیمت به TP1:",
+
+    "✅ 0.04 لات بسته می‌شود",
+    "📦 0.06 لات باقی می‌ماند",
+    "🔒 حد ضرر باقی‌مانده → نقطه ورود",
+
+    "یعنی سود TP1 حفظ می‌شود و",
+    "بخش باقی‌مانده وارد حالت <b>ریسک‌فری</b> می‌شود.",
+
+    "",
+
+    "━━━━━━━━━━━━━━━━━━",
+
+    "🌍 <b>سشن معاملاتی</b>",
+
+    `${meta.sessionFlag} ${meta.sessionFa} | ${meta.sessionCountry}`,
+
+    `🕐 ساعت سشن: <b>${esc(
+      meta.sessionLocalTime
+    )}</b>`,
+
+    `🇮🇷 ساعت ایران: <b>${esc(
+      meta.iranTime
+    )}</b>`,
+
+    "",
+
+    "🧠 <b>نتیجه تحلیل</b>",
+
+    `⭐ امتیاز: <b>${meta.score}/100</b>`,
+    `✅ تأییدیه‌های واقعی: <b>${meta.confirmations}</b>`,
+
+    "",
+
+    "📈 <b>کارنامه ثبت‌شده قبلی</b>",
+    `🎯 درصد معاملات برنده ثبت‌شده: <b>${historicalText}</b>`,
+    `📊 معاملات بسته‌شده: <b>${history.closed}</b>`,
+
+    "",
+
+    "💱 <b>نرخ دلار برای محاسبات</b>",
+    `💵 $1 = <b>${faNumber(
+      meta.usdToToman
+    )} تومان</b>`,
+    `🕒 زمان نرخ: <b>${esc(
+      meta.rateAsOf
+    )}</b>`,
+    rateStatus,
+
+    "",
+
+    "━━━━━━━━━━━━━━━━━━",
+
+    "⚠️ <b>هشدار</b>",
+    "این تحلیل توسط هوش مصنوعی تولید شده است.",
+    "هیچ تضمینی برای سود وجود ندارد.",
+    "نتیجه واقعی معامله می‌تواند تحت تأثیر اسپرد، کمیسیون و اسلیپیج باشد.",
+
+    "",
+
+    `🆔 شناسه سیگنال: <code>${esc(
+      meta.createdAt
+    )}</code>`,
+
+    "",
+
+    "🤖 <b>Trading AI Platform</b>",
+  ].join("\n");
+}
+
+/*
+|--------------------------------------------------------------------------
+| Telegram - Event
+|--------------------------------------------------------------------------
+*/
+
+function buildEventTelegram(
+  meta: RunMeta,
+  event: EventRecord
+) {
+  const titles: Record<
+    EventType,
+    string
+  > = {
+    TP1:
+      "🟢 ━━━ هدف اول فعال شد ━━━",
+
+    TP2:
+      "🟢 ━━━ هدف دوم فعال شد ━━━",
+
+    TP3:
+      "🏆 ━━━ معامله تکمیل شد ━━━",
+
+    SL:
+      "🔴 ━━━ حد ضرر فعال شد ━━━",
+
+    BREAKEVEN:
+      "🛡️ ━━━ ریسک‌فری فعال شد ━━━",
+  };
+
+  let explanation =
+    "";
+
+  if (
+    event.type ===
+    "TP1"
+  ) {
+    explanation = [
+      "🎯 TP1 لمس شد.",
+      "",
+      "✅ 0.04 لات بسته شد.",
+      "📦 0.06 لات باقی ماند.",
+      "🔒 حد ضرر باقی‌مانده به نقطه ورود منتقل شد.",
+      "",
+      "💡 سود TP1 محافظت شد و معامله وارد حالت ریسک‌فری شد.",
+    ].join("\n");
+  }
+
+  if (
+    event.type ===
+    "TP2"
+  ) {
+    explanation = [
+      "🎯 TP2 لمس شد.",
+      "",
+      "✅ 0.03 لات بسته شد.",
+      "📦 0.03 لات باقی ماند.",
+      "🛡️ سود مراحل قبلی همچنان ثبت شده است.",
+    ].join("\n");
+  }
+
+  if (
+    event.type ===
+    "TP3"
+  ) {
+    explanation = [
+      "🎯 TP3 لمس شد.",
+      "",
+      "✅ آخرین 0.03 لات بسته شد.",
+      "🏆 تمام اهداف معامله تکمیل شدند.",
+      "",
+      "💰 سود کامل معامله: +$80",
+    ].join("\n");
+  }
+
+  if (
+    event.type ===
+    "BREAKEVEN"
+  ) {
+    explanation = [
+      "📍 قیمت به نقطه ورود برگشت.",
+      "",
+      "🛡️ حد ضرر ریسک‌فری فعال شد.",
+      "📦 حجم باقی‌مانده بسته شد.",
+      "",
+      "💰 سود TP1 و TP2 که قبلاً ثبت شده بودند حفظ شدند.",
+    ].join("\n");
+  }
+
+  if (
+    event.type ===
+    "SL"
+  ) {
+    explanation = [
+      "🛑 حد ضرر اولیه فعال شد.",
+      "",
+      "❌ معامله قبل از ریسک‌فری بسته شد.",
+      "📊 این معامله به‌عنوان باخت در کارنامه ثبت شد.",
+    ].join("\n");
+  }
+
+  return [
+    "🤖 <b>این تحلیل هوش مصنوعی است</b>",
+    "",
+    `<b>${titles[event.type]}</b>`,
+    "",
+    `🪙 XAUUSD | ${
+      meta.direction ===
+      "BUY"
+        ? "🟢 خرید"
+        : "🔴 فروش"
+    }`,
+
+    `${meta.sessionFlag} ${meta.sessionFa}`,
+
+    "",
+
+    `📍 ورود: <b>${formatPrice(
+      meta.entry
+    )}</b>`,
+
+    `📌 قیمت رویداد: <b>${formatPrice(
+      event.price
+    )}</b>`,
+
+    "",
+
+    explanation,
+
+    "",
+
+    "━━━━━━━━━━━━━━━━━━",
+
+    `📦 حجم بسته‌شده: <b>${event.lotClosed.toFixed(
+      2
+    )} لات</b>`,
+
+    `💵 نتیجه این مرحله: <b>${formatUsd(
+      event.pnlUsd
+    )}</b>`,
+
+    `🇮🇷 نتیجه این مرحله: <b>${formatToman(
+      event.pnlToman
+    )}</b>`,
+
+    "",
+
+    `💱 نرخ دلار ثبت‌شده: <b>${faNumber(
+      event.usdToToman
+    )} تومان</b>`,
+
+    `🕒 زمان نرخ: <b>${esc(
+      event.rateAsOf
+    )}</b>`,
+
+    event.rateDelayed
+      ? `⚠️ نرخ ${event.rateDelayedMinutes} دقیقه تأخیر داشته است.`
+      : "🟢 نرخ بدون تأخیر بوده است.",
+
+    "",
+
+    `🇮🇷 زمان رویداد: <b>${esc(
+      iranDateTime(
+        new Date(event.at)
+      )
+    )}</b>`,
+
+    "",
+
+    "📊 این رویداد در کارنامه ثبت شد.",
+  ].join("\n");
+}
+
+/*
+|--------------------------------------------------------------------------
+| Create Event
+|--------------------------------------------------------------------------
+*/
+
+async function createEvent(
+  run: any,
+  meta: RunMeta,
+  type: EventType,
+  price: number
+) {
+  /*
+   * جلوگیری از ثبت دوباره
+   */
+  if (
+    meta.events.some(
+      (event) =>
+        event.type === type
+    )
+  ) {
+    return null;
+  }
+
+  const fx =
+    await getUsdToTomanRate();
+
+  const pnl =
+    eventPnl(type);
+
+  const event: EventRecord = {
+    type,
+
+    at:
+      new Date().toISOString(),
+
+    price:
+      round(price),
+
+    lotClosed:
+      pnl.lotClosed,
+
+    pnlUsd:
+      pnl.pnlUsd,
+
+    pnlToman:
+      toman(
+        pnl.pnlUsd *
+          fx.rate
+      ),
+
+    usdToToman:
+      fx.rate,
+
+    rateAsOf:
+      fx.asOf,
+
+    rateDelayed:
+      fx.delayed,
+
+    rateDelayedMinutes:
+      fx.delayedMinutes,
+  };
+
+  meta.events.push(
+    event
   );
 
-  const signalSeries = ema(line, 9);
+  /*
+   * State
+   */
+  if (type === "TP1") {
+    meta.state =
+      "AI_TP1";
 
-  const last = line[line.length - 1] || 0;
-  const signal =
-    signalSeries[signalSeries.length - 1] || 0;
-
-  return {
-    macd: last,
-    signal,
-    histogram: last - signal,
-  };
-}
-
-function swingLevels(
-  candles: Candle[],
-): {
-  support: number[];
-  resistance: number[];
-} {
-  if (candles.length < 20) {
-    return {
-      support: [],
-      resistance: [],
-    };
+    meta.breakeven =
+      true;
   }
 
-  const recent = candles.slice(-80);
+  if (type === "TP2") {
+    meta.state =
+      "AI_TP2";
 
-  const supports: number[] = [];
-  const resistances: number[] = [];
+    meta.breakeven =
+      true;
+  }
 
-  for (let i = 2; i < recent.length - 2; i++) {
-    const c = recent[i];
+  if (type === "TP3") {
+    meta.state =
+      "AI_TP3";
+  }
 
-    if (
-      c.low <= recent[i - 1].low &&
-      c.low <= recent[i - 2].low &&
-      c.low <= recent[i + 1].low &&
-      c.low <= recent[i + 2].low
-    ) {
-      supports.push(c.low);
+  if (type === "SL") {
+    meta.state =
+      "AI_SL";
+  }
+
+  if (
+    type ===
+    "BREAKEVEN"
+  ) {
+    meta.state =
+      "AI_BE";
+  }
+
+  meta.lastUpdate =
+    new Date().toISOString();
+
+  /*
+   * وضعیت پایان
+   */
+  const isClosed =
+    type === "SL" ||
+    type === "TP3" ||
+    type === "BREAKEVEN";
+
+  /*
+   * اول دیتابیس را ثبت می‌کنیم.
+   * سپس Telegram.
+   *
+   * بنابراین حتی اگر Telegram قطع باشد،
+   * کارنامه از بین نمی‌رود.
+   */
+
+  await prisma.analysisRun.update(
+    {
+      where: {
+        id: run.id,
+      },
+
+      data: {
+        status:
+          meta.state,
+
+        signalGenerated:
+          true,
+
+        finishedAt:
+          isClosed
+            ? new Date()
+            : undefined,
+
+        metadata:
+          meta as any,
+      },
     }
+  );
 
-    if (
-      c.high >= recent[i - 1].high &&
-      c.high >= recent[i - 2].high &&
-      c.high >= recent[i + 1].high &&
-      c.high >= recent[i + 2].high
-    ) {
-      resistances.push(c.high);
-    }
+  try {
+    const messageId =
+      await sendTelegram(
+        buildEventTelegram(
+          meta,
+          event
+        )
+      );
+
+    meta.analysis = {
+      ...meta.analysis,
+
+      lastTelegramMessageId:
+        messageId,
+
+      lastTelegramAt:
+        new Date().toISOString(),
+
+      telegramError:
+        null,
+    };
+
+    await prisma.analysisRun.update(
+      {
+        where: {
+          id: run.id,
+        },
+
+        data: {
+          metadata:
+            meta as any,
+        },
+      }
+    );
+  } catch (error) {
+    /*
+     * رویداد در دیتابیس باقی می‌ماند.
+     * بنابراین حتی اگر تلگرام موقتاً قطع باشد،
+     * آمار و کارنامه از بین نمی‌رود.
+     */
+
+    meta.analysis = {
+      ...meta.analysis,
+
+      telegramError:
+        error instanceof Error
+          ? error.message
+          : String(error),
+
+      telegramErrorAt:
+        new Date().toISOString(),
+    };
+
+    await prisma.analysisRun.update(
+      {
+        where: {
+          id: run.id,
+        },
+
+        data: {
+          metadata:
+            meta as any,
+        },
+      }
+    );
   }
 
-  return {
-    support: supports.slice(-5).map((x) => round(x, 2)),
-    resistance: resistances
-      .slice(-5)
-      .map((x) => round(x, 2)),
-  };
+  return event;
 }
 
-function candlePattern(
-  candles: Candle[],
-): {
-  bullish: boolean;
-  bearish: boolean;
-  name: string;
-} {
-  if (candles.length < 2) {
-    return {
-      bullish: false,
-      bearish: false,
-      name: "NONE",
-    };
-  }
+/*
+|--------------------------------------------------------------------------
+| Active Run
+|--------------------------------------------------------------------------
+*/
 
-  const a = candles[candles.length - 2];
-  const b = candles[candles.length - 1];
+async function activeRun() {
+  const row =
+    await prisma.analysisRun.findFirst(
+      {
+        where: {
+          symbol:
+            DISPLAY_SYMBOL,
 
-  const body = Math.abs(b.close - b.open);
-  const range = b.high - b.low;
+          status: {
+            in: [
+              "AI_PENDING",
+              "AI_TP1",
+              "AI_TP2",
+            ],
+          },
+        },
 
-  if (range <= 0) {
-    return {
-      bullish: false,
-      bearish: false,
-      name: "NONE",
-    };
-  }
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+      }
+    );
 
-  const bullish =
-    b.close > b.open &&
-    body / range > 0.45 &&
-    b.close > a.high;
-
-  const bearish =
-    b.close < b.open &&
-    body / range > 0.45 &&
-    b.close < a.low;
-
-  if (bullish) {
-    return {
-      bullish: true,
-      bearish: false,
-      name: "BULLISH_BREAK",
-    };
-  }
-
-  if (bearish) {
-    return {
-      bullish: false,
-      bearish: true,
-      name: "BEARISH_BREAK",
-    };
-  }
-
-  return {
-    bullish: false,
-    bearish: false,
-    name: "NEUTRAL",
-  };
+  return row ?? null;
 }
 
-/* =========================================================
-   AI MARKET ANALYSIS
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| Scan
+|--------------------------------------------------------------------------
+*/
 
-async function analyze(
-  symbol = TD_SYMBOL,
-  timeframe = "1min",
-): Promise<{
-  direction: Direction | null;
-  score: number;
-  confirmations: number;
-  confirmationNames: string[];
-  reasons: string[];
-  entry: number;
-  session: MarketSession;
-  support: number[];
-  resistance: number[];
-}> {
+async function scan(
+  userId?: string
+) {
+  const existing =
+    await activeRun();
+
+  if (existing) {
+    return {
+      created: false,
+      reason:
+        "active_trade",
+      id:
+        existing.id,
+    };
+  }
+
+  /*
+   * News
+   */
+  const news =
+    await newsBlock();
+
+  if (news.length) {
+    await prisma.analysisRun.create(
+      {
+        data: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          timeframe:
+            "5min",
+
+          status:
+            "AI_NO_TRADE",
+
+          signalGenerated:
+            false,
+
+          candlesAnalyzed:
+            0,
+
+          confirmationsFound:
+            0,
+
+          finishedAt:
+            new Date(),
+
+          metadata:
+            {
+              kind:
+                "AI_SCALP",
+
+              reason:
+                "high_impact_news",
+
+              news:
+                news.map(
+                  (item) => ({
+                    event:
+                      item.event,
+
+                    currency:
+                      item.currency,
+
+                    time:
+                      item.eventTime,
+                  })
+                ),
+            } as any,
+        },
+      }
+    );
+
+    return {
+      created: false,
+
+      reason:
+        "high_impact_news",
+
+      news:
+        news.map(
+          (item) => ({
+            event:
+              item.event,
+
+            currency:
+              item.currency,
+
+            time:
+              item.eventTime,
+          })
+        ),
+    };
+  }
+
+  /*
+   * دریافت بازار
+   */
   const [
     m1,
     m5,
     m15,
     h1,
-    h4,
-  ] = await Promise.all([
-    getCandles(symbol, "1min", 220),
-    getCandles(symbol, "5min", 180),
-    getCandles(symbol, "15min", 180),
-    getCandles(symbol, "1h", 150),
-    getCandles(symbol, "4h", 120),
-  ]);
-
-  if (!m1.length) {
-    throw new Error("No XAUUSD market candles available");
-  }
-
-  const current = m1[m1.length - 1].close;
-
-  const c5 = m5[m5.length - 1]?.close || current;
-  const c15 = m15[m15.length - 1]?.close || current;
-  const c1h = h1[h1.length - 1]?.close || current;
-  const c4h = h4[h4.length - 1]?.close || current;
-
-  const e20 = ema(
-    m1.map((x) => x.close),
-    20,
-  );
-
-  const e50 = ema(
-    m1.map((x) => x.close),
-    50,
-  );
-
-  const ema20 = e20[e20.length - 1] || current;
-  const ema50 = e50[e50.length - 1] || current;
-
-  const rsiValue = rsi(
-    m1.map((x) => x.close),
-    14,
-  );
-
-  const macdValue = macd(
-    m1.map((x) => x.close),
-  );
-
-  const candle = candlePattern(m1);
-
-  const levels = swingLevels(m15);
-
-  let buyVotes = 0;
-  let sellVotes = 0;
-
-  const reasons: string[] = [];
-  const confirmationNames: string[] = [];
-
-  /* Trend */
-  if (current > ema20 && ema20 > ema50) {
-    buyVotes++;
-    confirmationNames.push("Trend");
-    reasons.push("روند کوتاه‌مدت صعودی است.");
-  }
-
-  if (current < ema20 && ema20 < ema50) {
-    sellVotes++;
-    confirmationNames.push("Trend");
-    reasons.push("روند کوتاه‌مدت نزولی است.");
-  }
-
-  /* Multi timeframe */
-  const higherBull =
-    c5 > c15 &&
-    c15 > c1h &&
-    c1h >= c4h;
-
-  const higherBear =
-    c5 < c15 &&
-    c15 < c1h &&
-    c1h <= c4h;
-
-  if (higherBull) {
-    buyVotes++;
-    confirmationNames.push("MTF");
-    reasons.push("تایید چند تایم‌فریمی صعودی است.");
-  }
-
-  if (higherBear) {
-    sellVotes++;
-    confirmationNames.push("MTF");
-    reasons.push("تایید چند تایم‌فریمی نزولی است.");
-  }
-
-  /* RSI */
-  if (rsiValue >= 52 && rsiValue <= 72) {
-    buyVotes++;
-    confirmationNames.push("Momentum");
-    reasons.push(
-      `مومنتوم خرید مناسب است؛ RSI=${round(rsiValue, 1)}.`,
-    );
-  }
-
-  if (rsiValue <= 48 && rsiValue >= 28) {
-    sellVotes++;
-    confirmationNames.push("Momentum");
-    reasons.push(
-      `مومنتوم فروش مناسب است؛ RSI=${round(rsiValue, 1)}.`,
-    );
-  }
-
-  /* MACD */
-  if (macdValue.histogram > 0) {
-    buyVotes++;
-    confirmationNames.push("MACD");
-  }
-
-  if (macdValue.histogram < 0) {
-    sellVotes++;
-    confirmationNames.push("MACD");
-  }
-
-  /* Candle */
-  if (candle.bullish) {
-    buyVotes++;
-    confirmationNames.push("Candle");
-    reasons.push("الگوی کندلی صعودی تایید شده است.");
-  }
-
-  if (candle.bearish) {
-    sellVotes++;
-    confirmationNames.push("Candle");
-    reasons.push("الگوی کندلی نزولی تایید شده است.");
-  }
-
-  /* Structure */
-  if (
-    levels.resistance.length &&
-    current > levels.resistance[levels.resistance.length - 1]
-  ) {
-    buyVotes++;
-    confirmationNames.push("Structure");
-    reasons.push("شکست ساختار مقاومتی مشاهده شد.");
-  }
-
-  if (
-    levels.support.length &&
-    current < levels.support[levels.support.length - 1]
-  ) {
-    sellVotes++;
-    confirmationNames.push("Structure");
-    reasons.push("شکست ساختار حمایتی مشاهده شد.");
-  }
-
-  const direction =
-    buyVotes > sellVotes
-      ? "BUY"
-      : sellVotes > buyVotes
-        ? "SELL"
-        : null;
-
-  const votes = Math.max(buyVotes, sellVotes);
-
-  const score = clamp(
-    50 + votes * 7,
-    0,
-    100,
-  );
-
-  return {
-    direction,
-    score: round(score, 0),
-    confirmations: votes,
-    confirmationNames: [
-      ...new Set(confirmationNames),
-    ],
-    reasons,
-    entry: current,
-    session: getMarketSession(),
-    support: levels.support,
-    resistance: levels.resistance,
-  };
-}
-
-/* =========================================================
-   FIXED MONEY PLAN
-   ========================================================= */
-
-function calculateLevels(
-  direction: Direction,
-  entry: number,
-): {
-  stopLoss: number;
-  tp1: number;
-  tp2: number;
-  tp3: number;
-} {
-  /*
-    The requested money targets are stored independently.
-
-    TP1:
-      0.04 lot is closed.
-
-    TP2:
-      another 0.03 lot is closed.
-
-    TP3:
-      final 0.03 lot is closed.
-
-    The exact price distance is calculated from the
-    standard XAUUSD 100 oz contract model.
-
-    0.01 lot = 1 oz
-    0.04 lot = 4 oz
-  */
-
-  const tp1Distance =
-    TP1_USD / (TP1_LOT * CONTRACT_SIZE);
-
-  const tp2Distance =
-    TP2_USD / (TP2_LOT * CONTRACT_SIZE);
-
-  const tp3Distance =
-    TP3_USD / (TP3_LOT * CONTRACT_SIZE);
-
-  const slDistance =
-    STOP_USD / (TOTAL_LOT * CONTRACT_SIZE);
-
-  if (direction === "BUY") {
-    return {
-      stopLoss: entry - slDistance,
-      tp1: entry + tp1Distance,
-      tp2: entry + tp2Distance,
-      tp3: entry + tp3Distance,
-    };
-  }
-
-  return {
-    stopLoss: entry + slDistance,
-    tp1: entry - tp1Distance,
-    tp2: entry - tp2Distance,
-    tp3: entry - tp3Distance,
-  };
-}
-
-const CONTRACT_SIZE = 100;
-
-/* =========================================================
-   TELEGRAM
-   ========================================================= */
-
-async function sendTelegram(
-  text: string,
-): Promise<{
-  ok: boolean;
-  messageId: number | null;
-  error: string | null;
-}> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId =
-    process.env.TELEGRAM_SIGNAL_CHAT_ID;
-
-  if (!token || !chatId) {
-    return {
-      ok: false,
-      messageId: null,
-      error:
-        "TELEGRAM_BOT_TOKEN or TELEGRAM_SIGNAL_CHAT_ID is missing",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(10000),
-      },
-    );
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok || !data?.ok) {
-      return {
-        ok: false,
-        messageId: null,
-        error:
-          data?.description ||
-          `Telegram HTTP ${response.status}`,
-      };
-    }
-
-    return {
-      ok: true,
-      messageId:
-        num(data?.result?.message_id) || null,
-      error: null,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      messageId: null,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Telegram request failed",
-    };
-  }
-}
-
-/* =========================================================
-   META
-   ========================================================= */
-
-function defaultState(
-  entry: number,
-  stopLoss: number,
-): SignalState {
-  return {
-    tp1Hit: false,
-    tp2Hit: false,
-    tp3Hit: false,
-    slHit: false,
-    breakEvenArmed: false,
-    breakEvenHit: false,
-    closed: false,
-    currentStop: stopLoss,
-    remainingLot: TOTAL_LOT,
-  };
-}
-
-function readMeta(
-  raw: unknown,
-  signal?: any,
-): SignalMeta {
-  const m = parseObject(raw);
-
-  const direction: Direction =
-    m.direction === "SELL" ? "SELL" : "BUY";
-
-  const entry = num(
-    m.entry ?? signal?.entry,
-  );
-
-  const calculated =
-    entry > 0
-      ? calculateLevels(direction, entry)
-      : {
-          stopLoss: num(signal?.stopLoss),
-          tp1: 0,
-          tp2: 0,
-          tp3: 0,
-        };
-
-  const stateRaw = parseObject(m.state);
-
-  return {
-    version: num(m.version, 4),
-
-    symbol: String(
-      m.symbol || signal?.symbol || SYMBOL,
-    ),
-
-    direction,
-
-    timeframe: normalizeTf(
-      m.timeframe ||
-        signal?.timeframe ||
+  ] =
+    await Promise.all([
+      candles(
         "1min",
-    ),
-
-    score: num(
-      m.score ??
-        signal?.confidence ??
-        0,
-    ),
-
-    confirmations: num(
-      m.confirmations ?? 0,
-    ),
-
-    confirmationNames:
-      Array.isArray(m.confirmationNames)
-        ? m.confirmationNames.map(String)
-        : [],
-
-    session:
-      m.session ||
-      getMarketSession(),
-
-    entry,
-
-    stopLoss:
-      num(m.stopLoss) ||
-      calculated.stopLoss,
-
-    tp1:
-      num(m.tp1) ||
-      calculated.tp1,
-
-    tp2:
-      num(m.tp2) ||
-      calculated.tp2,
-
-    tp3:
-      num(m.tp3) ||
-      calculated.tp3,
-
-    totalLot: TOTAL_LOT,
-    tp1Lot: TP1_LOT,
-    tp2Lot: TP2_LOT,
-    tp3Lot: TP3_LOT,
-
-    stopUsd: STOP_USD,
-    tp1Usd: TP1_USD,
-    tp2Usd: TP2_USD,
-    tp3Usd: TP3_USD,
-
-    /*
-      Requested actual partial-close USD amounts.
-      These are NOT the same as the signal distance.
-    */
-
-    tp1CloseUsd:
-      num(m.tp1CloseUsd) ||
-      TP1_USD * 4,
-
-    tp2CloseUsd:
-      num(m.tp2CloseUsd) ||
-      TP2_USD * 3,
-
-    tp3CloseUsd:
-      num(m.tp3CloseUsd) ||
-      TP3_USD * 3,
-
-    remainingAfterTp1:
-      REMAINING_AFTER_TP1,
-
-    remainingAfterTp2:
-      REMAINING_AFTER_TP2,
-
-    remainingAfterTp3:
-      REMAINING_AFTER_TP3,
-
-    lastPrice: num(m.lastPrice),
-
-    lastPriceAt:
-      String(
-        m.lastPriceAt ||
-          new Date().toISOString(),
+        150
       ),
 
-    usdToToman: num(m.usdToToman),
-
-    usdToTomanAsOf:
-      m.usdToTomanAsOf
-        ? String(m.usdToTomanAsOf)
-        : null,
-
-    usdToTomanDelayed:
-      Boolean(m.usdToTomanDelayed),
-
-    usdToTomanDelayedMinutes:
-      m.usdToTomanDelayedMinutes != null
-        ? num(m.usdToTomanDelayedMinutes)
-        : null,
-
-    state: {
-      ...defaultState(
-        entry,
-        num(m.stopLoss) ||
-          calculated.stopLoss,
+      candles(
+        "5min",
+        120
       ),
-      ...stateRaw,
-      remainingLot:
-        num(
-          stateRaw.remainingLot,
-          TOTAL_LOT,
-        ),
-      currentStop:
-        num(
-          stateRaw.currentStop,
-          num(m.stopLoss) ||
-            calculated.stopLoss,
-        ),
-    },
 
-    events: Array.isArray(m.events)
-      ? m.events
-      : [],
-
-    telegramInitialSent:
-      Boolean(m.telegramInitialSent),
-
-    telegramInitialError:
-      m.telegramInitialError
-        ? String(m.telegramInitialError)
-        : null,
-
-    support: Array.isArray(m.support)
-      ? m.support.map(num).filter((x) => x > 0)
-      : [],
-
-    resistance: Array.isArray(m.resistance)
-      ? m.resistance
-          .map(num)
-          .filter((x) => x > 0)
-      : [],
-
-    reasons: Array.isArray(m.reasons)
-      ? m.reasons.map(String)
-      : [],
-
-    engineLastRun:
-      m.engineLastRun
-        ? String(m.engineLastRun)
-        : undefined,
-
-    engineLastError:
-      m.engineLastError
-        ? String(m.engineLastError)
-        : null,
-  };
-}
-
-/* =========================================================
-   EVENT HELPERS
-   ========================================================= */
-
-function eventExists(
-  meta: SignalMeta,
-  type: EventType,
-): boolean {
-  return meta.events.some(
-    (event) => event.type === type,
-  );
-}
-
-function eventPnl(
-  type: EventType,
-): {
-  usd: number;
-  lot: number;
-} {
-  switch (type) {
-    case "TP1_HIT":
-      return {
-        usd: TP1_USD * 4,
-        lot: TP1_LOT,
-      };
-
-    case "TP2_HIT":
-      return {
-        usd: TP2_USD * 3,
-        lot: TP2_LOT,
-      };
-
-    case "TP3_HIT":
-      return {
-        usd: TP3_USD * 3,
-        lot: TP3_LOT,
-      };
-
-    case "SL_HIT":
-      return {
-        usd: -STOP_USD,
-        lot: TOTAL_LOT,
-      };
-
-    case "BREAKEVEN_HIT":
-      return {
-        usd: 0,
-        lot: 0,
-      };
-  }
-}
-
-function makeEventText(
-  signal: any,
-  meta: SignalMeta,
-  event: TelegramEvent,
-): string {
-  const typeNames: Record<EventType, string> = {
-    TP1_HIT: "🎯 TP1 فعال شد",
-    TP2_HIT: "🎯 TP2 فعال شد",
-    TP3_HIT: "🏆 TP3 فعال شد",
-    SL_HIT: "🛑 STOP LOSS فعال شد",
-    BREAKEVEN_HIT: "🛡️ BREAK EVEN فعال شد",
-  };
-
-  const pnlSign =
-    event.pnlUsd > 0 ? "+" : "";
-
-  let extra = "";
-
-  if (event.type === "TP1_HIT") {
-    extra = `
-🛡️ <b>حد ضرر باقی‌مانده‌ها به Entry منتقل شد</b>
-📦 حجم باقی‌مانده: <b>0.06 LOT</b>
-🔒 ریسک معامله: <b>Risk Free</b>`;
-  }
-
-  if (event.type === "TP2_HIT") {
-    extra = `
-📦 حجم باقی‌مانده: <b>0.03 LOT</b>`;
-  }
-
-  if (event.type === "TP3_HIT") {
-    extra = `
-🏁 معامله به طور کامل بسته شد
-📦 حجم باقی‌مانده: <b>0.00 LOT</b>`;
-  }
-
-  if (event.type === "SL_HIT") {
-    extra = `
-⚠️ <b>معامله در حد ضرر بسته شد</b>
-📊 این استاپ باید در کارنامه ثبت شود.`;
-  }
-
-  if (event.type === "BREAKEVEN_HIT") {
-    extra = `
-🛡️ قیمت پس از TP1 به Entry برگشت.
-💰 سود TP1 حفظ شد و باقی حجم بدون ریسک بسته شد.`;
-  }
-
-  return `
-<b>${typeNames[event.type]}</b>
-
-🪙 نماد: <b>XAUUSD</b>
-📈 جهت: <b>${meta.direction}</b>
-
-💵 قیمت رویداد:
-<b>${round(event.price, 2)}</b>
-
-💰 سود/زیان این مرحله:
-<b>${pnlSign}${round(event.pnlUsd, 2)} USD</b>
-
-🇮🇷 تومان:
-<b>${pnlSign}${round(event.pnlToman, 0)} تومان</b>
-
-📦 حجم بسته‌شده:
-<b>${event.lotClosed.toFixed(2)} LOT</b>
-
-📦 حجم باقی‌مانده:
-<b>${event.remainingLot.toFixed(2)} LOT</b>
-
-💱 نرخ دلار:
-<b>${round(event.usdToToman, 0)} تومان</b>
-
-🕐 زمان ایران:
-<b>${iranTime()}</b>
-
-📊 Session:
-<b>${esc(meta.session)}</b>
-
-🆔 Signal:
-<code>${esc(signal.id)}</code>
-${extra}
-`;
-}
-
-/* =========================================================
-   TELEGRAM DELIVERY
-   ========================================================= */
-
-async function deliverEvent(
-  signal: any,
-  meta: SignalMeta,
-  event: TelegramEvent,
-): Promise<void> {
-  const text = makeEventText(
-    signal,
-    meta,
-    event,
-  );
-
-  const result = await sendTelegram(text);
-
-  event.telegramSent = result.ok;
-  event.telegramMessageId =
-    result.messageId;
-
-  event.telegramError =
-    result.error;
-
-  /*
-    If the Prisma model has telegramDelivery,
-    keep delivery history.
-  */
-
-  try {
-    if ((prisma as any).telegramDelivery) {
-      await (prisma as any).telegramDelivery.create(
-        {
-          data: {
-            signalId: signal.id,
-            eventType: event.type,
-            status: result.ok
-              ? "SENT"
-              : "FAILED",
-            messageId:
-              result.messageId
-                ? String(result.messageId)
-                : null,
-            message: text,
-            error: result.error,
-          },
-        },
-      );
-    }
-  } catch {
-    /*
-      Delivery logging must never break
-      the actual trading signal engine.
-    */
-  }
-}
-
-/* =========================================================
-   PERSIST SIGNAL
-   ========================================================= */
-
-async function saveSignal(
-  signal: any,
-  meta: SignalMeta,
-  status?: string,
-): Promise<void> {
-  const data: any = {
-    metadata: meta as any,
-  };
-
-  if (status) {
-    data.status = status;
-  }
-
-  /*
-    Important:
-    Some Prisma schemas use Json metadata.
-    The cast keeps this route compatible
-    with the existing TradingSignal model.
-  */
-
-  await prisma.tradingSignal.update({
-    where: {
-      id: signal.id,
-    },
-    data,
-  });
-}
-
-/* =========================================================
-   MONITOR ONE SIGNAL
-   ========================================================= */
-
-async function monitorSignal(
-  signal: any,
-  fxRate: Awaited<
-    ReturnType<typeof getUsdToman>
-  >,
-): Promise<{
-  changed: boolean;
-  event?: EventType;
-}> {
-  const meta = readMeta(
-    signal.metadata,
-    signal,
-  );
-
-  try {
-    const market =
-      await getLivePrice(TD_SYMBOL);
-
-    const price = market.price;
-
-    meta.lastPrice = price;
-    meta.lastPriceAt = market.asOf;
-
-    meta.session =
-      getMarketSession();
-
-    meta.usdToToman =
-      fxRate.rate;
-
-    meta.usdToTomanAsOf =
-      fxRate.asOf;
-
-    meta.usdToTomanDelayed =
-      fxRate.delayed;
-
-    meta.usdToTomanDelayedMinutes =
-      fxRate.delayedMinutes;
-
-    meta.engineLastRun =
-      new Date().toISOString();
-
-    /*
-      Recover levels for old signals that were
-      created before the new metadata structure.
-    */
-
-    if (
-      meta.entry > 0 &&
-      (
-        meta.stopLoss <= 0 ||
-        meta.tp1 <= 0 ||
-        meta.tp2 <= 0 ||
-        meta.tp3 <= 0
-      )
-    ) {
-      const levels =
-        calculateLevels(
-          meta.direction,
-          meta.entry,
-        );
-
-      meta.stopLoss =
-        meta.stopLoss > 0
-          ? meta.stopLoss
-          : levels.stopLoss;
-
-      meta.tp1 =
-        meta.tp1 > 0
-          ? meta.tp1
-          : levels.tp1;
-
-      meta.tp2 =
-        meta.tp2 > 0
-          ? meta.tp2
-          : levels.tp2;
-
-      meta.tp3 =
-        meta.tp3 > 0
-          ? meta.tp3
-          : levels.tp3;
-    }
-
-    /*
-      CURRENT STOP
-
-      Before TP1:
-        initial SL
-
-      After TP1:
-        Entry
-
-      This is the important Risk-Free mechanism.
-    */
-
-    const currentStop =
-      meta.state.breakEvenArmed
-        ? meta.entry
-        : meta.stopLoss;
-
-    meta.state.currentStop =
-      currentStop;
-
-    /*
-      BUY / SELL event detection
-    */
-
-    const isBuy =
-      meta.direction === "BUY";
-
-    /*
-      STOP LOSS HAS PRIORITY.
-
-      We do not invent an intrabar sequence.
-      If current real price reaches SL,
-      it is registered immediately.
-    */
-
-    const stopHit =
-      isBuy
-        ? price <= currentStop
-        : price >= currentStop;
-
-    if (
-      stopHit &&
-      !meta.state.closed
-    ) {
-      const isBreakEven =
-        meta.state.breakEvenArmed &&
-        !meta.state.slHit;
-
-      if (
-        isBreakEven &&
-        !meta.state.breakEvenHit
-      ) {
-        const event: TelegramEvent = {
-          type: "BREAKEVEN_HIT",
-          at: new Date().toISOString(),
-          price,
-          pnlUsd: 0,
-          pnlToman: 0,
-          lotClosed: 0,
-          remainingLot:
-            meta.state.remainingLot,
-          usdToToman: fxRate.rate,
-          telegramSent: false,
-          telegramMessageId: null,
-          telegramError: null,
-        };
-
-        meta.events.push(event);
-
-        meta.state.breakEvenHit = true;
-        meta.state.closed = true;
-
-        await saveSignal(
-          signal,
-          meta,
-          "CLOSED",
-        );
-
-        await deliverEvent(
-          signal,
-          meta,
-          event,
-        );
-
-        await saveSignal(
-          signal,
-          meta,
-          "CLOSED",
-        );
-
-        return {
-          changed: true,
-          event: "BREAKEVEN_HIT",
-        };
-      }
-
-      if (!meta.state.slHit) {
-        const pnl =
-          eventPnl("SL_HIT");
-
-        const pnlToman =
-          fxRate.rate > 0
-            ? pnl.usd * fxRate.rate
-            : 0;
-
-        const event: TelegramEvent = {
-          type: "SL_HIT",
-          at: new Date().toISOString(),
-          price,
-          pnlUsd: -Math.abs(pnl.usd),
-          pnlToman:
-            -Math.abs(pnlToman),
-          lotClosed:
-            meta.state.remainingLot,
-          remainingLot: 0,
-          usdToToman:
-            fxRate.rate,
-          telegramSent: false,
-          telegramMessageId: null,
-          telegramError: null,
-        };
-
-        meta.events.push(event);
-
-        meta.state.slHit = true;
-        meta.state.closed = true;
-        meta.state.remainingLot = 0;
-        meta.state.currentStop =
-          meta.stopLoss;
-
-        await saveSignal(
-          signal,
-          meta,
-          "CLOSED",
-        );
-
-        await deliverEvent(
-          signal,
-          meta,
-          event,
-        );
-
-        await saveSignal(
-          signal,
-          meta,
-          "CLOSED",
-        );
-
-        return {
-          changed: true,
-          event: "SL_HIT",
-        };
-      }
-    }
-
-    /*
-      TP1
-    */
-
-    const tp1Hit =
-      isBuy
-        ? price >= meta.tp1
-        : price <= meta.tp1;
-
-    if (
-      tp1Hit &&
-      !meta.state.tp1Hit &&
-      !meta.state.closed
-    ) {
-      const pnl =
-        eventPnl("TP1_HIT");
-
-      const pnlToman =
-        fxRate.rate > 0
-          ? pnl.usd * fxRate.rate
-          : 0;
-
-      const event: TelegramEvent = {
-        type: "TP1_HIT",
-        at: new Date().toISOString(),
-        price,
-        pnlUsd: pnl.usd,
-        pnlToman,
-        lotClosed: TP1_LOT,
-        remainingLot:
-          REMAINING_AFTER_TP1,
-        usdToToman:
-          fxRate.rate,
-        telegramSent: false,
-        telegramMessageId: null,
-        telegramError: null,
-      };
-
-      meta.events.push(event);
-
-      meta.state.tp1Hit = true;
-
-      /*
-        IMMEDIATELY ARM BREAK EVEN
-      */
-
-      meta.state.breakEvenArmed = true;
-      meta.state.currentStop =
-        meta.entry;
-
-      meta.state.remainingLot =
-        REMAINING_AFTER_TP1;
-
-      await saveSignal(
-        signal,
-        meta,
-        "TP1_HIT",
-      );
-
-      await deliverEvent(
-        signal,
-        meta,
-        event,
-      );
-
-      await saveSignal(
-        signal,
-        meta,
-        "TP1_HIT",
-      );
-
-      return {
-        changed: true,
-        event: "TP1_HIT",
-      };
-    }
-
-    /*
-      TP2
-    */
-
-    const tp2Hit =
-      isBuy
-        ? price >= meta.tp2
-        : price <= meta.tp2;
-
-    if (
-      tp2Hit &&
-      meta.state.tp1Hit &&
-      !meta.state.tp2Hit &&
-      !meta.state.closed
-    ) {
-      const pnl =
-        eventPnl("TP2_HIT");
-
-      const pnlToman =
-        fxRate.rate > 0
-          ? pnl.usd * fxRate.rate
-          : 0;
-
-      const event: TelegramEvent = {
-        type: "TP2_HIT",
-        at: new Date().toISOString(),
-        price,
-        pnlUsd: pnl.usd,
-        pnlToman,
-        lotClosed: TP2_LOT,
-        remainingLot:
-          REMAINING_AFTER_TP2,
-        usdToToman:
-          fxRate.rate,
-        telegramSent: false,
-        telegramMessageId: null,
-        telegramError: null,
-      };
-
-      meta.events.push(event);
-
-      meta.state.tp2Hit = true;
-
-      meta.state.remainingLot =
-        REMAINING_AFTER_TP2;
-
-      await saveSignal(
-        signal,
-        meta,
-        "TP2_HIT",
-      );
-
-      await deliverEvent(
-        signal,
-        meta,
-        event,
-      );
-
-      await saveSignal(
-        signal,
-        meta,
-        "TP2_HIT",
-      );
-
-      return {
-        changed: true,
-        event: "TP2_HIT",
-      };
-    }
-
-    /*
-      TP3
-    */
-
-    const tp3Hit =
-      isBuy
-        ? price >= meta.tp3
-        : price <= meta.tp3;
-
-    if (
-      tp3Hit &&
-      meta.state.tp2Hit &&
-      !meta.state.tp3Hit &&
-      !meta.state.closed
-    ) {
-      const pnl =
-        eventPnl("TP3_HIT");
-
-      const pnlToman =
-        fxRate.rate > 0
-          ? pnl.usd * fxRate.rate
-          : 0;
-
-      const event: TelegramEvent = {
-        type: "TP3_HIT",
-        at: new Date().toISOString(),
-        price,
-        pnlUsd: pnl.usd,
-        pnlToman,
-        lotClosed: TP3_LOT,
-        remainingLot: 0,
-        usdToToman:
-          fxRate.rate,
-        telegramSent: false,
-        telegramMessageId: null,
-        telegramError: null,
-      };
-
-      meta.events.push(event);
-
-      meta.state.tp3Hit = true;
-      meta.state.remainingLot = 0;
-      meta.state.closed = true;
-
-      await saveSignal(
-        signal,
-        meta,
-        "CLOSED",
-      );
-
-      await deliverEvent(
-        signal,
-        meta,
-        event,
-      );
-
-      await saveSignal(
-        signal,
-        meta,
-        "CLOSED",
-      );
-
-      return {
-        changed: true,
-        event: "TP3_HIT",
-      };
-    }
-
-    /*
-      Persist current price even when no event occurred.
-      This is what keeps the dashboard alive.
-    */
-
-    await saveSignal(
-      signal,
-      meta,
-    );
-
-    return {
-      changed: false,
-    };
-  } catch (error) {
-    meta.engineLastError =
-      error instanceof Error
-        ? error.message
-        : "Monitor failed";
-
-    try {
-      await saveSignal(
-        signal,
-        meta,
-      );
-    } catch {
-      /* ignore secondary persistence error */
-    }
-
-    return {
-      changed: false,
-    };
-  }
-}
-
-/* =========================================================
-   PERFORMANCE
-   ========================================================= */
-
-function calculatePerformance(
-  signals: any[],
-): {
-  trades: number;
-  wins: number;
-  losses: number;
-  stops: number;
-  tp1: number;
-  tp2: number;
-  tp3: number;
-  breakevens: number;
-  grossUsd: number;
-  grossToman: number;
-  winRate: number;
-} {
-  let trades = 0;
-  let wins = 0;
-  let losses = 0;
-  let stops = 0;
-  let tp1 = 0;
-  let tp2 = 0;
-  let tp3 = 0;
-  let breakevens = 0;
-
-  let grossUsd = 0;
-  let grossToman = 0;
-
-  for (const signal of signals) {
-    const meta = readMeta(
-      signal.metadata,
-      signal,
-    );
-
-    const events =
-      Array.isArray(meta.events)
-        ? meta.events
-        : [];
-
-    if (!events.length) continue;
-
-    trades++;
-
-    let tradeProfit = 0;
-    let hasTp = false;
-    let hasSl = false;
-
-    for (const event of events) {
-      tradeProfit += num(
-        event.pnlUsd,
-      );
-
-      grossToman += num(
-        event.pnlToman,
-      );
-
-      if (event.type === "TP1_HIT") {
-        tp1++;
-        hasTp = true;
-      }
-
-      if (event.type === "TP2_HIT") {
-        tp2++;
-        hasTp = true;
-      }
-
-      if (event.type === "TP3_HIT") {
-        tp3++;
-        hasTp = true;
-      }
-
-      if (event.type === "SL_HIT") {
-        stops++;
-        hasSl = true;
-      }
-
-      if (
-        event.type === "BREAKEVEN_HIT"
-      ) {
-        breakevens++;
-      }
-    }
-
-    grossUsd += tradeProfit;
-
-    /*
-      A trade is considered successful
-      when at least one TP has actually
-      been registered.
-    */
-
-    if (hasTp) {
-      wins++;
-    } else if (hasSl) {
-      losses++;
-    }
-  }
-
-  return {
-    trades,
-    wins,
-    losses,
-    stops,
-    tp1,
-    tp2,
-    tp3,
-    breakevens,
-    grossUsd: round(grossUsd, 2),
-    grossToman: round(grossToman, 0),
-    winRate:
-      trades > 0
-        ? round(
-            (wins / trades) * 100,
-            1,
-          )
-        : 0,
-  };
-}
-
-/* =========================================================
-   TELEGRAM INITIAL SIGNAL
-   ========================================================= */
-
-async function sendInitialSignal(
-  signal: any,
-  meta: SignalMeta,
-  fxRate: Awaited<
-    ReturnType<typeof getUsdToman>
-  >,
-): Promise<void> {
-  const telegramText = `
-<b>🤖 AI GOLD SIGNAL</b>
-
-⚠️ <b>این تحلیل توسط هوش مصنوعی تولید شده است.</b>
-
-🪙 نماد:
-<b>XAUUSD</b>
-
-📈 جهت:
-<b>${meta.direction}</b>
-
-🎯 Entry:
-<b>${round(meta.entry, 2)}</b>
-
-🛑 Stop Loss:
-<b>${round(meta.stopLoss, 2)}</b>
-
-🎯 TP1:
-<b>${round(meta.tp1, 2)}</b>
-📦 بستن:
-<b>0.04 LOT</b>
-
-🎯 TP2:
-<b>${round(meta.tp2, 2)}</b>
-📦 بستن:
-<b>0.03 LOT</b>
-
-🏆 TP3:
-<b>${round(meta.tp3, 2)}</b>
-📦 بستن:
-<b>0.03 LOT</b>
-
-📦 حجم کل:
-<b>0.10 LOT</b>
-
-💰 برنامه سود:
-TP1: <b>+${
-    meta.tp1CloseUsd
-  } USD</b>
-
-TP2: <b>+${
-    meta.tp2CloseUsd
-  } USD</b>
-
-TP3: <b>+${
-    meta.tp3CloseUsd
-  } USD</b>
-
-🛡️ بعد از TP1:
-<b>حد ضرر باقی‌مانده‌ها روی Entry قرار می‌گیرد.</b>
-
-📊 Score:
-<b>${meta.score}/100</b>
-
-🧠 Confirmations:
-<b>${meta.confirmations}</b>
-
-🌐 Session:
-<b>${esc(meta.session)}</b>
-
-💱 USD/IRT:
-<b>${
-    fxRate.rate > 0
-      ? `${round(fxRate.rate, 0)} تومان`
-      : "در دسترس نیست"
-  }</b>
-
-🕐 زمان:
-<b>${iranTime()}</b>
-
-🔐 Signal ID:
-<code>${esc(signal.id)}</code>
-`;
-
-  const result =
-    await sendTelegram(
-      telegramText,
-    );
-
-  meta.telegramInitialSent =
-    result.ok;
-
-  meta.telegramInitialError =
-    result.error;
-
-  if (result.ok) {
-    try {
-      if (
-        (prisma as any)
-          .telegramDelivery
-      ) {
-        await (
-          prisma as any
-        ).telegramDelivery.create({
-          data: {
-            signalId: signal.id,
-            eventType: "SIGNAL",
-            status: "SENT",
-            messageId:
-              result.messageId
-                ? String(
-                    result.messageId,
-                  )
-                : null,
-            message: telegramText,
-            error: null,
-          },
-        });
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-/* =========================================================
-   SCAN USER
-   ========================================================= */
-
-async function scanUser(
-  userId: string,
-  fxRate: Awaited<
-    ReturnType<typeof getUsdToman>
-  >,
-): Promise<any | null> {
-  const bots =
-    await prisma.tradingBot.findMany({
-      where: {
-        userId,
-        symbol: {
-          in: [
-            "XAUUSD",
-            "XAU/USD",
-            "GOLD",
-          ],
-        },
-        isActive: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-  if (!bots.length) {
-    return null;
-  }
-
-  /*
-    Do not create duplicate active signals.
-  */
-
-  const existing =
-    await prisma.tradingSignal.findFirst({
-      where: {
-        userId,
-        symbol: {
-          in: [
-            "XAUUSD",
-            "XAU/USD",
-            "GOLD",
-          ],
-        },
-        status: {
-          in: ACTIVE_STATUSES,
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-  if (existing) {
-    return null;
-  }
+      candles(
+        "15min",
+        100
+      ),
+
+      candles(
+        "1h",
+        80
+      ),
+    ]);
 
   const analysis =
-    await analyze(
-      TD_SYMBOL,
-      "1min",
+    analyzeMarket(
+      m1,
+      m5,
+      m15,
+      h1
     );
 
-  if (!analysis.direction) {
-    return null;
-  }
+  /*
+   * سیگنال فقط وقتی ساخته می‌شود که
+   * هم امتیاز و هم تعداد تأییدیه کافی باشد.
+   */
 
   if (
-    analysis.score < MIN_SCORE ||
+    !analysis.direction ||
+    analysis.score <
+      SCORE_TO_SIGNAL ||
     analysis.confirmations <
       MIN_CONFIRMATIONS
   ) {
-    return null;
-  }
+    await prisma.analysisRun.create(
+      {
+        data: {
+          symbol:
+            DISPLAY_SYMBOL,
 
-  const bot = bots[0];
+          timeframe:
+            "5min",
 
-  if (
-    analysis.direction === "BUY" &&
-    bot.buyEnabled === false
-  ) {
-    return null;
-  }
+          status:
+            "AI_NO_TRADE",
 
-  if (
-    analysis.direction === "SELL" &&
-    bot.sellEnabled === false
-  ) {
-    return null;
-  }
+          signalGenerated:
+            false,
 
-  const entry =
-    analysis.entry;
+          candlesAnalyzed:
+            m1.length +
+            m5.length +
+            m15.length +
+            h1.length,
 
-  const levels =
-    calculateLevels(
-      analysis.direction,
-      entry,
+          confirmationsFound:
+            analysis.confirmations,
+
+          finishedAt:
+            new Date(),
+
+          metadata:
+            {
+              kind:
+                "AI_SCALP",
+
+              reason:
+                "score_or_confirmations_low",
+
+              score:
+                analysis.score,
+
+              confirmations:
+                analysis.confirmations,
+
+              reasons:
+                analysis.reasons,
+            } as any,
+        },
+      }
     );
 
-  const meta: SignalMeta = {
-    version: 4,
+    return {
+      created: false,
 
-    symbol: SYMBOL,
+      reason:
+        "no_trade",
+
+      score:
+        analysis.score,
+
+      confirmations:
+        analysis.confirmations,
+
+      reasons:
+        analysis.reasons,
+    };
+  }
+
+  /*
+   * Entry
+   */
+  const entry =
+    m1.at(-1)?.close ??
+    m5.at(-1)?.close ??
+    0;
+
+  if (!entry) {
+    return {
+      created: false,
+      reason:
+        "no_entry_price",
+    };
+  }
+
+  const priceLevels =
+    levels(
+      entry,
+      analysis.direction
+    );
+
+  /*
+   * جلوگیری از سیگنال‌هایی که
+   * SL از نظر ساختاری خیلی دور است.
+   */
+  const structureDistance =
+    analysis.direction ===
+    "BUY"
+      ? entry -
+        analysis.support
+      : analysis.resistance -
+        entry;
+
+  if (
+    structureDistance >
+    STOP_DISTANCE +
+      0.15
+  ) {
+    return {
+      created: false,
+
+      reason:
+        "structure_not_safe",
+
+      score:
+        analysis.score,
+    };
+  }
+
+  /*
+   * FX
+   */
+  const fx =
+    await getUsdToTomanRate();
+
+  const now =
+    new Date();
+
+  const session =
+    sessionSnapshot(now);
+
+  const strength =
+    strengthFromScore(
+      analysis.score,
+      analysis.confirmations
+    );
+
+  const meta: RunMeta = {
+    kind:
+      "AI_SCALP",
+
+    userId,
+
+    symbol:
+      DISPLAY_SYMBOL,
+
     direction:
       analysis.direction,
 
-    timeframe: "1min",
+    strength,
 
-    score: analysis.score,
+    entry:
+      round(entry),
+
+    stopLoss:
+      priceLevels.stopLoss,
+
+    tp1:
+      priceLevels.tp1,
+
+    tp2:
+      priceLevels.tp2,
+
+    tp3:
+      priceLevels.tp3,
+
+    totalLot:
+      TOTAL_LOT,
+
+    tp1Lot:
+      TP1_LOT,
+
+    tp2Lot:
+      TP2_LOT,
+
+    tp3Lot:
+      TP3_LOT,
+
+    remainingAfterTp1:
+      0.06,
+
+    riskUsd:
+      STOP_USD,
+
+    tp1Usd:
+      TP1_USD,
+
+    tp2Usd:
+      TP2_USD,
+
+    tp3Usd:
+      TP3_USD,
+
+    totalPotentialUsd:
+      TOTAL_POTENTIAL_USD,
+
+    usdToToman:
+      fx.rate,
+
+    rateAsOf:
+      fx.asOf,
+
+    rateDelayed:
+      fx.delayed,
+
+    rateDelayedMinutes:
+      fx.delayedMinutes,
+
+    riskToman:
+      toman(
+        STOP_USD *
+          fx.rate
+      ),
+
+    tp1Toman:
+      toman(
+        TP1_USD *
+          fx.rate
+      ),
+
+    tp2Toman:
+      toman(
+        TP2_USD *
+          fx.rate
+      ),
+
+    tp3Toman:
+      toman(
+        TP3_USD *
+          fx.rate
+      ),
+
+    totalPotentialToman:
+      toman(
+        TOTAL_POTENTIAL_USD *
+          fx.rate
+      ),
+
+    session:
+      session.active,
+
+    sessionFa:
+      session.activeFa,
+
+    sessionFlag:
+      session.flag,
+
+    sessionCountry:
+      session.country,
+
+    sessionLocalTime:
+      session.localTime,
+
+    iranTime:
+      session.iranTime,
+
+    score:
+      analysis.score,
 
     confirmations:
       analysis.confirmations,
 
-    confirmationNames:
-      analysis.confirmationNames,
-
-    session:
-      analysis.session,
-
-    entry,
-
-    stopLoss:
-      levels.stopLoss,
-
-    tp1:
-      levels.tp1,
-
-    tp2:
-      levels.tp2,
-
-    tp3:
-      levels.tp3,
-
-    totalLot: TOTAL_LOT,
-
-    tp1Lot: TP1_LOT,
-    tp2Lot: TP2_LOT,
-    tp3Lot: TP3_LOT,
-
-    stopUsd: STOP_USD,
-    tp1Usd: TP1_USD,
-    tp2Usd: TP2_USD,
-    tp3Usd: TP3_USD,
-
-    /*
-      User requested:
-      0.04 => 4 x $5 = $20
-      0.03 => 3 x $8 = $24
-      0.03 => 3 x $12 = $36
-    */
-
-    tp1CloseUsd:
-      TP1_USD * 4,
-
-    tp2CloseUsd:
-      TP2_USD * 3,
-
-    tp3CloseUsd:
-      TP3_USD * 3,
-
-    remainingAfterTp1:
-      REMAINING_AFTER_TP1,
-
-    remainingAfterTp2:
-      REMAINING_AFTER_TP2,
-
-    remainingAfterTp3:
-      REMAINING_AFTER_TP3,
-
-    lastPrice:
-      entry,
-
-    lastPriceAt:
-      new Date().toISOString(),
-
-    usdToToman:
-      fxRate.rate,
-
-    usdToTomanAsOf:
-      fxRate.asOf,
-
-    usdToTomanDelayed:
-      fxRate.delayed,
-
-    usdToTomanDelayedMinutes:
-      fxRate.delayedMinutes,
+    timeframe:
+      "1m + 5m + 15m + 1h",
 
     state:
-      defaultState(
-        entry,
-        levels.stopLoss,
-      ),
+      "AI_PENDING",
+
+    breakeven:
+      false,
+
+    currentPrice:
+      round(entry),
 
     events: [],
 
-    telegramInitialSent:
-      false,
+    analysis:
+      {
+        reasons:
+          analysis.reasons,
 
-    telegramInitialError:
-      null,
+        support:
+          analysis.support,
 
-    support:
-      analysis.support,
+        resistance:
+          analysis.resistance,
 
-    resistance:
-      analysis.resistance,
+        atr:
+          analysis.atr,
 
-    reasons:
-      analysis.reasons,
+        candle:
+          analysis.candle,
 
-    engineLastRun:
-      new Date().toISOString(),
+        t5:
+          analysis.t5,
 
-    engineLastError:
-      null,
+        t15:
+          analysis.t15,
+
+        t60:
+          analysis.t60,
+
+        contractSize:
+          CONTRACT_SIZE,
+
+        stopDistance:
+          STOP_DISTANCE,
+
+        tp1Distance:
+          TP1_DISTANCE,
+
+        tp2Distance:
+          TP2_DISTANCE,
+
+        tp3Distance:
+          TP3_DISTANCE,
+
+        fxSource:
+          fx.source,
+
+        fxPlan:
+          fx.plan,
+
+        allSessions:
+          session.sessions,
+      },
+
+    createdAt:
+      now.toISOString(),
+
+    lastUpdate:
+      now.toISOString(),
   };
 
-  const signal =
-    await prisma.tradingSignal.create({
-      data: {
-        userId,
-        symbol: SYMBOL,
-        direction:
-          analysis.direction,
-        timeframe: "1min",
-        entry,
-        stopLoss:
-          levels.stopLoss,
-        takeProfit:
-          levels.tp3,
-        confidence:
-          analysis.score,
-        status: "ACTIVE",
-        metadata: meta as any,
-        telegramSent: false,
-      } as any,
-    });
+  /*
+   * کارنامه قبلی
+   */
+  const history =
+    await historicalPerformance();
 
-  await sendInitialSignal(
-    signal,
+  /*
+   * ثبت Run
+   */
+  const created =
+    await prisma.analysisRun.create(
+      {
+        data: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          timeframe:
+            "5min",
+
+          status:
+            "AI_PENDING",
+
+          signalGenerated:
+            true,
+
+          candlesAnalyzed:
+            m1.length +
+            m5.length +
+            m15.length +
+            h1.length,
+
+          confirmationsFound:
+            analysis.confirmations,
+
+          finishedAt:
+            now,
+
+          metadata:
+            meta as any,
+        },
+      }
+    );
+
+  /*
+   * ارسال تلگرام
+   */
+  try {
+    const messageId =
+      await sendTelegram(
+        buildSignalTelegram(
+          meta,
+          history
+        )
+      );
+
+    meta.analysis = {
+      ...meta.analysis,
+
+      telegramMessageId:
+        messageId,
+
+      telegramSentAt:
+        new Date().toISOString(),
+
+      telegramError:
+        null,
+    };
+
+    await prisma.analysisRun.update(
+      {
+        where: {
+          id: created.id,
+        },
+
+        data: {
+          metadata:
+            meta as any,
+        },
+      }
+    );
+  } catch (error) {
+    meta.analysis = {
+      ...meta.analysis,
+
+      telegramError:
+        error instanceof Error
+          ? error.message
+          : String(error),
+
+      telegramErrorAt:
+        new Date().toISOString(),
+    };
+
+    await prisma.analysisRun.update(
+      {
+        where: {
+          id: created.id,
+        },
+
+        data: {
+          metadata:
+            meta as any,
+        },
+      }
+    );
+  }
+
+  return {
+    created: true,
+
+    id:
+      created.id,
+
     meta,
-    fxRate,
-  );
-
-  const updateData: any = {
-    metadata: meta as any,
-    telegramSent:
-      meta.telegramInitialSent,
   };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Monitor
+|--------------------------------------------------------------------------
+|
+| مهم:
+| فقط قیمت لحظه‌ای بررسی نمی‌شود.
+| چند کندل 1 دقیقه اخیر نیز بررسی می‌شود.
+|
+| این کار کمک می‌کند اگر بین دو اجرای Cron
+| TP یا SL لمس شده باشد، رویداد ثبت شود.
+|--------------------------------------------------------------------------
+*/
+
+async function monitorOne(
+  run: any
+) {
+  const meta =
+    run.metadata as
+      | RunMeta
+      | null;
 
   if (
-    meta.telegramInitialSent &&
-    (prisma.tradingSignal as any)
+    !meta ||
+    meta.kind !==
+      "AI_SCALP"
+  ) {
+    return null;
+  }
+
+  const currentPrice =
+    await latestPrice();
+
+  meta.currentPrice =
+    round(currentPrice);
+
+  meta.lastUpdate =
+    new Date().toISOString();
+
+  /*
+   * کندل‌های اخیر
+   */
+  const recent =
+    await candles(
+      "1min",
+      30
+    );
+
+  /*
+   * فقط کندل‌های بعد از ایجاد سیگنال
+   */
+  const createdAt =
+    new Date(
+      meta.createdAt
+    ).getTime();
+
+  const usable =
+    recent.filter(
+      (candle) => {
+        const t =
+          new Date(
+            candle.datetime
+          ).getTime();
+
+        return (
+          Number.isFinite(t) &&
+          t >=
+            createdAt -
+              60_000
+        );
+      }
+    );
+
+  /*
+   * اگر هیچ کندل مناسبی نداریم،
+   * قیمت لحظه‌ای را بررسی می‌کنیم.
+   */
+  const candlesToCheck =
+    usable.length
+      ? usable
+      : [];
+
+  /*
+   * رویدادها را به ترتیب بررسی می‌کنیم.
+   */
+  for (
+    const candle of
+      candlesToCheck
   ) {
     /*
-      telegramMessageId is optional in
-      some schemas. Do not make the
-      entire signal creation fail if
-      it doesn't exist.
-    */
-  }
+     * اگر معامله هنوز pending است:
+     *
+     * اول SL بررسی می‌شود.
+     *
+     * چون در یک کندل 1 دقیقه‌ای
+     * ترتیب High/Low را نمی‌دانیم،
+     * این حالت محافظه‌کارانه است.
+     */
 
-  await prisma.tradingSignal.update({
-    where: {
-      id: signal.id,
-    },
-    data: updateData,
-  });
+    if (
+      meta.state ===
+      "AI_PENDING"
+    ) {
+      const slHit =
+        hitStop(
+          meta.direction,
+          candle.close,
+          meta.stopLoss
+        ) ||
+        hitStop(
+          meta.direction,
+          candle.high,
+          meta.stopLoss
+        ) ||
+        hitStop(
+          meta.direction,
+          candle.low,
+          meta.stopLoss
+        );
 
-  return {
-    ...signal,
-    metadata: meta,
-  };
-}
-
-/* =========================================================
-   MONITOR ALL
-   ========================================================= */
-
-async function monitorAllSignals(
-  fxRate: Awaited<
-    ReturnType<typeof getUsdToman>
-  >,
-): Promise<{
-  monitored: number;
-  events: string[];
-}> {
-  const signals =
-    await prisma.tradingSignal.findMany({
-      where: {
-        symbol: {
-          in: [
-            "XAUUSD",
-            "XAU/USD",
-            "GOLD",
-          ],
-        },
-        status: {
-          in: ACTIVE_STATUSES,
-        },
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 200,
-    });
-
-  let monitored = 0;
-  const events: string[] = [];
-
-  for (const signal of signals) {
-    monitored++;
-
-    const result =
-      await monitorSignal(
-        signal,
-        fxRate,
-      );
-
-    if (result.event) {
-      events.push(result.event);
-    }
-  }
-
-  return {
-    monitored,
-    events,
-  };
-}
-
-/* =========================================================
-   RETRY UNSENT EVENTS
-   ========================================================= */
-
-async function retryUnsentEvents(
-  fxRate: Awaited<
-    ReturnType<typeof getUsdToman>
-  >,
-): Promise<number> {
-  const signals =
-    await prisma.tradingSignal.findMany({
-      where: {
-        symbol: {
-          in: [
-            "XAUUSD",
-            "XAU/USD",
-            "GOLD",
-          ],
-        },
-        status: {
-          in: [
-            ...ACTIVE_STATUSES,
-            "CLOSED",
-          ],
-        },
-      },
-      take: 200,
-    });
-
-  let retried = 0;
-
-  for (const signal of signals) {
-    const meta =
-      readMeta(
-        signal.metadata,
-        signal,
-      );
-
-    for (const event of meta.events) {
-      if (
-        event.telegramSent !== true
-      ) {
-        event.usdToToman =
-          fxRate.rate;
-
-        event.pnlToman =
-          event.pnlUsd *
-          fxRate.rate;
-
-        await deliverEvent(
-          signal,
+      if (slHit) {
+        return createEvent(
+          run,
           meta,
-          event,
+          "SL",
+          meta.stopLoss
+        );
+      }
+
+      const tp1Hit =
+        hitTarget(
+          meta.direction,
+          candle.high,
+          meta.tp1
+        ) ||
+        hitTarget(
+          meta.direction,
+          candle.low,
+          meta.tp1
+        ) ||
+        hitTarget(
+          meta.direction,
+          candle.close,
+          meta.tp1
         );
 
-        retried++;
+      if (tp1Hit) {
+        await createEvent(
+          run,
+          meta,
+          "TP1",
+          meta.tp1
+        );
+
+        /*
+         * بعد از TP1، همان معامله ادامه دارد.
+         * حلقه ادامه پیدا می‌کند.
+         */
+        continue;
       }
     }
 
-    await saveSignal(
-      signal,
-      meta,
-    );
+    /*
+     * TP1 -> Break-even
+     */
+    if (
+      meta.state ===
+      "AI_TP1"
+    ) {
+      const breakEvenHit =
+        hitStop(
+          meta.direction,
+          candle.close,
+          meta.entry
+        ) ||
+        hitStop(
+          meta.direction,
+          candle.high,
+          meta.entry
+        ) ||
+        hitStop(
+          meta.direction,
+          candle.low,
+          meta.entry
+        );
+
+      if (breakEvenHit) {
+        return createEvent(
+          run,
+          meta,
+          "BREAKEVEN",
+          meta.entry
+        );
+      }
+
+      const tp2Hit =
+        hitTarget(
+          meta.direction,
+          candle.high,
+          meta.tp2
+        ) ||
+        hitTarget(
+          meta.direction,
+          candle.low,
+          meta.tp2
+        ) ||
+        hitTarget(
+          meta.direction,
+          candle.close,
+          meta.tp2
+        );
+
+      if (tp2Hit) {
+        await createEvent(
+          run,
+          meta,
+          "TP2",
+          meta.tp2
+        );
+
+        continue;
+      }
+    }
+
+    /*
+     * TP2 -> Break-even
+     */
+    if (
+      meta.state ===
+      "AI_TP2"
+    ) {
+      const breakEvenHit =
+        hitStop(
+          meta.direction,
+          candle.close,
+          meta.entry
+        ) ||
+        hitStop(
+          meta.direction,
+          candle.high,
+          meta.entry
+        ) ||
+        hitStop(
+          meta.direction,
+          candle.low,
+          meta.entry
+        );
+
+      if (breakEvenHit) {
+        return createEvent(
+          run,
+          meta,
+          "BREAKEVEN",
+          meta.entry
+        );
+      }
+
+      const tp3Hit =
+        hitTarget(
+          meta.direction,
+          candle.high,
+          meta.tp3
+        ) ||
+        hitTarget(
+          meta.direction,
+          candle.low,
+          meta.tp3
+        ) ||
+        hitTarget(
+          meta.direction,
+          candle.close,
+          meta.tp3
+        );
+
+      if (tp3Hit) {
+        return createEvent(
+          run,
+          meta,
+          "TP3",
+          meta.tp3
+        );
+      }
+    }
   }
 
-  return retried;
-}
-
-/* =========================================================
-   SERVER ENGINE
-   ========================================================= */
-
-async function runServerEngine() {
-  const started =
-    Date.now();
-
-  const fxRate =
-    await getUsdToman();
-
   /*
-    First retry messages that failed
-    previously.
-  */
+   * آخرین قیمت نیز بررسی شود.
+   */
+  if (
+    meta.state ===
+    "AI_PENDING"
+  ) {
+    if (
+      hitStop(
+        meta.direction,
+        currentPrice,
+        meta.stopLoss
+      )
+    ) {
+      return createEvent(
+        run,
+        meta,
+        "SL",
+        currentPrice
+      );
+    }
 
-  const retried =
-    await retryUnsentEvents(
-      fxRate,
-    );
+    if (
+      hitTarget(
+        meta.direction,
+        currentPrice,
+        meta.tp1
+      )
+    ) {
+      return createEvent(
+        run,
+        meta,
+        "TP1",
+        currentPrice
+      );
+    }
+  }
 
-  /*
-    Then monitor active signals.
-  */
+  if (
+    meta.state ===
+    "AI_TP1"
+  ) {
+    if (
+      hitStop(
+        meta.direction,
+        currentPrice,
+        meta.entry
+      )
+    ) {
+      return createEvent(
+        run,
+        meta,
+        "BREAKEVEN",
+        currentPrice
+      );
+    }
 
-  const monitor =
-    await monitorAllSignals(
-      fxRate,
-    );
+    if (
+      hitTarget(
+        meta.direction,
+        currentPrice,
+        meta.tp2
+      )
+    ) {
+      return createEvent(
+        run,
+        meta,
+        "TP2",
+        currentPrice
+      );
+    }
+  }
 
-  /*
-    Then look for new opportunities.
-  */
+  if (
+    meta.state ===
+    "AI_TP2"
+  ) {
+    if (
+      hitStop(
+        meta.direction,
+        currentPrice,
+        meta.entry
+      )
+    ) {
+      return createEvent(
+        run,
+        meta,
+        "BREAKEVEN",
+        currentPrice
+      );
+    }
 
-  const users =
-    await prisma.tradingBot.findMany({
+    if (
+      hitTarget(
+        meta.direction,
+        currentPrice,
+        meta.tp3
+      )
+    ) {
+      return createEvent(
+        run,
+        meta,
+        "TP3",
+        currentPrice
+      );
+    }
+  }
+
+  await prisma.analysisRun.update(
+    {
       where: {
-        isActive: true,
-        symbol: {
-          in: [
-            "XAUUSD",
-            "XAU/USD",
-            "GOLD",
-          ],
-        },
+        id: run.id,
       },
-      select: {
-        userId: true,
+
+      data: {
+        metadata:
+          meta as any,
       },
-      distinct: [
-        "userId",
-      ],
-    });
-
-  let created = 0;
-
-  for (const user of users) {
-    try {
-      const signal =
-        await scanUser(
-          user.userId,
-          fxRate,
-        );
-
-      if (signal) {
-        created++;
-      }
-    } catch {
-      /*
-        One user's analysis failure
-        must not stop all users.
-      */
     }
-  }
-
-  const duration =
-    Date.now() - started;
+  );
 
   return {
-    ok: true,
-    created,
+    id:
+      run.id,
+
+    state:
+      meta.state,
+
+    price:
+      currentPrice,
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Event Totals
+|--------------------------------------------------------------------------
+*/
+
+function eventTotals(
+  rows: any[]
+) {
+  const result = {
+    trades: 0,
+
+    closedTrades: 0,
+
+    openTrades: 0,
+
+    wins: 0,
+
+    losses: 0,
+
+    breakeven: 0,
+
+    tp1: 0,
+
+    tp2: 0,
+
+    tp3: 0,
+
+    sl: 0,
+
+    tp1Usd: 0,
+
+    tp2Usd: 0,
+
+    tp3Usd: 0,
+
+    slUsd: 0,
+
+    pnlUsd: 0,
+
+    pnlToman: 0,
+
+    tp1Toman: 0,
+
+    tp2Toman: 0,
+
+    tp3Toman: 0,
+
+    slToman: 0,
+  };
+
+  for (
+    const row of rows
+  ) {
+    const meta =
+      row.metadata as
+        | RunMeta
+        | null;
+
+    if (
+      !meta ||
+      meta.kind !==
+        "AI_SCALP"
+    ) {
+      continue;
+    }
+
+    result.trades++;
+
+    const events =
+      Array.isArray(
+        meta.events
+      )
+        ? meta.events
+        : [];
+
+    let final:
+      | EventType
+      | null = null;
+
+    for (
+      const event of
+        events
+    ) {
+      if (
+        event.type ===
+        "TP1"
+      ) {
+        result.tp1++;
+
+        result.tp1Usd +=
+          event.pnlUsd;
+
+        result.tp1Toman +=
+          event.pnlToman;
+      }
+
+      if (
+        event.type ===
+        "TP2"
+      ) {
+        result.tp2++;
+
+        result.tp2Usd +=
+          event.pnlUsd;
+
+        result.tp2Toman +=
+          event.pnlToman;
+      }
+
+      if (
+        event.type ===
+        "TP3"
+      ) {
+        result.tp3++;
+
+        result.tp3Usd +=
+          event.pnlUsd;
+
+        result.tp3Toman +=
+          event.pnlToman;
+      }
+
+      if (
+        event.type ===
+        "SL"
+      ) {
+        result.sl++;
+
+        result.slUsd +=
+          event.pnlUsd;
+
+        result.slToman +=
+          event.pnlToman;
+      }
+
+      if (
+        event.type ===
+          "TP1" ||
+        event.type ===
+          "TP2" ||
+        event.type ===
+          "TP3" ||
+        event.type ===
+          "SL" ||
+        event.type ===
+          "BREAKEVEN"
+      ) {
+        final =
+          event.type;
+      }
+
+      if (
+        event.type !==
+        "BREAKEVEN"
+      ) {
+        result.pnlUsd +=
+          event.pnlUsd;
+
+        result.pnlToman +=
+          event.pnlToman;
+      }
+    }
+
+    if (
+      final === "SL"
+    ) {
+      result.losses++;
+      result.closedTrades++;
+    } else if (
+      final ===
+      "BREAKEVEN"
+    ) {
+      result.breakeven++;
+      result.closedTrades++;
+    } else if (
+      final === "TP3"
+    ) {
+      result.wins++;
+      result.closedTrades++;
+    } else {
+      result.openTrades++;
+    }
+  }
+
+  return {
+    ...result,
+
+    tp1Usd:
+      money(result.tp1Usd),
+
+    tp2Usd:
+      money(result.tp2Usd),
+
+    tp3Usd:
+      money(result.tp3Usd),
+
+    slUsd:
+      money(result.slUsd),
+
+    pnlUsd:
+      money(result.pnlUsd),
+
+    pnlToman:
+      Math.round(
+        result.pnlToman
+      ),
+
+    tp1Toman:
+      Math.round(
+        result.tp1Toman
+      ),
+
+    tp2Toman:
+      Math.round(
+        result.tp2Toman
+      ),
+
+    tp3Toman:
+      Math.round(
+        result.tp3Toman
+      ),
+
+    slToman:
+      Math.round(
+        result.slToman
+      ),
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Period
+|--------------------------------------------------------------------------
+*/
+
+function startOfPeriod(
+  type:
+    | "day"
+    | "week"
+    | "month"
+) {
+  const date =
+    new Date();
+
+  date.setUTCHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  if (
+    type === "week"
+  ) {
+    const day =
+      date.getUTCDay() ||
+      7;
+
+    date.setUTCDate(
+      date.getUTCDate() -
+        day +
+        1
+    );
+  }
+
+  if (
+    type === "month"
+  ) {
+    date.setUTCDate(1);
+  }
+
+  return date;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Performance
+|--------------------------------------------------------------------------
+*/
+
+async function performance() {
+  const [
+    day,
+    week,
+    month,
+    recent,
+  ] =
+    await Promise.all([
+      prisma.analysisRun.findMany(
+        {
+          where: {
+            symbol:
+              DISPLAY_SYMBOL,
+
+            createdAt: {
+              gte:
+                startOfPeriod(
+                  "day"
+                ),
+            },
+
+            signalGenerated:
+              true,
+          },
+
+          orderBy: {
+            createdAt:
+              "desc",
+          },
+        }
+      ),
+
+      prisma.analysisRun.findMany(
+        {
+          where: {
+            symbol:
+              DISPLAY_SYMBOL,
+
+            createdAt: {
+              gte:
+                startOfPeriod(
+                  "week"
+                ),
+            },
+
+            signalGenerated:
+              true,
+          },
+
+          orderBy: {
+            createdAt:
+              "desc",
+          },
+        }
+      ),
+
+      prisma.analysisRun.findMany(
+        {
+          where: {
+            symbol:
+              DISPLAY_SYMBOL,
+
+            createdAt: {
+              gte:
+                startOfPeriod(
+                  "month"
+                ),
+            },
+
+            signalGenerated:
+              true,
+          },
+
+          orderBy: {
+            createdAt:
+              "desc",
+          },
+        }
+      ),
+
+      prisma.analysisRun.findMany(
+        {
+          where: {
+            symbol:
+              DISPLAY_SYMBOL,
+
+            signalGenerated:
+              true,
+          },
+
+          orderBy: {
+            createdAt:
+              "desc",
+          },
+
+          take: 30,
+        }
+      ),
+    ]);
+
+  return {
+    day:
+      eventTotals(day),
+
+    week:
+      eventTotals(week),
+
+    month:
+      eventTotals(month),
+
+    recent:
+      recent.map(
+        (row) => ({
+          id:
+            row.id,
+
+          createdAt:
+            row.createdAt,
+
+          status:
+            row.status,
+
+          metadata:
+            row.metadata,
+        })
+      ),
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Session Report
+|--------------------------------------------------------------------------
+*/
+
+function sessionKey(
+  name: SessionName,
+  date = new Date()
+) {
+  const config =
+    SESSIONS[name];
+
+  const localDate =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:
+          config.timezone,
+
+        year: "numeric",
+
+        month: "2-digit",
+
+        day: "2-digit",
+      }
+    ).format(date);
+
+  return `${name}-${localDate}`;
+}
+
+async function sessionReport(
+  name: SessionName
+) {
+  const now =
+    new Date();
+
+  const key =
+    sessionKey(
+      name,
+      now
+    );
+
+  const existing =
+    await prisma.analysisRun.findFirst(
+      {
+        where: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          status:
+            "SESSION_REPORT",
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+      }
+    );
+
+  if (
+    existing &&
+    (
+      existing.metadata as any
+    )?.key === key
+  ) {
+    return {
+      sent: false,
+
+      reason:
+        "already_sent",
+    };
+  }
+
+  const rows =
+    await prisma.analysisRun.findMany(
+      {
+        where: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          signalGenerated:
+            true,
+        },
+
+        orderBy: {
+          createdAt:
+            "asc",
+        },
+      }
+    );
+
+  const sessionRows =
+    rows.filter(
+      (row) => {
+        const meta =
+          row.metadata as
+            | RunMeta
+            | null;
+
+        if (
+          !meta ||
+          meta.kind !==
+            "AI_SCALP"
+        ) {
+          return false;
+        }
+
+        return (
+          meta.session ===
+            name &&
+          sessionKey(
+            name,
+            new Date(
+              meta.createdAt
+            )
+          ) === key
+        );
+      }
+    );
+
+  const totals =
+    eventTotals(
+      sessionRows
+    );
+
+  if (
+    !totals.trades
+  ) {
+    return {
+      sent: false,
+
+      reason:
+        "no_trades",
+    };
+  }
+
+  const fx =
+    await getUsdToTomanRate();
+
+  const config =
+    SESSIONS[name];
+
+  const msg = [
+    "🤖 <b>━━━ کارنامه پایان سشن ━━━</b>",
+    "",
+
+    `🪙 XAUUSD | ${config.flag} <b>${config.fa}</b>`,
+
+    `🌍 کشور: ${config.country}`,
+
+    "",
+
+    `📊 معاملات: <b>${totals.trades}</b>`,
+
+    `🟢 برد کامل: <b>${totals.wins}</b>`,
+
+    `🔴 باخت: <b>${totals.losses}</b>`,
+
+    `🛡️ ریسک‌فری: <b>${totals.breakeven}</b>`,
+
+    "",
+
+    `🎯 TP1: <b>${totals.tp1}</b> | ${formatUsd(
+      totals.tp1Usd
+    )} | ${formatToman(
+      totals.tp1Toman
+    )}`,
+
+    `🎯 TP2: <b>${totals.tp2}</b> | ${formatUsd(
+      totals.tp2Usd
+    )} | ${formatToman(
+      totals.tp2Toman
+    )}`,
+
+    `🏆 TP3: <b>${totals.tp3}</b> | ${formatUsd(
+      totals.tp3Usd
+    )} | ${formatToman(
+      totals.tp3Toman
+    )}`,
+
+    `🛑 SL: <b>${totals.sl}</b> | ${formatUsd(
+      totals.slUsd
+    )} | ${formatToman(
+      totals.slToman
+    )}`,
+
+    "",
+
+    `💰 <b>خالص سشن:</b> ${formatUsd(
+      totals.pnlUsd
+    )}`,
+
+    `🇮🇷 <b>خالص تومان:</b> ${formatToman(
+      totals.pnlToman
+    )}`,
+
+    "",
+
+    `💱 نرخ دلار گزارش: <b>${faNumber(
+      fx.rate
+    )} تومان</b>`,
+
+    `🕒 زمان نرخ: ${esc(
+      fx.asOf
+    )}`,
+
+    fx.delayed
+      ? `⚠️ نرخ ${fx.delayedMinutes} دقیقه تأخیر داشته است.`
+      : "🟢 نرخ بدون تأخیر.",
+
+    "",
+
+    "⚠️ کارنامه بر اساس رویدادهای ثبت‌شده سیستم است.",
+    "نتیجه واقعی بروکر می‌تواند به دلیل اسپرد، کمیسیون و اسلیپیج متفاوت باشد.",
+  ].join("\n");
+
+  let telegramMessageId =
+    "";
+
+  try {
+    telegramMessageId =
+      await sendTelegram(
+        msg
+      );
+  } catch {
+    /*
+     * گزارش دیتابیس ثبت می‌شود
+     * حتی اگر تلگرام خطا دهد.
+     */
+  }
+
+  await prisma.analysisRun.create(
+    {
+      data: {
+        symbol:
+          DISPLAY_SYMBOL,
+
+        timeframe:
+          "SESSION",
+
+        status:
+          "SESSION_REPORT",
+
+        signalGenerated:
+          false,
+
+        finishedAt:
+          now,
+
+        metadata:
+          {
+            kind:
+              "SESSION_REPORT",
+
+            key,
+
+            session:
+              name,
+
+            totals,
+
+            usdToToman:
+              fx.rate,
+
+            rateAsOf:
+              fx.asOf,
+
+            rateDelayed:
+              fx.delayed,
+
+            rateDelayedMinutes:
+              fx.delayedMinutes,
+
+            telegramMessageId,
+          } as any,
+      },
+    }
+  );
+
+  return {
+    sent: true,
+
+    totals,
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Cron Cycle
+|--------------------------------------------------------------------------
+*/
+
+async function cronCycle() {
+  const results: unknown[] =
+    [];
+
+  const active =
+    await activeRun();
+
+  if (active) {
+    results.push(
+      await monitorOne(
+        active
+      )
+    );
+  } else {
+    results.push(
+      await scan()
+    );
+  }
+
+  const reports: Record<
+    string,
+    unknown
+  > = {};
+
+  /*
+   * گزارش پایان سشن
+   */
+  for (
+    const name of Object.keys(
+      SESSIONS
+    ) as SessionName[]
+  ) {
+    const config =
+      SESSIONS[name];
+
+    const date =
+      new Date();
+
+    const localHour =
+      hourInZone(
+        date,
+        config.timezone
+      );
+
+    /*
+     * در شروع ساعت 17 محلی،
+     * گزارش پایان سشن ارسال می‌شود.
+     */
+    if (
+      localHour ===
+        config.endHour &&
+      date.getUTCMinutes() <
+        3
+    ) {
+      reports[name] =
+        await sessionReport(
+          name
+        );
+    }
+  }
+
+  return {
     monitored:
-      monitor.monitored,
-    events:
-      monitor.events,
-    retried,
-    usdToToman:
-      fxRate.rate,
-    usdToTomanAsOf:
-      fxRate.asOf,
-    usdToTomanDelayed:
-      fxRate.delayed,
-    usdToTomanDelayedMinutes:
-      fxRate.delayedMinutes,
-    usdToTomanError:
-      fxRate.error,
-    durationMs:
-      duration,
+      results,
+
+    reports,
+
     at:
       new Date().toISOString(),
   };
 }
 
-/* =========================================================
-   CRON SECURITY
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| Dashboard Data
+|--------------------------------------------------------------------------
+*/
 
-function validCronRequest(
-  request: NextRequest,
-): boolean {
-  const url =
-    new URL(request.url);
+async function dashboard(
+  userId?: string
+) {
+  const [
+    active,
+    perf,
+    fx,
+    latest,
+    livePrice,
+  ] =
+    await Promise.all([
+      activeRun(),
 
-  if (
-    url.searchParams.get("cron") ===
-    "1"
-  ) {
-    return true;
-  }
+      performance(),
 
-  const configured =
-    process.env.SIGNALS_CRON_SECRET ||
-    process.env.AI_CRON_SECRET ||
-    process.env.NEWS_CRON_SECRET;
+      getUsdToTomanRate().catch(
+        () => null
+      ),
 
-  if (!configured) {
-    return false;
-  }
+      prisma.analysisRun.findFirst(
+        {
+          where: {
+            symbol:
+              DISPLAY_SYMBOL,
 
-  const received =
-    request.headers.get(
-      "x-signals-cron-secret",
-    ) ||
-    request.headers.get(
-      "x-ai-cron-secret",
-    ) ||
-    request.headers.get(
-      "x-cron-secret",
-    );
+            signalGenerated:
+              true,
+          },
 
-  return (
-    Boolean(received) &&
-    received === configured
-  );
+          orderBy: {
+            createdAt:
+              "desc",
+          },
+        }
+      ),
+
+      latestPrice().catch(
+        () => null
+      ),
+    ]);
+
+  const meta =
+    latest?.metadata as
+      | RunMeta
+      | undefined;
+
+  const session =
+    sessionSnapshot();
+
+  return {
+    symbol:
+      DISPLAY_SYMBOL,
+
+    livePrice,
+
+    contractSize:
+      CONTRACT_SIZE,
+
+    position: {
+      totalLot:
+        TOTAL_LOT,
+
+      tp1Lot:
+        TP1_LOT,
+
+      tp2Lot:
+        TP2_LOT,
+
+      tp3Lot:
+        TP3_LOT,
+
+      remainingAfterTp1:
+        0.06,
+
+      stopUsd:
+        STOP_USD,
+
+      tp1Usd:
+        TP1_USD,
+
+      tp2Usd:
+        TP2_USD,
+
+      tp3Usd:
+        TP3_USD,
+
+      totalPotentialUsd:
+        TOTAL_POTENTIAL_USD,
+
+      stopDistance:
+        STOP_DISTANCE,
+
+      tp1Distance:
+        TP1_DISTANCE,
+
+      tp2Distance:
+        TP2_DISTANCE,
+
+      tp3Distance:
+        TP3_DISTANCE,
+    },
+
+    active: active
+      ? {
+          id:
+            active.id,
+
+          status:
+            active.status,
+
+          metadata:
+            active.metadata,
+        }
+      : null,
+
+    latest: meta
+      ? {
+          id:
+            latest?.id,
+
+          status:
+            latest?.status,
+
+          metadata:
+            meta,
+        }
+      : null,
+
+    performance:
+      perf,
+
+    usdToToman:
+      fx,
+
+    currentSession:
+      session,
+
+    sessions:
+      Object.fromEntries(
+        Object.entries(
+          SESSIONS
+        ).map(
+          ([
+            name,
+            config,
+          ]) => [
+            name,
+            {
+              fa:
+                config.fa,
+
+              flag:
+                config.flag,
+
+              country:
+                config.country,
+
+              timezone:
+                config.timezone,
+
+              startHour:
+                config.startHour,
+
+              endHour:
+                config.endHour,
+
+              localTime:
+                timeInZone(
+                  new Date(),
+                  config.timezone
+                ),
+
+              active:
+                isSessionActive(
+                  config
+                ),
+            },
+          ]
+        )
+      ),
+
+    userId,
+  };
 }
 
-/* =========================================================
-   GET
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| GET
+|--------------------------------------------------------------------------
+*/
 
 export async function GET(
-  request: NextRequest,
+  request: NextRequest
 ) {
   try {
+    const url =
+      new URL(
+        request.url
+      );
+
+    const isCron =
+      url.searchParams.get(
+        "cron"
+      ) === "1";
+
     /*
-      SERVER / CRON ENGINE
+     * Server Cron
+     */
+    if (isCron) {
+      const provided =
+        request.headers.get(
+          "x-ai-cron-secret"
+        ) ||
+        request.headers.get(
+          "x-cron-secret"
+        ) ||
+        url.searchParams.get(
+          "secret"
+        );
 
-      This path does NOT require a user session.
-    */
+      if (
+        !CRON_SECRET ||
+        provided !==
+          CRON_SECRET
+      ) {
+        return NextResponse.json(
+          {
+            ok: false,
 
-    if (
-      validCronRequest(request)
-    ) {
-      const engine =
-        await runServerEngine();
+            error:
+              "Unauthorized",
+          },
+
+          {
+            status: 401,
+          }
+        );
+      }
+
+      const result =
+        await cronCycle();
 
       return NextResponse.json(
-        engine,
         {
-          status: 200,
-          headers: {
-            "cache-control":
-              "no-store, no-cache, must-revalidate",
-          },
+          ok: true,
+
+          ...result,
         },
+
+        {
+          headers: {
+            "Cache-Control":
+              "no-store",
+          },
+        }
       );
     }
 
     /*
-      USER AUTH
-
-      IMPORTANT:
-      getSession() in this project
-      returns { id, userId }.
-
-      It does NOT return:
-        session.user
-
-      Therefore:
-        session?.userId
-      is used here.
-    */
-
+     * درخواست عادی سایت
+     */
     const session =
       await getSession();
 
-    if (!session?.userId) {
+    /*
+     * مهم:
+     * getSession در پروژه شما
+     * userId برمی‌گرداند، نه session.user.
+     *
+     * بنابراین اینجا از session?.userId استفاده می‌کنیم.
+     */
+    if (
+      !session?.userId
+    ) {
       return NextResponse.json(
         {
           ok: false,
+
           error:
-            "UNAUTHORIZED",
+            "احراز هویت لازم است.",
         },
+
         {
           status: 401,
-        },
+        }
       );
     }
 
-    /*
-      Run monitoring during normal
-      dashboard/API requests too.
-
-      This gives an extra safety layer
-      even if a scheduler is delayed.
-    */
-
-    const fxRate =
-      await getUsdToman();
-
-    const url =
-      new URL(request.url);
-
-    const scan =
-      url.searchParams.get(
-        "scan",
-      ) === "1";
-
-    const monitor =
-      await prisma.tradingSignal.findMany(
-        {
-          where: {
-            userId:
-              session.userId,
-            symbol: {
-              in: [
-                "XAUUSD",
-                "XAU/USD",
-                "GOLD",
-              ],
-            },
-            status: {
-              in: ACTIVE_STATUSES,
-            },
-          },
-          orderBy: {
-            createdAt: "asc",
-          },
-          take: 50,
-        },
+    const data =
+      await dashboard(
+        session.userId
       );
-
-    const monitorEvents: string[] =
-      [];
-
-    for (const signal of monitor) {
-      const result =
-        await monitorSignal(
-          signal,
-          fxRate,
-        );
-
-      if (result.event) {
-        monitorEvents.push(
-          result.event,
-        );
-      }
-    }
-
-    /*
-      Manual scan.
-    */
-
-    let createdSignal = null;
-
-    if (scan) {
-      try {
-        createdSignal =
-          await scanUser(
-            session.userId,
-            fxRate,
-          );
-      } catch {
-        createdSignal = null;
-      }
-    }
-
-    /*
-      Get latest signals.
-    */
-
-    const signals =
-      await prisma.tradingSignal.findMany(
-        {
-          where: {
-            userId:
-              session.userId,
-            symbol: {
-              in: [
-                "XAUUSD",
-                "XAU/USD",
-                "GOLD",
-              ],
-            },
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 100,
-        },
-      );
-
-    let livePrice = 0;
-    let livePriceSource = "";
-    let livePriceAt = "";
-
-    try {
-      const market =
-        await getLivePrice(
-          TD_SYMBOL,
-        );
-
-      livePrice =
-        market.price;
-
-      livePriceSource =
-        market.source;
-
-      livePriceAt =
-        market.asOf;
-    } catch {
-      livePrice = 0;
-    }
-
-    const performance =
-      calculatePerformance(
-        signals,
-      );
-
-    /*
-      Current active signal.
-    */
-
-    const active =
-      signals.find(
-        (signal) =>
-          ACTIVE_STATUSES.includes(
-            String(signal.status),
-          ),
-      ) || null;
-
-    const latest =
-      signals[0] || null;
-
-    const activeMeta =
-      active
-        ? readMeta(
-            active.metadata,
-            active,
-          )
-        : null;
-
-    const latestMeta =
-      latest
-        ? readMeta(
-            latest.metadata,
-            latest,
-          )
-        : null;
-
-    /*
-      Overall response.
-    */
 
     return NextResponse.json(
       {
         ok: true,
 
-        symbol: SYMBOL,
-
-        market: {
-          symbol: SYMBOL,
-          price: livePrice,
-          priceSource:
-            livePriceSource,
-          priceAt:
-            livePriceAt,
-          session:
-            getMarketSession(),
-        },
-
-        usdToToman: {
-          rate:
-            fxRate.rate,
-          asOf:
-            fxRate.asOf,
-          delayed:
-            fxRate.delayed,
-          delayedMinutes:
-            fxRate.delayedMinutes,
-          source:
-            fxRate.source,
-          error:
-            fxRate.error,
-        },
-
-        plan: {
-          totalLot:
-            TOTAL_LOT,
-
-          stopLossUsd:
-            STOP_USD,
-
-          tp1: {
-            lot: TP1_LOT,
-            baseUsd:
-              TP1_USD,
-            closeUsd:
-              TP1_USD * 4,
-            remainingLot:
-              REMAINING_AFTER_TP1,
-          },
-
-          tp2: {
-            lot: TP2_LOT,
-            baseUsd:
-              TP2_USD,
-            closeUsd:
-              TP2_USD * 3,
-            remainingLot:
-              REMAINING_AFTER_TP2,
-          },
-
-          tp3: {
-            lot: TP3_LOT,
-            baseUsd:
-              TP3_USD,
-            closeUsd:
-              TP3_USD * 3,
-            remainingLot:
-              REMAINING_AFTER_TP3,
-          },
-
-          breakEvenAfterTp1:
-            true,
-        },
-
-        active:
-          active
-            ? {
-                ...active,
-                metadata:
-                  activeMeta,
-              }
-            : null,
-
-        latest:
-          latest
-            ? {
-                ...latest,
-                metadata:
-                  latestMeta,
-              }
-            : null,
-
-        signals,
-
-        performance: {
-          ...performance,
-          stopLosses:
-            performance.stops,
-        },
-
-        engine: {
-          monitorEvents,
-          monitored:
-            monitor.length,
-          lastRun:
-            new Date().toISOString(),
-        },
-
-        createdSignal:
-          createdSignal
-            ? {
-                ...createdSignal,
-                metadata:
-                  parseObject(
-                    createdSignal.metadata,
-                  ),
-              }
-            : null,
+        data,
       },
+
       {
-        status: 200,
         headers: {
-          "cache-control":
-            "no-store, no-cache, must-revalidate",
+          "Cache-Control":
+            "no-store",
         },
-      },
+      }
     );
   } catch (error) {
     console.error(
-      "[AI_ANALYSIS_ERROR]",
-      error,
+      "AI ANALYSIS ERROR:",
+      error
     );
 
     return NextResponse.json(
       {
         ok: false,
+
         error:
           error instanceof Error
             ? error.message
-            : "AI analysis engine failed",
+            : "خطای داخلی موتور تحلیل AI",
       },
+
       {
         status: 500,
-        headers: {
-          "cache-control":
-            "no-store",
-        },
-      },
+      }
     );
   }
 }
