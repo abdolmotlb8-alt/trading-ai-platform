@@ -58,56 +58,61 @@ type Signal = {
   pullback?: string | null;
   candlePattern?: string | null;
   volumeConfirmation?: string | null;
+
+  /*
+   * مهم:
+   * نام صحیح این فیلد طبق Type بالا:
+   * multiTimeframeConfirmation
+   */
   multiTimeframeConfirmation?: string | null;
+
   sessionConfirmation?: string | null;
   volatilityConfirmation?: string | null;
   newsConfirmation?: string | null;
+
   confirmations?: unknown;
   reasons?: unknown;
+
   metadata?: SignalMeta | null;
+
   telegramSent?: boolean;
   telegramMessageId?: string | null;
   telegramSentAt?: string | null;
+
   createdAt: string;
   closedAt?: string | null;
   expiresAt?: string | null;
+
   bot?: {
     name?: string | null;
   } | null;
 };
 
+type PerformancePeriod = {
+  signals?: number;
+  wins?: number;
+  losses?: number;
+  winRate?: number;
+  pnlUsd?: number;
+};
+
 type Performance = {
-  daily?: {
-    signals?: number;
-    wins?: number;
-    losses?: number;
-    winRate?: number;
-    pnlUsd?: number;
-  };
-  weekly?: {
-    signals?: number;
-    wins?: number;
-    losses?: number;
-    winRate?: number;
-    pnlUsd?: number;
-  };
-  monthly?: {
-    signals?: number;
-    wins?: number;
-    losses?: number;
-    winRate?: number;
-    pnlUsd?: number;
-  };
+  daily?: PerformancePeriod;
+  weekly?: PerformancePeriod;
+  monthly?: PerformancePeriod;
 };
 
 type ApiData = {
   ok?: boolean;
+
   engine?: {
     source?: string;
     monitored?: unknown;
+
     scanned?: {
       bots?: number;
       made?: Signal[];
+
       errors?: {
         botId?: string;
         symbol?: string;
@@ -115,7 +120,9 @@ type ApiData = {
       }[];
     };
   };
+
   signals?: Signal[];
+
   performance?: Performance;
 };
 
@@ -137,24 +144,42 @@ const priceFmt = new Intl.NumberFormat("en-US", {
 
 function price(value: unknown) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return "—";
+
+  if (!Number.isFinite(n) || n === 0) {
+    return "—";
+  }
+
   return priceFmt.format(n);
 }
 
 function usd(value: unknown) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return "$0";
-  return `${n >= 0 ? "+" : "-"}$${usdFmt.format(Math.abs(n))}`;
+
+  if (!Number.isFinite(n)) {
+    return "$0";
+  }
+
+  return `${n >= 0 ? "+" : "-"}$${usdFmt.format(
+    Math.abs(n)
+  )}`;
 }
 
 function toman(value: unknown) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
-  return `${tomanFmt.format(Math.round(Math.abs(n)))} تومان`;
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return `${tomanFmt.format(
+    Math.round(Math.abs(n))
+  )} تومان`;
 }
 
 function dateFa(value?: string | null) {
-  if (!value) return "—";
+  if (!value) {
+    return "—";
+  }
 
   try {
     return new Intl.DateTimeFormat("fa-IR", {
@@ -176,7 +201,9 @@ function statusFa(status?: string) {
     ACTIVE: "فعال",
     TP1_HIT: "TP1 ثبت شد",
     TP2_HIT: "TP2 ثبت شد",
+    TP3_HIT: "TP3 ثبت شد",
     CLOSED: "بسته شد",
+    SL_HIT: "حد ضرر فعال شد",
   };
 
   return map[status || ""] || status || "—";
@@ -206,59 +233,109 @@ function getLatestSignal(signals: Signal[]) {
   return signals.length > 0 ? signals[0] : null;
 }
 
+function getConfirmationCount(signal: Signal) {
+  if (
+    !signal.confirmations ||
+    typeof signal.confirmations !== "object"
+  ) {
+    return 0;
+  }
+
+  return Object.values(
+    signal.confirmations as Record<string, unknown>
+  ).filter(Boolean).length;
+}
+
+function getRiskLabel(signal: Signal) {
+  const risk = signal.metadata?.risk;
+
+  const lot = Number(risk?.lotSize);
+
+  if (Number.isFinite(lot) && lot > 0) {
+    return `${lot.toFixed(2)} lot`;
+  }
+
+  return "0.10 lot";
+}
+
 export default function SignalsPage() {
   const [data, setData] = useState<ApiData | null>(null);
-  const [filter, setFilter] = useState<Filter>("ALL");
-  const [busy, setBusy] = useState(true);
-  const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState("");
-  const [lastUpdate, setLastUpdate] = useState("");
 
-  const loadSignals = useCallback(async (manual = false) => {
-    if (manual) {
-      setScanning(true);
-    }
+  const [filter, setFilter] =
+    useState<Filter>("ALL");
 
-    try {
-      const response = await fetch(
-        "/api/signals?interval=1min",
-        {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            "Cache-Control": "no-cache",
-          },
-        }
-      );
+  const [busy, setBusy] =
+    useState(true);
 
-      const json: ApiData = await response.json();
+  const [scanning, setScanning] =
+    useState(false);
 
-      if (!response.ok || !json.ok) {
-        throw new Error(
-          (json as any)?.error || "خطا در دریافت موتور سیگنال"
-        );
+  const [error, setError] =
+    useState("");
+
+  const [lastUpdate, setLastUpdate] =
+    useState("");
+
+  const loadSignals = useCallback(
+    async (manual = false) => {
+      if (manual) {
+        setScanning(true);
       }
 
-      setData(json);
-      setError("");
-      setLastUpdate(new Date().toISOString());
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "ارتباط با موتور سیگنال برقرار نشد."
-      );
-    } finally {
-      setBusy(false);
-      setScanning(false);
-    }
-  }, []);
+      try {
+        const response = await fetch(
+          "/api/signals?interval=1min",
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          }
+        );
+
+        let json: ApiData;
+
+        try {
+          json = await response.json();
+        } catch {
+          throw new Error(
+            "پاسخ موتور سیگنال قابل خواندن نیست."
+          );
+        }
+
+        if (!response.ok || !json.ok) {
+          throw new Error(
+            (json as { error?: string })?.error ||
+              "خطا در دریافت موتور سیگنال"
+          );
+        }
+
+        setData(json);
+        setError("");
+        setLastUpdate(
+          new Date().toISOString()
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "ارتباط با موتور سیگنال برقرار نشد."
+        );
+      } finally {
+        setBusy(false);
+        setScanning(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    loadSignals();
+    void loadSignals();
 
     const timer = window.setInterval(() => {
-      loadSignals();
+      void loadSignals();
     }, 20000);
 
     return () => {
@@ -282,39 +359,54 @@ export default function SignalsPage() {
 
   const activeSignals = useMemo(
     () =>
-      signals.filter((s) =>
-        ["WAITING", "ACTIVE", "TP1_HIT", "TP2_HIT"].includes(
-          s.status
-        )
+      signals.filter((signal) =>
+        [
+          "WAITING",
+          "ACTIVE",
+          "TP1_HIT",
+          "TP2_HIT",
+          "TP3_HIT",
+        ].includes(signal.status)
       ),
     [signals]
   );
 
   const filteredSignals = useMemo(() => {
-    if (filter === "ALL") return signals;
+    if (filter === "ALL") {
+      return signals;
+    }
 
     return signals.filter(
-      (signal) => signal.direction === filter
+      (signal) =>
+        signal.direction === filter
     );
   }, [signals, filter]);
 
-  const latest = getLatestSignal(signals);
+  const latest =
+    getLatestSignal(signals);
 
-  const daily = data?.performance?.daily || {};
-  const weekly = data?.performance?.weekly || {};
-  const monthly = data?.performance?.monthly || {};
+  const daily =
+    data?.performance?.daily || {};
 
-  const latestMeta = latest ? getMeta(latest) : {};
+  const weekly =
+    data?.performance?.weekly || {};
+
+  const monthly =
+    data?.performance?.monthly || {};
+
+  const latestMeta =
+    latest ? getMeta(latest) : {};
 
   const morningLevels = useMemo(() => {
     if (!latest) {
       return {
-        support: null,
-        resistance: null,
+        support: null as number | null,
+        resistance: null as number | null,
       };
     }
 
-    const text = latest.supportResistance || "";
+    const text =
+      latest.supportResistance || "";
 
     const supportMatch = text.match(
       /S\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/i
@@ -328,6 +420,7 @@ export default function SignalsPage() {
       support: supportMatch
         ? Number(supportMatch[1])
         : null,
+
       resistance: resistanceMatch
         ? Number(resistanceMatch[1])
         : null,
@@ -335,7 +428,10 @@ export default function SignalsPage() {
   }, [latest]);
 
   return (
-    <main dir="rtl" className="signals-page">
+    <main
+      dir="rtl"
+      className="signals-page"
+    >
       <style>{`
         *{
           box-sizing:border-box;
@@ -953,7 +1049,10 @@ export default function SignalsPage() {
       <div className="container">
         <header className="topbar">
           <div className="title-wrap">
-            <h1>سیگنال‌های معاملاتی</h1>
+            <h1>
+              سیگنال‌های معاملاتی
+            </h1>
+
             <p>
               موتور واقعی XAUUSD · تحلیل چندتایم‌فریمی · ارسال Telegram
             </p>
@@ -968,39 +1067,59 @@ export default function SignalsPage() {
         <div className="controls">
           <div className="filters">
             <button
+              type="button"
               className={`filter-btn ${
-                filter === "ALL" ? "active" : ""
+                filter === "ALL"
+                  ? "active"
+                  : ""
               }`}
-              onClick={() => setFilter("ALL")}
+              onClick={() =>
+                setFilter("ALL")
+              }
             >
               همه
             </button>
 
             <button
+              type="button"
               className={`filter-btn ${
-                filter === "BUY" ? "active" : ""
+                filter === "BUY"
+                  ? "active"
+                  : ""
               }`}
-              onClick={() => setFilter("BUY")}
+              onClick={() =>
+                setFilter("BUY")
+              }
             >
               BUY
             </button>
 
             <button
+              type="button"
               className={`filter-btn ${
-                filter === "SELL" ? "active" : ""
+                filter === "SELL"
+                  ? "active"
+                  : ""
               }`}
-              onClick={() => setFilter("SELL")}
+              onClick={() =>
+                setFilter("SELL")
+              }
             >
               SELL
             </button>
           </div>
 
           <button
+            type="button"
             className="scan-btn"
             disabled={scanning}
-            onClick={() => loadSignals(true)}
+            onClick={() =>
+              void loadSignals(true)
+            }
           >
-            {scanning ? "در حال اسکن بازار..." : "⟳ اسکن و بروزرسانی"}
+            {scanning
+              ? "در حال اسکن بازار..."
+              : "⟳ اسکن و بروزرسانی"}
           </button>
         </div>
 
@@ -1011,54 +1130,86 @@ export default function SignalsPage() {
         )}
 
         <div className="notice">
-          🤖 این بخش از داده واقعی موتور Twelve Data استفاده می‌کند.
-          صفحه هر ۲۰ ثانیه موتور سیگنال را بررسی می‌کند.
+          🤖 این بخش از داده واقعی موتور
+          Twelve Data استفاده می‌کند.
+          صفحه هر ۲۰ ثانیه موتور سیگنال را
+          بررسی می‌کند.
+
           <br />
-          ⚠️ سیگنال‌ها تحلیل خودکار بازار هستند و تضمین سود نیستند.
+
+          ⚠️ سیگنال‌ها تحلیل خودکار بازار هستند
+          و تضمین سود نیستند.
+
           {lastUpdate && (
             <>
               <br />
-              آخرین بروزرسانی: {dateFa(lastUpdate)}
+              آخرین بروزرسانی:{" "}
+              {dateFa(lastUpdate)}
             </>
           )}
         </div>
 
         <section className="stats">
           <div className="stat">
-            <span>سیگنال‌های فعال</span>
+            <span>
+              سیگنال‌های فعال
+            </span>
+
             <strong className="gold">
               {activeSignals.length}
             </strong>
-            <small>در انتظار TP / SL</small>
-          </div>
 
-          <div className="stat">
-            <span>سیگنال‌های ثبت‌شده</span>
-            <strong>{signals.length}</strong>
-            <small>داده واقعی دیتابیس</small>
-          </div>
-
-          <div className="stat">
-            <span>برد امروز</span>
-            <strong className="green">
-              {daily.wins ?? 0}
-            </strong>
             <small>
-              {daily.winRate ?? 0}% · {usd(daily.pnlUsd ?? 0)}
+              در انتظار TP / SL
             </small>
           </div>
 
           <div className="stat">
-            <span>عملکرد ماه</span>
+            <span>
+              سیگنال‌های ثبت‌شده
+            </span>
+
+            <strong>
+              {signals.length}
+            </strong>
+
+            <small>
+              داده واقعی دیتابیس
+            </small>
+          </div>
+
+          <div className="stat">
+            <span>
+              برد امروز
+            </span>
+
+            <strong className="green">
+              {daily.wins ?? 0}
+            </strong>
+
+            <small>
+              {daily.winRate ?? 0}% ·{" "}
+              {usd(daily.pnlUsd ?? 0)}
+            </small>
+          </div>
+
+          <div className="stat">
+            <span>
+              عملکرد ماه
+            </span>
+
             <strong
               className={
-                Number(monthly.pnlUsd || 0) >= 0
+                Number(
+                  monthly.pnlUsd || 0
+                ) >= 0
                   ? "green"
                   : "red"
               }
             >
               {usd(monthly.pnlUsd ?? 0)}
             </strong>
+
             <small>
               {monthly.signals ?? 0} سیگنال
             </small>
@@ -1067,7 +1218,10 @@ export default function SignalsPage() {
 
         <section className="section">
           <div className="section-head">
-            <h2>حمایت و مقاومت بازار</h2>
+            <h2>
+              حمایت و مقاومت بازار
+            </h2>
+
             <span>
               آخرین سطوح واقعی ثبت‌شده توسط موتور
             </span>
@@ -1075,24 +1229,36 @@ export default function SignalsPage() {
 
           <div className="levels">
             <div className="level">
-              <span>Support</span>
+              <span>
+                Support
+              </span>
+
               <strong className="green">
                 {morningLevels.support
-                  ? price(morningLevels.support)
+                  ? price(
+                      morningLevels.support
+                    )
                   : "—"}
               </strong>
+
               <small>
                 سطح حمایت استخراج‌شده از ساختار قیمت
               </small>
             </div>
 
             <div className="level">
-              <span>Resistance</span>
+              <span>
+                Resistance
+              </span>
+
               <strong className="red">
                 {morningLevels.resistance
-                  ? price(morningLevels.resistance)
+                  ? price(
+                      morningLevels.resistance
+                    )
                   : "—"}
               </strong>
+
               <small>
                 سطح مقاومت استخراج‌شده از ساختار قیمت
               </small>
@@ -1102,46 +1268,68 @@ export default function SignalsPage() {
 
         <section className="section">
           <div className="section-head">
-            <h2>پلن مدیریت معامله</h2>
-            <span>XAUUSD · 0.10 lot</span>
+            <h2>
+              پلن مدیریت معامله
+            </h2>
+
+            <span>
+              XAUUSD · 0.10 lot
+            </span>
           </div>
 
           <div className="levels">
             <div className="level">
-              <span>ریسک Stop Loss</span>
+              <span>
+                ریسک Stop Loss
+              </span>
+
               <strong className="red">
                 -$4
               </strong>
+
               <small>
-                فاصله قیمت SL برابر 4 دلار برای حجم 0.10 lot
+                فاصله قیمت SL برابر 4 دلار
+                برای حجم 0.10 lot
               </small>
             </div>
 
             <div className="level">
-              <span>TP1</span>
+              <span>
+                TP1
+              </span>
+
               <strong className="green">
                 +$5
               </strong>
+
               <small>
                 بستن 0.04 lot
               </small>
             </div>
 
             <div className="level">
-              <span>TP2</span>
+              <span>
+                TP2
+              </span>
+
               <strong className="green">
                 +$8
               </strong>
+
               <small>
                 بستن 0.03 lot
               </small>
             </div>
 
             <div className="level">
-              <span>TP3</span>
+              <span>
+                TP3
+              </span>
+
               <strong className="gold">
                 +$12
               </strong>
+
               <small>
                 بستن 0.03 lot · تکمیل 0.10 lot
               </small>
@@ -1151,7 +1339,10 @@ export default function SignalsPage() {
 
         <section className="section">
           <div className="section-head">
-            <h2>سیگنال‌ها</h2>
+            <h2>
+              سیگنال‌ها
+            </h2>
+
             <span>
               {busy
                 ? "در حال دریافت..."
@@ -1168,415 +1359,884 @@ export default function SignalsPage() {
               </div>
             )}
 
-            {filteredSignals.map((signal) => {
-              const meta = getMeta(signal);
+            {filteredSignals.map(
+              (signal) => {
+                const meta =
+                  getMeta(signal);
 
-              const levels = meta.levels || {};
+                const levels =
+                  meta.levels || {};
 
-              const entry =
-                Number(signal.entry) ||
-                Number(meta.lastPrice) ||
-                0;
+                const entry =
+                  Number(signal.entry) ||
+                  Number(
+                    meta.lastPrice
+                  ) ||
+                  0;
 
-              const sl =
-                Number(levels.sl) ||
-                Number(signal.stopLoss) ||
-                0;
+                const sl =
+                  Number(levels.sl) ||
+                  Number(
+                    signal.stopLoss
+                  ) ||
+                  0;
 
-              const tp1 = Number(levels.tp1) || 0;
-              const tp2 = Number(levels.tp2) || 0;
-              const tp3 =
-                Number(levels.tp3) ||
-                Number(signal.takeProfit) ||
-                0;
+                const tp1 =
+                  Number(levels.tp1) ||
+                  0;
 
-              const state = meta.state || {};
+                const tp2 =
+                  Number(levels.tp2) ||
+                  0;
 
-              const events = Array.isArray(meta.events)
-                ? meta.events
-                : [];
+                const tp3 =
+                  Number(levels.tp3) ||
+                  Number(
+                    signal.takeProfit
+                  ) ||
+                  0;
 
-              const reasons = Array.isArray(signal.reasons)
-                ? signal.reasons
-                : [];
+                const state =
+                  meta.state || {};
 
-              const confirmations = signal.confirmations
-                ? Object.entries(
-                    signal.confirmations as Record<
-                      string,
-                      unknown
-                    >
-                  ).filter(([, value]) => Boolean(value))
-                : [];
+                const events =
+                  Array.isArray(
+                    meta.events
+                  )
+                    ? meta.events
+                    : [];
 
-              return (
-                <article
-                  key={signal.id}
-                  className={`signal-card ${
-                    signal.direction === "BUY"
-                      ? "buy"
-                      : "sell"
-                  }`}
-                >
-                  <div className="signal-head">
-                    <div className="symbol">
-                      <div
-                        className={`direction ${
-                          signal.direction === "BUY"
-                            ? "buy"
-                            : "sell"
-                        }`}
-                      >
-                        {signal.direction === "BUY"
-                          ? "BUY"
-                          : "SELL"}
-                        <small
-                          style={{
-                            display: "block",
-                            marginTop: 4,
-                            fontSize: 8,
-                            opacity: 0.7,
-                          }}
+                const reasons =
+                  Array.isArray(
+                    signal.reasons
+                  )
+                    ? signal.reasons
+                    : [];
+
+                const confirmationCount =
+                  getConfirmationCount(
+                    signal
+                  );
+
+                return (
+                  <article
+                    key={signal.id}
+                    className={`signal-card ${
+                      signal.direction ===
+                      "BUY"
+                        ? "buy"
+                        : "sell"
+                    }`}
+                  >
+                    <div className="signal-head">
+                      <div className="symbol">
+                        <div
+                          className={`direction ${
+                            signal.direction ===
+                            "BUY"
+                              ? "buy"
+                              : "sell"
+                          }`}
                         >
-                          {directionFa(
-                            signal.direction
-                          )}
-                        </small>
+                          {signal.direction ===
+                          "BUY"
+                            ? "BUY"
+                            : "SELL"}
+
+                          <small
+                            style={{
+                              display:
+                                "block",
+                              marginTop: 4,
+                              fontSize: 8,
+                              opacity: 0.7,
+                            }}
+                          >
+                            {directionFa(
+                              signal.direction
+                            )}
+                          </small>
+                        </div>
+
+                        <div className="symbol-text">
+                          <strong>
+                            {signal.symbol ||
+                              "XAUUSD"}
+                          </strong>
+
+                          <small>
+                            AI Signal ·{" "}
+                            {signal.timeframe ||
+                              "1min"}
+                          </small>
+                        </div>
                       </div>
 
-                      <div className="symbol-text">
-                        <strong>
-                          {signal.symbol || "XAUUSD"}
-                        </strong>
-
-                        <small>
-                          AI Signal ·{" "}
-                          {signal.timeframe || "1min"}
-                        </small>
-                      </div>
-                    </div>
-
-                    <div className="badges">
-                      <span className="badge">
-                        {statusFa(signal.status)}
-                      </span>
-
-                      <span className="badge gold-badge">
-                        Score {signal.score ?? 0}/100
-                      </span>
-
-                      <span className="badge">
-                        TF {signal.timeframe || "1min"}
-                      </span>
-
-                      {signal.riskReward && (
+                      <div className="badges">
                         <span className="badge">
-                          RR {signal.riskReward}
+                          {statusFa(
+                            signal.status
+                          )}
                         </span>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="signal-body">
-                    <div className="price-grid">
-                      <div className="price-box entry">
-                        <span>ENTRY</span>
-                        <strong>
-                          {price(entry)}
-                        </strong>
-                      </div>
+                        <span className="badge gold-badge">
+                          Score{" "}
+                          {signal.score ??
+                            0}
+                          /100
+                        </span>
 
-                      <div className="price-box sl">
-                        <span>STOP LOSS</span>
-                        <strong>
-                          {price(sl)}
-                        </strong>
-                      </div>
+                        <span className="badge">
+                          TF{" "}
+                          {signal.timeframe ||
+                            "1min"}
+                        </span>
 
-                      <div className="price-box tp">
-                        <span>TAKE PROFIT 1</span>
-                        <strong>
-                          {price(tp1)}
-                        </strong>
-                      </div>
+                        {signal.riskReward !=
+                          null && (
+                          <span className="badge">
+                            RR{" "}
+                            {signal.riskReward}
+                          </span>
+                        )}
 
-                      <div className="price-box tp">
-                        <span>TAKE PROFIT 2</span>
-                        <strong>
-                          {price(tp2)}
-                        </strong>
+                        <span className="badge">
+                          {getRiskLabel(
+                            signal
+                          )}
+                        </span>
                       </div>
                     </div>
 
-                    <div
-                      className="price-grid"
-                      style={{ marginTop: 9 }}
-                    >
-                      <div className="price-box tp">
-                        <span>TAKE PROFIT 3</span>
-                        <strong>
-                          {price(tp3)}
-                        </strong>
+                    <div className="signal-body">
+                      <div className="price-grid">
+                        <div className="price-box entry">
+                          <span>
+                            ENTRY
+                          </span>
+
+                          <strong>
+                            {price(entry)}
+                          </strong>
+                        </div>
+
+                        <div className="price-box sl">
+                          <span>
+                            STOP LOSS
+                          </span>
+
+                          <strong>
+                            {price(sl)}
+                          </strong>
+                        </div>
+
+                        <div className="price-box tp">
+                          <span>
+                            TAKE PROFIT 1
+                          </span>
+
+                          <strong>
+                            {price(tp1)}
+                          </strong>
+                        </div>
+
+                        <div className="price-box tp">
+                          <span>
+                            TAKE PROFIT 2
+                          </span>
+
+                          <strong>
+                            {price(tp2)}
+                          </strong>
+                        </div>
                       </div>
 
-                      <div className="price-box">
-                        <span>حجم کل</span>
-                        <strong>
-                          0.10 lot
-                        </strong>
-                      </div>
-
-                      <div className="price-box">
-                        <span>قیمت فعلی</span>
-                        <strong>
-                          {price(meta.lastPrice)}
-                        </strong>
-                      </div>
-
-                      <div className="price-box">
-                        <span>RR</span>
-                        <strong className="gold">
-                          {signal.riskReward
-                            ? signal.riskReward
-                            : "1:3"}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="confirmations">
-                      <div className="confirmation">
-                        <span>Trend</span>
-                        <strong
-                          className={
-                            signal.marketStructure
-                              ? "positive"
-                              : ""
-                          }
-                        >
-                          {signal.marketStructure ||
-                            "بررسی شد"}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>Liquidity</span>
-                        <strong>
-                          {signal.liquidity ||
-                            "بررسی شد"}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>Pullback</span>
-                        <strong>
-                          {signal.pullback ||
-                            "بررسی شد"}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>Candle</span>
-                        <strong>
-                          {signal.candlePattern ||
-                            "بررسی شد"}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>Volume</span>
-                        <strong>
-                          {signal.volumeConfirmation ||
-                            "بررسی شد"}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>MTF</span>
-                        <strong>
-                          {signal.multiTimeFrameConfirmation ||
-                            `${signal.confirmations ? Object.keys(signal.confirmations as object).length : 0} تأیید`}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>Session</span>
-                        <strong>
-                          {signal.sessionConfirmation ||
-                            "بررسی شد"}
-                        </strong>
-                      </div>
-
-                      <div className="confirmation">
-                        <span>News</span>
-                        <strong
-                          className={
-                            signal.newsConfirmation
-                              ? "positive"
-                              : ""
-                          }
-                        >
-                          {signal.newsConfirmation ||
-                            "فیلتر خبر"}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {confirmations.length > 0 && (
                       <div
+                        className="price-grid"
                         style={{
-                          marginTop: 10,
-                          color: "#626961",
-                          fontSize: 9,
+                          marginTop: 9,
                         }}
                       >
-                        تأییدهای ثبت‌شده:{" "}
-                        <b style={{ color: "#d4d8d2" }}>
-                          {confirmations.length}
-                        </b>
-                      </div>
-                    )}
+                        <div className="price-box tp">
+                          <span>
+                            TAKE PROFIT 3
+                          </span>
 
-                    {reasons.length > 0 && (
+                          <strong>
+                            {price(tp3)}
+                          </strong>
+                        </div>
+
+                        <div className="price-box">
+                          <span>
+                            حجم کل
+                          </span>
+
+                          <strong>
+                            {getRiskLabel(
+                              signal
+                            )}
+                          </strong>
+                        </div>
+
+                        <div className="price-box">
+                          <span>
+                            قیمت فعلی
+                          </span>
+
+                          <strong>
+                            {price(
+                              meta.lastPrice
+                            )}
+                          </strong>
+                        </div>
+
+                        <div className="price-box">
+                          <span>
+                            RR
+                          </span>
+
+                          <strong className="gold">
+                            {signal.riskReward !=
+                            null
+                              ? signal.riskReward
+                              : "1:3"}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div
+                        className="price-grid"
+                        style={{
+                          marginTop: 9,
+                        }}
+                      >
+                        <div className="price-box">
+                          <span>
+                            ریسک دلاری
+                          </span>
+
+                          <strong className="red">
+                            -$
+                            {Number(
+                              meta.risk
+                                ?.stopLossDollars ??
+                                4
+                            )}
+                          </strong>
+                        </div>
+
+                        <div className="price-box">
+                          <span>
+                            TP1 سود
+                          </span>
+
+                          <strong className="green">
+                            +$
+                            {Number(
+                              meta.risk
+                                ?.tp1Dollars ??
+                                5
+                            )}
+                          </strong>
+                        </div>
+
+                        <div className="price-box">
+                          <span>
+                            TP2 سود
+                          </span>
+
+                          <strong className="green">
+                            +$
+                            {Number(
+                              meta.risk
+                                ?.tp2Dollars ??
+                                8
+                            )}
+                          </strong>
+                        </div>
+
+                        <div className="price-box">
+                          <span>
+                            TP3 سود
+                          </span>
+
+                          <strong className="gold">
+                            +$
+                            {Number(
+                              meta.risk
+                                ?.tp3Dollars ??
+                                12
+                            )}
+                          </strong>
+                        </div>
+                      </div>
+
                       <div
                         style={{
                           marginTop: 10,
                           padding: 12,
                           borderRadius: 13,
-                          background: "#090d0a",
-                          border: "1px solid #171c18",
-                          color: "#737a72",
-                          fontSize: 9,
-                          lineHeight: 2,
+                          background:
+                            "#090d0a",
+                          border:
+                            "1px solid #171c18",
                         }}
                       >
-                        <b
+                        <div
                           style={{
-                            color: "#a9afa8",
+                            display:
+                              "flex",
+                            justifyContent:
+                              "space-between",
+                            alignItems:
+                              "center",
+                            gap: 10,
+                            flexWrap:
+                              "wrap",
                           }}
                         >
-                          منطق تحلیل:
-                        </b>
+                          <span
+                            style={{
+                              color:
+                                "#626961",
+                              fontSize: 9,
+                            }}
+                          >
+                            مدیریت حجم
+                          </span>
+
+                          <strong
+                            style={{
+                              color:
+                                "#d4d8d2",
+                              fontSize: 10,
+                            }}
+                          >
+                            0.10 lot
+                          </strong>
+                        </div>
 
                         <div
                           style={{
-                            marginTop: 5,
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 5,
+                            display:
+                              "flex",
+                            gap: 6,
+                            flexWrap:
+                              "wrap",
+                            marginTop: 8,
                           }}
                         >
-                          {reasons.map(
-                            (reason, index) => (
-                              <span
-                                key={`${String(
-                                  reason
-                                )}-${index}`}
-                                style={{
-                                  padding:
-                                    "5px 8px",
-                                  borderRadius: 8,
-                                  background:
-                                    "#111612",
-                                  border:
-                                    "1px solid #202620",
-                                }}
-                              >
-                                ✓ {String(reason)}
-                              </span>
-                            )
-                          )}
+                          <span
+                            style={{
+                              padding:
+                                "6px 9px",
+                              borderRadius:
+                                8,
+                              background:
+                                state.tp1Hit
+                                  ? "rgba(55,214,138,.12)"
+                                  : "#111612",
+                              border:
+                                "1px solid #202620",
+                              color:
+                                state.tp1Hit
+                                  ? "#37d68a"
+                                  : "#737a72",
+                              fontSize: 8,
+                            }}
+                          >
+                            {state.tp1Hit
+                              ? "✓"
+                              : "○"}{" "}
+                            TP1 · 0.04
+                          </span>
+
+                          <span
+                            style={{
+                              padding:
+                                "6px 9px",
+                              borderRadius:
+                                8,
+                              background:
+                                state.tp2Hit
+                                  ? "rgba(55,214,138,.12)"
+                                  : "#111612",
+                              border:
+                                "1px solid #202620",
+                              color:
+                                state.tp2Hit
+                                  ? "#37d68a"
+                                  : "#737a72",
+                              fontSize: 8,
+                            }}
+                          >
+                            {state.tp2Hit
+                              ? "✓"
+                              : "○"}{" "}
+                            TP2 · 0.03
+                          </span>
+
+                          <span
+                            style={{
+                              padding:
+                                "6px 9px",
+                              borderRadius:
+                                8,
+                              background:
+                                state.tp3Hit
+                                  ? "rgba(55,214,138,.12)"
+                                  : "#111612",
+                              border:
+                                "1px solid #202620",
+                              color:
+                                state.tp3Hit
+                                  ? "#37d68a"
+                                  : "#737a72",
+                              fontSize: 8,
+                            }}
+                          >
+                            {state.tp3Hit
+                              ? "✓"
+                              : "○"}{" "}
+                            TP3 · 0.03
+                          </span>
+
+                          <span
+                            style={{
+                              padding:
+                                "6px 9px",
+                              borderRadius:
+                                8,
+                              background:
+                                state.slHit
+                                  ? "rgba(237,104,117,.12)"
+                                  : "#111612",
+                              border:
+                                "1px solid #202620",
+                              color:
+                                state.slHit
+                                  ? "#ed6875"
+                                  : "#737a72",
+                              fontSize: 8,
+                            }}
+                          >
+                            {state.slHit
+                              ? "✓"
+                              : "○"}{" "}
+                            SL · -$4
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 8,
+                            color:
+                              "#5f665f",
+                            fontSize: 8,
+                            lineHeight:
+                              1.9,
+                          }}
+                        >
+                          بعد از رسیدن به
+                          TP1، برای حجم
+                          باقی‌مانده انتقال
+                          SL به Entry پیشنهاد
+                          می‌شود.
                         </div>
                       </div>
-                    )}
 
-                    <div className="events">
-                      {events.length > 0 &&
-                        [...events]
-                          .reverse()
-                          .map((event, index) => (
-                            <div
-                              className="event"
-                              key={`${event.type}-${index}`}
-                            >
-                              <div className="event-left">
-                                <strong>
-                                  {eventFa(
-                                    event.type
+                      <div className="confirmations">
+                        <div className="confirmation">
+                          <span>
+                            Trend
+                          </span>
+
+                          <strong
+                            className={
+                              signal.marketStructure
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.marketStructure ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Liquidity
+                          </span>
+
+                          <strong
+                            className={
+                              signal.liquidity
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.liquidity ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Pullback
+                          </span>
+
+                          <strong
+                            className={
+                              signal.pullback
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.pullback ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Candle
+                          </span>
+
+                          <strong
+                            className={
+                              signal.candlePattern
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.candlePattern ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Volume
+                          </span>
+
+                          <strong
+                            className={
+                              signal.volumeConfirmation
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.volumeConfirmation ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            MTF
+                          </span>
+
+                          <strong
+                            className={
+                              signal.multiTimeframeConfirmation
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.multiTimeframeConfirmation ||
+                              `${confirmationCount} تأیید`}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Session
+                          </span>
+
+                          <strong
+                            className={
+                              signal.sessionConfirmation
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.sessionConfirmation ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            News
+                          </span>
+
+                          <strong
+                            className={
+                              signal.newsConfirmation
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.newsConfirmation ||
+                              "فیلتر خبر"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Volatility
+                          </span>
+
+                          <strong
+                            className={
+                              signal.volatilityConfirmation
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.volatilityConfirmation ||
+                              "بررسی شد"}
+                          </strong>
+                        </div>
+
+                        <div className="confirmation">
+                          <span>
+                            Score
+                          </span>
+
+                          <strong
+                            className={
+                              Number(
+                                signal.score ||
+                                  0
+                              ) >= 70
+                                ? "positive"
+                                : ""
+                            }
+                          >
+                            {signal.score ??
+                              0}
+                            /100
+                          </strong>
+                        </div>
+                      </div>
+
+                      {confirmationCount >
+                        0 && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            color:
+                              "#626961",
+                            fontSize: 9,
+                          }}
+                        >
+                          تعداد تأییدهای ثبت‌شده:{" "}
+                          <b
+                            style={{
+                              color:
+                                "#d4d8d2",
+                            }}
+                          >
+                            {
+                              confirmationCount
+                            }
+                          </b>
+                        </div>
+                      )}
+
+                      {reasons.length >
+                        0 && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: 12,
+                            borderRadius: 13,
+                            background:
+                              "#090d0a",
+                            border:
+                              "1px solid #171c18",
+                            color:
+                              "#737a72",
+                            fontSize: 9,
+                            lineHeight:
+                              2,
+                          }}
+                        >
+                          <b
+                            style={{
+                              color:
+                                "#a9afa8",
+                            }}
+                          >
+                            منطق تحلیل:
+                          </b>
+
+                          <div
+                            style={{
+                              marginTop: 5,
+                              display:
+                                "flex",
+                              flexWrap:
+                                "wrap",
+                              gap: 5,
+                            }}
+                          >
+                            {reasons.map(
+                              (
+                                reason,
+                                index
+                              ) => (
+                                <span
+                                  key={`${String(
+                                    reason
+                                  )}-${index}`}
+                                  style={{
+                                    padding:
+                                      "5px 8px",
+                                    borderRadius:
+                                      8,
+                                    background:
+                                      "#111612",
+                                    border:
+                                      "1px solid #202620",
+                                  }}
+                                >
+                                  ✓{" "}
+                                  {String(
+                                    reason
                                   )}
-                                </strong>
+                                </span>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                                <small>
-                                  {dateFa(event.at)} ·{" "}
-                                  {price(
-                                    event.price
-                                  )}
-                                </small>
-                              </div>
+                      <div className="events">
+                        {events.length >
+                          0 &&
+                          [
+                            ...events,
+                          ]
+                            .reverse()
+                            .map(
+                              (
+                                event,
+                                index
+                              ) => (
+                                <div
+                                  className="event"
+                                  key={`${event.type}-${event.at}-${index}`}
+                                >
+                                  <div className="event-left">
+                                    <strong>
+                                      {eventFa(
+                                        event.type
+                                      )}
+                                    </strong>
 
-                              <strong
-                                className={
-                                  Number(
-                                    event.pnlUsd
-                                  ) >= 0
-                                    ? "green"
-                                    : "red"
-                                }
-                              >
-                                {usd(
-                                  event.pnlUsd
-                                )}
-                              </strong>
-                            </div>
-                          ))}
+                                    <small>
+                                      {dateFa(
+                                        event.at
+                                      )}{" "}
+                                      ·{" "}
+                                      {price(
+                                        event.price
+                                      )}
+                                    </small>
+                                  </div>
+
+                                  <strong
+                                    className={
+                                      Number(
+                                        event.pnlUsd
+                                      ) >= 0
+                                        ? "green"
+                                        : "red"
+                                    }
+                                  >
+                                    {usd(
+                                      event.pnlUsd
+                                    )}
+                                  </strong>
+                                </div>
+                              )
+                            )}
+                      </div>
+
+                      <div className="signal-footer">
+                        <span>
+                          ایجاد:{" "}
+                          {dateFa(
+                            signal.createdAt
+                          )}
+                        </span>
+
+                        <span>
+                          {state.tp1Hit
+                            ? "✓ TP1"
+                            : "○ TP1"}{" "}
+                          ·{" "}
+                          {state.tp2Hit
+                            ? "✓ TP2"
+                            : "○ TP2"}{" "}
+                          ·{" "}
+                          {state.tp3Hit
+                            ? "✓ TP3"
+                            : "○ TP3"}{" "}
+                          ·{" "}
+                          {state.slHit
+                            ? "✓ SL"
+                            : "○ SL"}
+                        </span>
+
+                        <span
+                          className={
+                            signal.telegramSent
+                              ? "telegram-ok"
+                              : "telegram-failed"
+                          }
+                        >
+                          Telegram:{" "}
+                          {signal.telegramSent
+                            ? "✓ ارسال شد"
+                            : "— ارسال نشده"}
+                        </span>
+                      </div>
+
+                      {signal.telegramSentAt && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            color:
+                              "#505750",
+                            fontSize: 8,
+                            textAlign:
+                              "left",
+                          }}
+                        >
+                          Telegram:{" "}
+                          {dateFa(
+                            signal.telegramSentAt
+                          )}
+                        </div>
+                      )}
                     </div>
-
-                    <div className="signal-footer">
-                      <span>
-                        ایجاد:{" "}
-                        {dateFa(signal.createdAt)}
-                      </span>
-
-                      <span>
-                        {state.tp1Hit
-                          ? "✓ TP1"
-                          : "○ TP1"}{" "}
-                        ·{" "}
-                        {state.tp2Hit
-                          ? "✓ TP2"
-                          : "○ TP2"}{" "}
-                        ·{" "}
-                        {state.tp3Hit
-                          ? "✓ TP3"
-                          : "○ TP3"}{" "}
-                        ·{" "}
-                        {state.slHit
-                          ? "✓ SL"
-                          : "○ SL"}
-                      </span>
-
-                      <span
-                        className={
-                          signal.telegramSent
-                            ? "telegram-ok"
-                            : "telegram-failed"
-                        }
-                      >
-                        Telegram:{" "}
-                        {signal.telegramSent
-                          ? "✓ ارسال شد"
-                          : "— ارسال نشده"}
-                      </span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
+                  </article>
+                );
+              }
+            )}
           </div>
         </section>
 
         <section className="section">
           <div className="section-head">
-            <h2>عملکرد ثبت‌شده</h2>
+            <h2>
+              عملکرد ثبت‌شده
+            </h2>
+
             <span>
               فقط بر اساس رویدادهای ثبت‌شده سیستم
             </span>
@@ -1607,8 +2267,9 @@ export default function SignalsPage() {
           </div>
 
           <div>
-            مدیریت معامله: بعد از TP1، برای 0.06 lot
-            باقی‌مانده انتقال SL به Entry پیشنهاد می‌شود.
+            مدیریت معامله: بعد از TP1،
+            برای 0.06 lot باقی‌مانده
+            انتقال SL به Entry پیشنهاد می‌شود.
           </div>
 
           <div>
@@ -1618,6 +2279,20 @@ export default function SignalsPage() {
                 )}`
               : "هنوز سیگنالی ثبت نشده است."}
           </div>
+
+          {latestMeta.lastPriceAt && (
+            <div
+              style={{
+                marginTop: 5,
+                opacity: 0.7,
+              }}
+            >
+              آخرین قیمت ثبت‌شده:{" "}
+              {dateFa(
+                latestMeta.lastPriceAt
+              )}
+            </div>
+          )}
         </div>
       </div>
     </main>
@@ -1629,6 +2304,7 @@ function PerformanceCard({
   data,
 }: {
   title: string;
+
   data: {
     signals?: number;
     wins?: number;
@@ -1637,7 +2313,8 @@ function PerformanceCard({
     pnlUsd?: number;
   };
 }) {
-  const pnl = Number(data.pnlUsd || 0);
+  const pnl =
+    Number(data.pnlUsd || 0);
 
   return (
     <div className="performance-card">
@@ -1645,21 +2322,30 @@ function PerformanceCard({
 
       <div className="performance-row">
         <div>
-          <span>سیگنال</span>
+          <span>
+            سیگنال
+          </span>
+
           <strong>
             {data.signals ?? 0}
           </strong>
         </div>
 
         <div>
-          <span>برد</span>
+          <span>
+            برد
+          </span>
+
           <strong className="green">
             {data.wins ?? 0}
           </strong>
         </div>
 
         <div>
-          <span>باخت</span>
+          <span>
+            باخت
+          </span>
+
           <strong className="red">
             {data.losses ?? 0}
           </strong>
@@ -1668,20 +2354,30 @@ function PerformanceCard({
 
       <div
         className="performance-row"
-        style={{ marginTop: 8 }}
+        style={{
+          marginTop: 8,
+        }}
       >
         <div>
-          <span>Win Rate</span>
+          <span>
+            Win Rate
+          </span>
+
           <strong className="gold">
             {data.winRate ?? 0}%
           </strong>
         </div>
 
         <div>
-          <span>خالص USD</span>
+          <span>
+            خالص USD
+          </span>
+
           <strong
             className={
-              pnl >= 0 ? "green" : "red"
+              pnl >= 0
+                ? "green"
+                : "red"
             }
           >
             {usd(pnl)}
@@ -1689,9 +2385,14 @@ function PerformanceCard({
         </div>
 
         <div>
-          <span>وضعیت</span>
+          <span>
+            وضعیت
+          </span>
+
           <strong>
-            {pnl >= 0 ? "مثبت" : "منفی"}
+            {pnl >= 0
+              ? "مثبت"
+              : "منفی"}
           </strong>
         </div>
       </div>
