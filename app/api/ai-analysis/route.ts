@@ -55,9 +55,15 @@ const NEWS_BLOCK_IMPORTANCE = Number(
 
 /*
  * GET dashboard هیچ درخواست Twelve Data نمی‌زند.
- * قیمت توسط scan/monitor داخل DB ذخیره می‌شود.
+ * قیمت و نمودار توسط scan/monitor داخل DB ذخیره می‌شوند.
  */
 const PRICE_CACHE_MS = 120000;
+
+/*
+ * تعداد کندل‌هایی که برای نمودار به frontend داده می‌شود.
+ * این داده‌ها از همان درخواست‌های تحلیل گرفته می‌شوند.
+ */
+const CHART_CANDLE_LIMIT = 120;
 
 /* =========================================================
    TYPES
@@ -70,6 +76,27 @@ type Candle = {
   low: number;
   close: number;
   volume: number;
+};
+
+type ChartCandle = {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+type ChartData = {
+  updatedAt: string;
+
+  timeframe: string;
+
+  candles: ChartCandle[];
+
+  timeframes: Record<
+    string,
+    ChartCandle[]
+  >;
 };
 
 type Direction = "BUY" | "SELL";
@@ -142,6 +169,8 @@ type RunMeta = {
   events?: TradeEvent[];
 
   analysis?: Record<string, unknown>;
+
+  chart?: ChartData;
 
   [key: string]: unknown;
 };
@@ -288,6 +317,281 @@ function sessionName(
   }
 
   return "Tokyo";
+}
+
+/* =========================================================
+   CHART HELPERS
+========================================================= */
+
+/*
+ * تبدیل Candle داخلی موتور به Candle قابل استفاده
+ * در frontend.
+ */
+function toChartCandle(
+  candle: Candle
+): ChartCandle {
+  return {
+    time: String(
+      candle.datetime
+    ),
+
+    open:
+      round(
+        candle.open,
+        2
+      ),
+
+    high:
+      round(
+        candle.high,
+        2
+      ),
+
+    low:
+      round(
+        candle.low,
+        2
+      ),
+
+    close:
+      round(
+        candle.close,
+        2
+      ),
+  };
+}
+
+/*
+ * داده‌ها را برای نمودار مرتب و محدود می‌کنیم.
+ */
+function normalizeChartCandles(
+  candles: Candle[],
+  limit = CHART_CANDLE_LIMIT
+): ChartCandle[] {
+  return candles
+    .filter(
+      (candle) =>
+        candle &&
+        candle.open > 0 &&
+        candle.high > 0 &&
+        candle.low > 0 &&
+        candle.close > 0
+    )
+    .slice(-limit)
+    .map(
+      toChartCandle
+    );
+}
+
+/*
+ * ساخت تایم‌فریم بالاتر از روی کندل‌های واقعی.
+ *
+ * مثال:
+ * 5m -> 30m
+ * 1h -> 4h
+ *
+ * هیچ قیمت ساختگی تولید نمی‌شود.
+ * فقط OHLC کندل‌های واقعی تجمیع می‌شوند.
+ */
+function aggregateCandles(
+  candles: Candle[],
+  minutes: number,
+  limit = CHART_CANDLE_LIMIT
+): ChartCandle[] {
+  if (
+    !candles.length ||
+    minutes <= 0
+  ) {
+    return [];
+  }
+
+  const buckets =
+    new Map<
+      number,
+      Candle
+    >();
+
+  for (
+    const candle of candles
+  ) {
+    const timestamp =
+      new Date(
+        candle.datetime
+      ).getTime();
+
+    if (
+      !Number.isFinite(
+        timestamp
+      )
+    ) {
+      continue;
+    }
+
+    const bucketSize =
+      minutes *
+      60 *
+      1000;
+
+    const bucket =
+      Math.floor(
+        timestamp /
+          bucketSize
+      ) *
+      bucketSize;
+
+    const existing =
+      buckets.get(
+        bucket
+      );
+
+    if (!existing) {
+      buckets.set(
+        bucket,
+        {
+          datetime:
+            new Date(
+              bucket
+            ).toISOString(),
+
+          open:
+            candle.open,
+
+          high:
+            candle.high,
+
+          low:
+            candle.low,
+
+          close:
+            candle.close,
+
+          volume:
+            candle.volume,
+        }
+      );
+
+      continue;
+    }
+
+    existing.high =
+      Math.max(
+        existing.high,
+        candle.high
+      );
+
+    existing.low =
+      Math.min(
+        existing.low,
+        candle.low
+      );
+
+    existing.close =
+      candle.close;
+
+    existing.volume +=
+      candle.volume;
+  }
+
+  return Array.from(
+    buckets.values()
+  )
+    .sort(
+      (a, b) =>
+        new Date(
+          a.datetime
+        ).getTime() -
+        new Date(
+          b.datetime
+        ).getTime()
+    )
+    .slice(-limit)
+    .map(
+      toChartCandle
+    );
+}
+
+/*
+ * ساخت کامل داده نمودار از همان کندل‌هایی که
+ * موتور تحلیل قبلاً دریافت کرده است.
+ */
+function buildChartData(
+  m1: Candle[],
+  m5: Candle[],
+  m15: Candle[],
+  h1: Candle[]
+): ChartData {
+  const oneMinute =
+    normalizeChartCandles(
+      m1
+    );
+
+  const fiveMinute =
+    normalizeChartCandles(
+      m5
+    );
+
+  const fifteenMinute =
+    normalizeChartCandles(
+      m15
+    );
+
+  /*
+   * 30 دقیقه از 5 دقیقه ساخته می‌شود.
+   * نیازی به درخواست API جدید نیست.
+   */
+  const thirtyMinute =
+    aggregateCandles(
+      m5,
+      30,
+      CHART_CANDLE_LIMIT
+    );
+
+  const oneHour =
+    normalizeChartCandles(
+      h1
+    );
+
+  /*
+   * 4 ساعت از 1 ساعت ساخته می‌شود.
+   * نیازی به درخواست API جدید نیست.
+   */
+  const fourHour =
+    aggregateCandles(
+      h1,
+      240,
+      CHART_CANDLE_LIMIT
+    );
+
+  return {
+    updatedAt:
+      new Date().toISOString(),
+
+    timeframe:
+      "1m",
+
+    candles:
+      oneMinute,
+
+    timeframes: {
+      "1m":
+        oneMinute,
+
+      "5m":
+        fiveMinute,
+
+      "15m":
+        fifteenMinute,
+
+      "30m":
+        thirtyMinute,
+
+      "1h":
+        oneHour,
+
+      "4h":
+        fourHour,
+    },
+  };
 }
 
 /* =========================================================
@@ -1576,7 +1880,7 @@ function signalMessage(
     "",
     `📈 Score: <b>${
       num(meta.score)
-    }/100</b>`,
+    }/95</b>`,
     `✅ تأییدیه‌ها: <b>${
       num(
         meta.confirmations
@@ -1625,7 +1929,8 @@ async function getActiveRun() {
 async function createNoTrade(
   reason: string,
   price: number,
-  analysis?: MarketAnalysis
+  analysis?: MarketAnalysis,
+  chart?: ChartData
 ) {
   return prisma.analysisRun.create(
     {
@@ -1682,6 +1987,9 @@ async function createNoTrade(
           analysis:
             analysis?.analysis ||
             {},
+
+          chart:
+            chart || undefined,
         } as any,
       },
     }
@@ -1729,6 +2037,10 @@ async function scanMarket() {
   const news =
     await checkNewsBlock();
 
+  /*
+   * حتی هنگام News Block هم برای نمودار
+   * داده‌ای نداریم، چون هنوز کندل‌ها گرفته نشده‌اند.
+   */
   if (news.blocked) {
     await createNoTrade(
       "HIGH_IMPACT_NEWS",
@@ -1773,6 +2085,18 @@ async function scanMarket() {
     ),
   ]);
 
+  /*
+   * نمودار از همان داده‌هایی ساخته می‌شود که
+   * موتور تحلیل همین الان دریافت کرده است.
+   */
+  const chart =
+    buildChartData(
+      m1,
+      m5,
+      m15,
+      h1
+    );
+
   const analysis =
     analyzeMarket(
       m1,
@@ -1788,7 +2112,8 @@ async function scanMarket() {
     await createNoTrade(
       "NO_DIRECTION",
       currentPrice,
-      analysis
+      analysis,
+      chart
     );
 
     return {
@@ -1812,7 +2137,8 @@ async function scanMarket() {
     await createNoTrade(
       "SCORE_BELOW_THRESHOLD",
       currentPrice,
-      analysis
+      analysis,
+      chart
     );
 
     return {
@@ -1839,7 +2165,8 @@ async function scanMarket() {
     await createNoTrade(
       "NOT_ENOUGH_CONFIRMATIONS",
       currentPrice,
-      analysis
+      analysis,
+      chart
     );
 
     return {
@@ -1918,7 +2245,7 @@ async function scanMarket() {
         );
 
   /*
-   * بررسی می‌کنیم تا TP3 فضای منطقی وجود داشته باشد.
+   * بررسی فضای کافی تا TP3.
    */
   const roomToTarget =
     direction === "BUY"
@@ -1941,7 +2268,8 @@ async function scanMarket() {
     await createNoTrade(
       "NOT_ENOUGH_ROOM_TO_TP3",
       currentPrice,
-      analysis
+      analysis,
+      chart
     );
 
     return {
@@ -2075,6 +2403,8 @@ async function scanMarket() {
 
     analysis:
       analysis.analysis,
+
+    chart,
   };
 
   const run =
@@ -2786,6 +3116,10 @@ async function monitorRun(
     };
   }
 
+  /*
+   * قیمت جاری را در DB ذخیره می‌کنیم.
+   * chart قبلی نیز حفظ می‌شود.
+   */
   await prisma.analysisRun.update(
     {
       where: {
@@ -2993,8 +3327,7 @@ async function getDashboard() {
 
   /*
    * مهم:
-   * اینجا Twelve Data صدا زده نمی‌شود.
-   * قیمت آخرین Scan/Monitor از DB خوانده می‌شود.
+   * اینجا Twelve Data برای dashboard صدا زده نمی‌شود.
    */
   const rows =
     await prisma.analysisRun.findMany(
@@ -3013,6 +3346,34 @@ async function getDashboard() {
       }
     );
 
+  /*
+   * ابتدا رکوردی را پیدا می‌کنیم که
+   * نمودار واقعی در آن ذخیره شده باشد.
+   */
+  let chartRow =
+    rows.find(
+      (row: any) => {
+        const meta =
+          (row.metadata ||
+            {}) as RunMeta;
+
+        const chart =
+          meta.chart;
+
+        return Boolean(
+          chart &&
+          typeof chart ===
+            "object" &&
+          Array.isArray(
+            chart.candles
+          )
+        );
+      }
+    );
+
+  /*
+   * سپس آخرین رکورد دارای قیمت را پیدا می‌کنیم.
+   */
   let marketRow =
     rows.find(
       (row: any) => {
@@ -3029,8 +3390,8 @@ async function getDashboard() {
     );
 
   /*
-   * اگر دیتابیس هنوز هیچ قیمت ذخیره‌شده‌ای ندارد،
-   * فقط یک بار قیمت می‌گیریم.
+   * اگر هنوز هیچ قیمت ذخیره‌شده‌ای وجود ندارد،
+   * فقط یک بار قیمت می‌گیریم تا dashboard خالی نباشد.
    */
   if (!marketRow) {
     try {
@@ -3073,7 +3434,29 @@ async function getDashboard() {
           }
         );
     } catch {
-      // dashboard بدون قیمت هم باید باز شود.
+      /*
+       * dashboard بدون قیمت هم باید باز شود.
+       */
+    }
+  }
+
+  /*
+   * اگر chartRow پیدا نشد، ممکن است همان marketRow
+   * حاوی chart باشد.
+   */
+  if (
+    !chartRow &&
+    marketRow
+  ) {
+    const marketMeta =
+      (marketRow.metadata ||
+        {}) as RunMeta;
+
+    if (
+      marketMeta.chart
+    ) {
+      chartRow =
+        marketRow;
     }
   }
 
@@ -3082,6 +3465,20 @@ async function getDashboard() {
       ? ((marketRow.metadata ||
           {}) as RunMeta)
       : {};
+
+  const chartMeta =
+    chartRow
+      ? ((chartRow.metadata ||
+          {}) as RunMeta)
+      : {};
+
+  /*
+   * اگر chart از یک signal/no-trade قدیمی‌تر باشد،
+   * current price همچنان از جدیدترین marketRow گرفته می‌شود.
+   */
+  const chart =
+    chartMeta.chart ||
+    null;
 
   const recent =
     rows
@@ -3140,10 +3537,143 @@ async function getDashboard() {
         }
       : null,
 
+    /*
+     * خروجی مخصوص نمودار جدید.
+     */
+    chart,
+
+    /*
+     * مقادیر اصلی برای رسم خطوط روی نمودار.
+     */
+    chartMeta: {
+      entry:
+        num(
+          metaValue(
+            active?.metadata,
+            "entry"
+          )
+        ) ||
+        num(
+          chartMeta.entry
+        ) ||
+        null,
+
+      stopLoss:
+        num(
+          metaValue(
+            active?.metadata,
+            "stopLoss"
+          )
+        ) ||
+        num(
+          chartMeta.stopLoss
+        ) ||
+        null,
+
+      tp1:
+        num(
+          metaValue(
+            active?.metadata,
+            "tp1"
+          )
+        ) ||
+        num(
+          chartMeta.tp1
+        ) ||
+        null,
+
+      tp2:
+        num(
+          metaValue(
+            active?.metadata,
+            "tp2"
+          )
+        ) ||
+        num(
+          chartMeta.tp2
+        ) ||
+        null,
+
+      tp3:
+        num(
+          metaValue(
+            active?.metadata,
+            "tp3"
+          )
+        ) ||
+        num(
+          chartMeta.tp3
+        ) ||
+        null,
+
+      support:
+        num(
+          metaValue(
+            active?.metadata,
+            "support"
+          )
+        ) ||
+        num(
+          chartMeta.support
+        ) ||
+        null,
+
+      resistance:
+        num(
+          metaValue(
+            active?.metadata,
+            "resistance"
+          )
+        ) ||
+        num(
+          chartMeta.resistance
+        ) ||
+        null,
+
+      direction:
+        active?.metadata
+          ? String(
+              metaValue(
+                active.metadata,
+                "direction"
+              ) || ""
+            )
+          : chartMeta.direction ||
+            null,
+
+      currentPrice:
+        num(
+          marketMeta.currentPrice
+        ) || null,
+    },
+
     performance,
 
     recent,
   };
+}
+
+/*
+ * دسترسی امن به metadata رکورد active.
+ */
+function metaValue(
+  metadata: unknown,
+  key: string
+): unknown {
+  if (
+    !metadata ||
+    typeof metadata !==
+      "object"
+  ) {
+    return undefined;
+  }
+
+  return (
+    metadata as Record<
+      string,
+      unknown
+    >
+  )[key];
 }
 
 /* =========================================================
