@@ -7,25 +7,40 @@ const usdFmt = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-function money(v: number) {
-  return `$${usdFmt.format(v)}`;
+function money(v: number | null | undefined) {
+  const n = Number(v);
+  return `$${usdFmt.format(Number.isFinite(n) ? n : 0)}`;
 }
 
-function toman(v: number) {
-  return `${tomanFmt.format(Math.round(v))} تومان`;
+function toman(v: number | null | undefined) {
+  const n = Number(v);
+  return `${tomanFmt.format(
+    Math.round(Number.isFinite(n) ? n : 0)
+  )} تومان`;
 }
 
-function price(v: number) {
-  return Number(v || 0).toFixed(2);
+function price(v: number | null | undefined) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : "—";
 }
 
 function dateFa(v?: string | Date | null) {
   if (!v) return "—";
 
-  return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(v));
+  try {
+    const d = new Date(v);
+
+    if (Number.isNaN(d.getTime())) {
+      return "—";
+    }
+
+    return new Intl.DateTimeFormat("fa-IR", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(d);
+  } catch {
+    return "—";
+  }
 }
 
 type Candle = {
@@ -44,40 +59,46 @@ type ChartPayload = {
 };
 
 type Meta = {
-  direction: "BUY" | "SELL";
-  entry: number;
-  stopLoss: number;
-  tp1: number;
-  tp2: number;
-  tp3: number;
+  direction?: "BUY" | "SELL";
 
-  totalLot: number;
-  tp1Lot: number;
-  tp2Lot: number;
-  tp3Lot: number;
+  entry?: number;
+  stopLoss?: number;
+  tp1?: number;
+  tp2?: number;
+  tp3?: number;
 
-  riskUsd: number;
-  tp1Usd: number;
-  tp2Usd: number;
-  tp3Usd: number;
-  totalPotentialUsd: number;
+  totalLot?: number;
+  tp1Lot?: number;
+  tp2Lot?: number;
+  tp3Lot?: number;
 
-  usdToToman: number;
-  riskToman: number;
-  tp1Toman: number;
-  tp2Toman: number;
-  tp3Toman: number;
-  totalPotentialToman: number;
+  riskUsd?: number;
+  tp1Usd?: number;
+  tp2Usd?: number;
+  tp3Usd?: number;
+  totalPotentialUsd?: number;
 
-  session: string;
-  score: number;
-  confirmations: number;
-  timeframe: string;
-  state: string;
-  breakeven: boolean;
-  currentPrice: number;
+  usdToToman?: number;
+  riskToman?: number;
+  tp1Toman?: number;
+  tp2Toman?: number;
+  tp3Toman?: number;
+  totalPotentialToman?: number;
 
-  events: {
+  session?: string;
+  score?: number;
+  confirmations?: number;
+  timeframe?: string;
+  state?: string;
+  breakeven?: boolean;
+  currentPrice?: number;
+
+  strength?: string;
+  suggestedVolume?: string;
+  historicalSuccessRate?: number | null;
+  historicalClosedTrades?: number;
+
+  events?: {
     type: string;
     at: string;
     price: number;
@@ -112,37 +133,38 @@ type Perf = {
 };
 
 type Dashboard = {
-  symbol: string;
-  contractSize: number;
+  symbol?: string;
+  contractSize?: number;
 
-  position: {
-    totalLot: number;
-    tp1Lot: number;
-    tp2Lot: number;
-    tp3Lot: number;
-    stopUsd: number;
-    tp1Usd: number;
-    tp2Usd: number;
-    tp3Usd: number;
+  position?: {
+    totalLot?: number;
+    tp1Lot?: number;
+    tp2Lot?: number;
+    tp3Lot?: number;
+    stopUsd?: number;
+    tp1Usd?: number;
+    tp2Usd?: number;
+    tp3Usd?: number;
   };
 
-  active: {
+  active?: {
     id: string;
     status: string;
     metadata: Meta;
   } | null;
 
-  latest: {
+  latest?: {
     id: string;
     status: string;
     metadata: Meta;
   } | null;
 
-  performance: {
-    day: Perf;
-    week: Perf;
-    month: Perf;
-    recent: {
+  performance?: {
+    day?: Perf;
+    week?: Perf;
+    month?: Perf;
+
+    recent?: {
       id: string;
       createdAt: string;
       status: string;
@@ -150,16 +172,12 @@ type Dashboard = {
     }[];
   };
 
-  usdToToman: {
+  usdToToman?: {
     rate: number;
     asOf: string;
   } | null;
 
-  /*
-   * مرحله بعد route.ts این بخش را پر می‌کند.
-   * نمودار هیچ داده ساختگی تولید نمی‌کند.
-   */
-  chart?: ChartPayload;
+  chart?: ChartPayload | null;
 };
 
 const emptyPerf: Perf = {
@@ -190,27 +208,50 @@ export default function AIAnalysisPage() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
 
-  const [period, setPeriod] = useState<"day" | "week" | "month">("day");
+  const [period, setPeriod] = useState<
+    "day" | "week" | "month"
+  >("day");
 
-  /*
-   * 1 دقیقه به صورت پیش‌فرض
-   */
-  const [selectedTimeframe, setSelectedTimeframe] = useState("1m");
+  const [selectedTimeframe, setSelectedTimeframe] =
+    useState("1m");
 
   const load = useCallback(async () => {
     try {
+      setError("");
+
       const r = await fetch("/api/ai-analysis", {
+        method: "GET",
         cache: "no-store",
+        headers: {
+          Accept: "application/json",
+        },
       });
 
-      const j = await r.json();
+      let j: any = null;
 
-      if (!r.ok || !j.ok) {
-        throw new Error(j.error || "خطا در دریافت اطلاعات");
+      try {
+        j = await r.json();
+      } catch {
+        throw new Error(
+          "پاسخ سرور معتبر نیست. لطفاً API تحلیل هوش مصنوعی را بررسی کنید."
+        );
       }
 
-      setData(j.data);
-      setError("");
+      if (!r.ok || !j?.ok) {
+        throw new Error(
+          j?.error || "خطا در دریافت اطلاعات تحلیل هوش مصنوعی"
+        );
+      }
+
+      const incoming = j?.data;
+
+      if (!incoming || typeof incoming !== "object") {
+        throw new Error(
+          "داده داشبورد از سرور دریافت نشد."
+        );
+      }
+
+      setData(incoming as Dashboard);
     } catch (e) {
       setError(
         e instanceof Error
@@ -223,42 +264,57 @@ export default function AIAnalysisPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
 
-    /*
-     * داشبورد هر 20 ثانیه اطلاعات ذخیره‌شده سرور را می‌خواند.
-     * این قسمت API جدیدی برای هر تیک قیمت ایجاد نمی‌کند.
-     */
-    const id = window.setInterval(load, 20000);
+    const id = window.setInterval(() => {
+      void load();
+    }, 20000);
 
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+    };
   }, [load]);
 
-  const meta =
+  const meta: Meta | null =
     data?.active?.metadata ||
     data?.latest?.metadata ||
     null;
 
-  const perf =
+  const perf: Perf =
     data?.performance?.[period] ||
     emptyPerf;
 
   const availableTimeframes = useMemo(() => {
-    const serverFrames = Object.keys(
-      data?.chart?.timeframes || {}
-    );
+    const frames =
+      data?.chart?.timeframes;
 
-    if (serverFrames.length) {
-      return serverFrames;
+    if (
+      frames &&
+      typeof frames === "object" &&
+      !Array.isArray(frames)
+    ) {
+      const keys = Object.keys(frames).filter(
+        (key) =>
+          Array.isArray(frames[key])
+      );
+
+      if (keys.length) {
+        return keys;
+      }
     }
 
     return defaultTimeframes;
   }, [data?.chart?.timeframes]);
 
   useEffect(() => {
+    if (!availableTimeframes.length) {
+      return;
+    }
+
     if (
-      availableTimeframes.length &&
-      !availableTimeframes.includes(selectedTimeframe)
+      !availableTimeframes.includes(
+        selectedTimeframe
+      )
     ) {
       setSelectedTimeframe(
         availableTimeframes.includes("1m")
@@ -266,22 +322,36 @@ export default function AIAnalysisPage() {
           : availableTimeframes[0]
       );
     }
-  }, [availableTimeframes, selectedTimeframe]);
+  }, [
+    availableTimeframes,
+    selectedTimeframe,
+  ]);
 
   const candles = useMemo(() => {
-    if (!data?.chart) {
+    const chart = data?.chart;
+
+    if (!chart) {
       return [];
     }
 
-    if (data.chart.timeframes?.[selectedTimeframe]) {
-      return data.chart.timeframes[selectedTimeframe];
+    const frame =
+      chart.timeframes?.[
+        selectedTimeframe
+      ];
+
+    if (Array.isArray(frame)) {
+      return frame.filter(isValidCandle);
     }
 
     if (
       selectedTimeframe ===
-      (data.chart.timeframe || "1m")
+      (chart.timeframe || "1m")
     ) {
-      return data.chart.candles || [];
+      if (Array.isArray(chart.candles)) {
+        return chart.candles.filter(
+          isValidCandle
+        );
+      }
     }
 
     return [];
@@ -291,21 +361,51 @@ export default function AIAnalysisPage() {
   ]);
 
   const chart = useMemo(() => {
+    const pnl = Number(perf.pnlUsd) || 0;
+
+    const tp1 =
+      (Number(perf.tp1) || 0) * 20;
+
+    const tp2 =
+      (Number(perf.tp2) || 0) * 24;
+
+    const tp3 =
+      (Number(perf.tp3) || 0) * 36;
+
+    const sl =
+      (Number(perf.sl) || 0) * 40;
+
     const max = Math.max(
       1,
-      Math.abs(perf.pnlUsd),
-      perf.tp1 * 20,
-      perf.tp2 * 24,
-      perf.tp3 * 36,
-      perf.sl * 40
+      Math.abs(pnl),
+      tp1,
+      tp2,
+      tp3,
+      sl
     );
 
     return {
-      win: Math.max(0, perf.pnlUsd),
-      loss: Math.max(0, -perf.pnlUsd),
+      win: Math.max(0, pnl),
+      loss: Math.max(0, -pnl),
       max,
     };
   }, [perf]);
+
+  const totalLot =
+    Number(data?.position?.totalLot);
+
+  const safeTotalLot =
+    Number.isFinite(totalLot)
+      ? totalLot
+      : 0.1;
+
+  const contractSize =
+    Number(data?.contractSize);
+
+  const safeContractSize =
+    Number.isFinite(contractSize)
+      ? contractSize
+      : 100;
 
   return (
     <main
@@ -338,8 +438,9 @@ export default function AIAnalysisPage() {
             </span>
 
             <button
-              onClick={load}
+              onClick={() => void load()}
               disabled={busy}
+              type="button"
             >
               {busy
                 ? "در حال دریافت…"
@@ -367,10 +468,6 @@ export default function AIAnalysisPage() {
           </div>
         )}
 
-        {/* =========================
-            XAUUSD LIVE CHART
-        ========================== */}
-
         <section className="card market-chart-card">
           <div className="chart-header">
             <div>
@@ -390,6 +487,7 @@ export default function AIAnalysisPage() {
 
             <div className="chart-status">
               <span className="chart-live-dot" />
+
               <span>
                 {data?.chart?.updatedAt
                   ? `آخرین بروزرسانی: ${dateFa(
@@ -439,10 +537,6 @@ export default function AIAnalysisPage() {
           />
         </section>
 
-        {/* =========================
-            SUMMARY
-        ========================== */}
-
         <section className="hero-grid">
           <div className="card hero-card">
             <div className="card-head">
@@ -459,16 +553,17 @@ export default function AIAnalysisPage() {
                     : "neutral"
                 }
               >
-                {meta
-                  ? meta.direction === "BUY"
-                    ? "🟢 BUY"
-                    : "🔴 SELL"
+                {meta?.direction === "BUY"
+                  ? "🟢 BUY"
+                  : meta?.direction === "SELL"
+                  ? "🔴 SELL"
                   : "NO TRADE"}
               </span>
             </div>
 
             <div className="market-current-price">
-              {meta
+              {typeof meta?.currentPrice ===
+              "number"
                 ? price(meta.currentPrice)
                 : "—"}
             </div>
@@ -506,6 +601,42 @@ export default function AIAnalysisPage() {
                 </b>
               </span>
             </div>
+
+            {meta?.strength && (
+              <div className="signal-strength">
+                <span>
+                  قدرت تحلیل
+                </span>
+
+                <b>
+                  {meta.strength}
+                </b>
+
+                {meta.suggestedVolume && (
+                  <small>
+                    حجم پیشنهادی:{" "}
+                    {meta.suggestedVolume}
+                  </small>
+                )}
+              </div>
+            )}
+
+            {typeof meta?.historicalSuccessRate ===
+              "number" && (
+              <div className="history-rate">
+                موفقیت تاریخی ۳۰ روز اخیر:{" "}
+                <b>
+                  {meta.historicalSuccessRate.toFixed(
+                    1
+                  )}
+                  %
+                </b>
+
+                {meta.historicalClosedTrades
+                  ? ` · ${meta.historicalClosedTrades} معامله بسته‌شده`
+                  : ""}
+              </div>
+            )}
           </div>
 
           <div className="card fx-card">
@@ -538,10 +669,6 @@ export default function AIAnalysisPage() {
             </div>
           </div>
         </section>
-
-        {/* =========================
-            LEVELS
-        ========================== */}
 
         <section className="levels-grid">
           <Level
@@ -611,18 +738,12 @@ export default function AIAnalysisPage() {
           />
         </section>
 
-        {/* =========================
-            POSITION MODEL
-        ========================== */}
-
         <section className="cards-3">
           <Info
             title="حجم کل"
-            value={`${
-              data?.position.totalLot.toFixed(
-                2
-              ) || "0.10"
-            } lot`}
+            value={`${safeTotalLot.toFixed(
+              2
+            )} lot`}
             sub="0.04 + 0.03 + 0.03"
           />
 
@@ -665,10 +786,6 @@ export default function AIAnalysisPage() {
           />
         </section>
 
-        {/* =========================
-            PERFORMANCE
-        ========================== */}
-
         <section className="card report">
           <div className="section-title">
             <div>
@@ -692,6 +809,7 @@ export default function AIAnalysisPage() {
               ).map(([k, t]) => (
                 <button
                   key={k}
+                  type="button"
                   className={
                     period === k
                       ? "active"
@@ -711,17 +829,17 @@ export default function AIAnalysisPage() {
             <Stat
               title="معاملات"
               value={String(
-                perf.trades
+                perf.trades || 0
               )}
             />
 
             <Stat
               title="TP1"
               value={String(
-                perf.tp1
+                perf.tp1 || 0
               )}
               sub={`+${money(
-                perf.tp1 * 20
+                (perf.tp1 || 0) * 20
               )} · 🇮🇷 ${toman(
                 perf.tp1Toman
               )}`}
@@ -730,10 +848,10 @@ export default function AIAnalysisPage() {
             <Stat
               title="TP2"
               value={String(
-                perf.tp2
+                perf.tp2 || 0
               )}
               sub={`+${money(
-                perf.tp2 * 24
+                (perf.tp2 || 0) * 24
               )} · 🇮🇷 ${toman(
                 perf.tp2Toman
               )}`}
@@ -742,10 +860,10 @@ export default function AIAnalysisPage() {
             <Stat
               title="TP3"
               value={String(
-                perf.tp3
+                perf.tp3 || 0
               )}
               sub={`+${money(
-                perf.tp3 * 36
+                (perf.tp3 || 0) * 36
               )} · 🇮🇷 ${toman(
                 perf.tp3Toman
               )}`}
@@ -754,10 +872,10 @@ export default function AIAnalysisPage() {
             <Stat
               title="استاپ"
               value={String(
-                perf.sl
+                perf.sl || 0
               )}
               sub={`-${money(
-                perf.sl * 40
+                (perf.sl || 0) * 40
               )} · 🇮🇷 ${toman(
                 perf.slToman
               )}`}
@@ -847,10 +965,6 @@ export default function AIAnalysisPage() {
             </div>
           </div>
         </section>
-
-        {/* =========================
-            AI ENGINE
-        ========================== */}
 
         <section className="split">
           <div className="card analysis-card">
@@ -962,9 +1076,10 @@ export default function AIAnalysisPage() {
                               e.price
                             )}
                             {" · "}
-                            {e.lotClosed.toFixed(
-                              2
-                            )} lot
+                            {Number(
+                              e.lotClosed
+                            ).toFixed(2)}{" "}
+                            lot
                           </small>
                         </div>
 
@@ -1001,10 +1116,6 @@ export default function AIAnalysisPage() {
           </div>
         </section>
 
-        {/* =========================
-            RECENT ANALYSES
-        ========================== */}
-
         <section className="card recent">
           <div className="section-title">
             <div>
@@ -1019,15 +1130,25 @@ export default function AIAnalysisPage() {
           </div>
 
           <div className="table">
-            {data?.performance.recent?.length ? (
+            {data?.performance?.recent?.length ? (
               data.performance.recent.map(
                 (r) => {
+                  const events =
+                    Array.isArray(
+                      r.metadata?.events
+                    )
+                      ? r.metadata.events
+                      : [];
+
                   const pnl =
-                    r.metadata.events?.reduce(
+                    events.reduce(
                       (a, e) =>
-                        a + e.pnlUsd,
+                        a +
+                        (Number(
+                          e.pnlUsd
+                        ) || 0),
                       0
-                    ) || 0;
+                    );
 
                   return (
                     <div
@@ -1041,14 +1162,18 @@ export default function AIAnalysisPage() {
                       </span>
 
                       <span>
-                        {r.metadata.direction ===
+                        {r.metadata?.direction ===
                         "BUY"
                           ? "🟢 BUY"
-                          : "🔴 SELL"}
+                          : r.metadata?.direction ===
+                            "SELL"
+                          ? "🔴 SELL"
+                          : "NO TRADE"}
                       </span>
 
                       <span>
-                        {r.metadata.session}
+                        {r.metadata?.session ||
+                          "—"}
                       </span>
 
                       <span>
@@ -1056,7 +1181,9 @@ export default function AIAnalysisPage() {
                       </span>
 
                       <span>
-                        {r.metadata.score}/100
+                        {r.metadata?.score ??
+                          "—"}
+                        /100
                       </span>
 
                       <span
@@ -1085,12 +1212,34 @@ export default function AIAnalysisPage() {
 
         <footer>
           AI Analysis · XAUUSD · Contract size{" "}
-          {data?.contractSize || 100} oz ·
-          حجم کل 0.10 lot · TP1 0.04 · TP2 0.03 ·
-          TP3 0.03
+          {safeContractSize} oz · حجم کل 0.10 lot ·
+          TP1 0.04 · TP2 0.03 · TP3 0.03
         </footer>
       </div>
     </main>
+  );
+}
+
+/* =========================================================
+   VALIDATION
+========================================================= */
+
+function isValidCandle(
+  candle: unknown
+): candle is Candle {
+  if (!candle || typeof candle !== "object") {
+    return false;
+  }
+
+  const c = candle as Partial<Candle>;
+
+  return (
+    (typeof c.time === "string" ||
+      typeof c.time === "number") &&
+    Number.isFinite(Number(c.open)) &&
+    Number.isFinite(Number(c.high)) &&
+    Number.isFinite(Number(c.low)) &&
+    Number.isFinite(Number(c.close))
   );
 }
 
@@ -1118,14 +1267,9 @@ function GoldChart({
   };
 
   const visibleCandles = useMemo(() => {
-    /*
-     * برای جلوگیری از شلوغی نمودار،
-     * آخرین 120 کندل نمایش داده می‌شود.
-     *
-     * داده‌ها واقعی هستند و اینجا هیچ کندل
-     * ساختگی ساخته نمی‌شود.
-     */
-    return candles.slice(-120);
+    return candles
+      .filter(isValidCandle)
+      .slice(-120);
   }, [candles]);
 
   const chartData = useMemo(() => {
@@ -1159,12 +1303,16 @@ function GoldChart({
 
     const minRaw = Math.min(
       ...allValues,
-      ...levels
+      ...(levels.length
+        ? levels
+        : [Math.min(...allValues)])
     );
 
     const maxRaw = Math.max(
       ...allValues,
-      ...levels
+      ...(levels.length
+        ? levels
+        : [Math.max(...allValues)])
     );
 
     const range = Math.max(
@@ -1226,9 +1374,15 @@ function GoldChart({
       y,
       x,
     };
-  }, [visibleCandles, meta]);
+  }, [
+    visibleCandles,
+    meta,
+  ]);
 
-  if (!visibleCandles.length || !chartData) {
+  if (
+    !visibleCandles.length ||
+    !chartData
+  ) {
     return (
       <div className="chart-empty">
         <div className="chart-empty-icon">
@@ -1296,8 +1450,7 @@ function GoldChart({
       value: number;
       className: string;
     } =>
-      typeof level.value ===
-        "number" &&
+      typeof level.value === "number" &&
       Number.isFinite(level.value)
   );
 
@@ -1321,14 +1474,14 @@ function GoldChart({
       value: number;
       className: string;
     } =>
-      typeof level.value ===
-        "number" &&
+      typeof level.value === "number" &&
       Number.isFinite(level.value)
   );
 
   const currentPrice =
     typeof meta?.currentPrice ===
-    "number"
+    "number" &&
+    Number.isFinite(meta.currentPrice)
       ? meta.currentPrice
       : visibleCandles[
           visibleCandles.length - 1
@@ -1354,19 +1507,15 @@ function GoldChart({
             {visibleCandles.length} کندل
           </span>
 
-          {meta && (
+          {meta?.direction && (
             <span
               className={
-                meta.direction ===
-                "BUY"
+                meta.direction === "BUY"
                   ? "chart-buy"
                   : "chart-sell"
               }
             >
-              {meta.direction ===
-              "BUY"
-                ? "BUY"
-                : "SELL"}
+              {meta.direction}
             </span>
           )}
         </div>
@@ -1392,6 +1541,7 @@ function GoldChart({
                 offset="0%"
                 stopColor="#12100b"
               />
+
               <stop
                 offset="100%"
                 stopColor="#08090b"
@@ -1419,8 +1569,6 @@ function GoldChart({
             rx="20"
             fill="url(#chartBg)"
           />
-
-          {/* Grid */}
 
           {Array.from(
             { length: gridLines },
@@ -1476,8 +1624,6 @@ function GoldChart({
               );
             }
           )}
-
-          {/* Candles */}
 
           {visibleCandles.map(
             (candle, index) => {
@@ -1560,8 +1706,6 @@ function GoldChart({
             }
           )}
 
-          {/* Support / Resistance */}
-
           {extraLevels.map(
             (level) => {
               const yy =
@@ -1627,8 +1771,6 @@ function GoldChart({
               );
             }
           )}
-
-          {/* Entry / SL / TP */}
 
           {priceLevels.map(
             (level) => {
@@ -1740,91 +1882,90 @@ function GoldChart({
             }
           )}
 
-          {/* Current price */}
-
           {typeof currentPrice ===
-            "number" && (
-            <g>
-              <line
-                x1={
-                  padding.left
-                }
-                x2={
-                  width -
-                  padding.right
-                }
-                y1={y(
-                  currentPrice
-                )}
-                y2={y(
-                  currentPrice
-                )}
-                stroke="#f2f4f7"
-                strokeOpacity="0.45"
-                strokeDasharray="2 6"
-              />
-
-              <circle
-                cx={
-                  width -
-                  padding.right -
-                  4
-                }
-                cy={y(
-                  currentPrice
-                )}
-                r="4"
-                fill="#f4f6f8"
-              />
-
-              <rect
-                x={
-                  width -
-                  padding.right +
-                  7
-                }
-                y={
-                  y(
+            "number" &&
+            Number.isFinite(
+              currentPrice
+            ) && (
+              <g>
+                <line
+                  x1={
+                    padding.left
+                  }
+                  x2={
+                    width -
+                    padding.right
+                  }
+                  y1={y(
                     currentPrice
-                  ) - 12
-                }
-                width="72"
-                height="22"
-                rx="7"
-                fill="#f0f2f4"
-              />
-
-              <text
-                x={
-                  width -
-                  padding.right +
-                  14
-                }
-                y={
-                  y(
+                  )}
+                  y2={y(
                     currentPrice
-                  ) + 3
-                }
-                fill="#08090b"
-                fontSize="10"
-                fontWeight="900"
-                direction="ltr"
-              >
-                {currentPrice.toFixed(
-                  2
-                )}
-              </text>
-            </g>
-          )}
+                  )}
+                  stroke="#f2f4f7"
+                  strokeOpacity="0.45"
+                  strokeDasharray="2 6"
+                />
 
-          {/* Time axis */}
+                <circle
+                  cx={
+                    width -
+                    padding.right -
+                    4
+                  }
+                  cy={y(
+                    currentPrice
+                  )}
+                  r="4"
+                  fill="#f4f6f8"
+                />
+
+                <rect
+                  x={
+                    width -
+                    padding.right +
+                    7
+                  }
+                  y={
+                    y(
+                      currentPrice
+                    ) - 12
+                  }
+                  width="72"
+                  height="22"
+                  rx="7"
+                  fill="#f0f2f4"
+                />
+
+                <text
+                  x={
+                    width -
+                    padding.right +
+                    14
+                  }
+                  y={
+                    y(
+                      currentPrice
+                    ) + 3
+                  }
+                  fill="#08090b"
+                  fontSize="10"
+                  fontWeight="900"
+                  direction="ltr"
+                >
+                  {currentPrice.toFixed(
+                    2
+                  )}
+                </text>
+              </g>
+            )}
 
           {visibleCandles.map(
             (candle, index) => {
               if (
                 index !==
-                visibleCandles.length -
-                  1 &&
+                  visibleCandles.length -
+                    1 &&
                 index % 20 !== 0
               ) {
                 return null;
@@ -1948,7 +2089,8 @@ function Level({
 
       <b>
         {typeof value ===
-        "number"
+        "number" &&
+        Number.isFinite(value)
           ? price(value)
           : "—"}
       </b>
@@ -2049,6 +2191,7 @@ function stateFa(v?: string) {
       AI_TP3: "TP3 تکمیل شد",
       AI_SL: "استاپ خورد",
       AI_BE: "بریک‌ایون / بسته‌شده",
+      AI_NO_TRADE: "بدون معامله",
     } as Record<
       string,
       string
@@ -2250,10 +2393,6 @@ button{
   color:#ff9e9e;
   margin-bottom:16px;
 }
-
-/* ===============================
-   GOLD CHART
-================================ */
 
 .market-chart-card{
   padding:0;
@@ -2527,10 +2666,6 @@ button{
   font-weight:800;
 }
 
-/* ===============================
-   HERO
-================================ */
-
 .hero-grid{
   display:grid;
   grid-template-columns:1.6fr 1fr;
@@ -2608,6 +2743,41 @@ button{
 .meta-row b{
   color:#f5f7fa;
   margin-right:5px;
+}
+
+.signal-strength{
+  margin-top:16px;
+  padding:13px 15px;
+  border-radius:13px;
+  border:1px solid #d2a53f25;
+  background:#151109;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.signal-strength span{
+  color:#8e95a1;
+  font-size:12px;
+}
+
+.signal-strength b{
+  color:#e4b84f;
+}
+
+.signal-strength small{
+  color:#aeb4bf;
+}
+
+.history-rate{
+  margin-top:10px;
+  color:#858c97;
+  font-size:12px;
+}
+
+.history-rate b{
+  color:#62e48b;
 }
 
 .fx-number{
@@ -2702,10 +2872,6 @@ button{
   font-size:28px;
   margin:10px 0;
 }
-
-/* ===============================
-   PERFORMANCE
-================================ */
 
 .report{
   margin-bottom:16px;
@@ -2810,10 +2976,6 @@ button{
     );
 }
 
-/* ===============================
-   ANALYSIS
-================================ */
-
 .split{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -2902,10 +3064,6 @@ button{
   text-align:left;
 }
 
-/* ===============================
-   RECENT
-================================ */
-
 .recent{
   margin-bottom:16px;
 }
@@ -2946,10 +3104,6 @@ button{
   font-size:12px;
   padding:12px 0 30px;
 }
-
-/* ===============================
-   RESPONSIVE
-================================ */
 
 @media(max-width:1050px){
 
@@ -3086,6 +3240,12 @@ button{
 
   .timeframe-bar{
     padding:12px 17px;
+  }
+
+  .signal-strength{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:6px;
   }
 }
 `;
