@@ -39,11 +39,25 @@ const TP3_DISTANCE = 12;
 
 const ENTRY_TOLERANCE = 1;
 
+/*
+ * آستانه سیگنال عمداً نسبت به قبل سبک‌تر شده است.
+ *
+ * قبلاً:
+ * SCORE = 78
+ * CONFIRMATIONS = 5
+ *
+ * الان:
+ * SCORE = 65
+ * CONFIRMATIONS = 3
+ *
+ * بنابراین موتور فقط وقتی چند تأیید واقعی داشته باشد
+ * می‌تواند سیگنال بسازد، اما بیش از حد سخت‌گیر نیست.
+ */
 const SCORE_TO_SIGNAL = Number(
-  process.env.AI_SCORE_TO_SIGNAL || "78"
+  process.env.AI_SCORE_TO_SIGNAL || "65"
 );
 
-const MIN_CONFIRMATIONS = 5;
+const MIN_CONFIRMATIONS = 3;
 
 const NEWS_BLOCK_MINUTES = Number(
   process.env.AI_NEWS_BLOCK_MINUTES || "30"
@@ -61,7 +75,6 @@ const PRICE_CACHE_MS = 120000;
 
 /*
  * تعداد کندل‌هایی که برای نمودار به frontend داده می‌شود.
- * این داده‌ها از همان درخواست‌های تحلیل گرفته می‌شوند.
  */
 const CHART_CANDLE_LIMIT = 120;
 
@@ -88,11 +101,8 @@ type ChartCandle = {
 
 type ChartData = {
   updatedAt: string;
-
   timeframe: string;
-
   candles: ChartCandle[];
-
   timeframes: Record<
     string,
     ChartCandle[]
@@ -323,10 +333,6 @@ function sessionName(
    CHART HELPERS
 ========================================================= */
 
-/*
- * تبدیل Candle داخلی موتور به Candle قابل استفاده
- * در frontend.
- */
 function toChartCandle(
   candle: Candle
 ): ChartCandle {
@@ -361,9 +367,6 @@ function toChartCandle(
   };
 }
 
-/*
- * داده‌ها را برای نمودار مرتب و محدود می‌کنیم.
- */
 function normalizeChartCandles(
   candles: Candle[],
   limit = CHART_CANDLE_LIMIT
@@ -383,16 +386,6 @@ function normalizeChartCandles(
     );
 }
 
-/*
- * ساخت تایم‌فریم بالاتر از روی کندل‌های واقعی.
- *
- * مثال:
- * 5m -> 30m
- * 1h -> 4h
- *
- * هیچ قیمت ساختگی تولید نمی‌شود.
- * فقط OHLC کندل‌های واقعی تجمیع می‌شوند.
- */
 function aggregateCandles(
   candles: Candle[],
   minutes: number,
@@ -510,10 +503,6 @@ function aggregateCandles(
     );
 }
 
-/*
- * ساخت کامل داده نمودار از همان کندل‌هایی که
- * موتور تحلیل قبلاً دریافت کرده است.
- */
 function buildChartData(
   m1: Candle[],
   m5: Candle[],
@@ -535,10 +524,6 @@ function buildChartData(
       m15
     );
 
-  /*
-   * 30 دقیقه از 5 دقیقه ساخته می‌شود.
-   * نیازی به درخواست API جدید نیست.
-   */
   const thirtyMinute =
     aggregateCandles(
       m5,
@@ -551,10 +536,6 @@ function buildChartData(
       h1
     );
 
-  /*
-   * 4 ساعت از 1 ساعت ساخته می‌شود.
-   * نیازی به درخواست API جدید نیست.
-   */
   const fourHour =
     aggregateCandles(
       h1,
@@ -1238,22 +1219,20 @@ function analyzeMarket(
   const t1h =
     trend(h1);
 
+  const higherDirections = [
+    t5.direction,
+    t15.direction,
+    t1h.direction,
+  ];
+
   const buyCount =
-    [
-      t5.direction,
-      t15.direction,
-      t1h.direction,
-    ].filter(
+    higherDirections.filter(
       (value) =>
         value === "BUY"
     ).length;
 
   const sellCount =
-    [
-      t5.direction,
-      t15.direction,
-      t1h.direction,
-    ].filter(
+    higherDirections.filter(
       (value) =>
         value === "SELL"
     ).length;
@@ -1262,14 +1241,76 @@ function analyzeMarket(
     | Direction
     | null = null;
 
+  /*
+   * حالت اصلی:
+   * حداقل 2 تایم‌فریم از M5/M15/H1 هم‌جهت باشند.
+   */
   if (
     buyCount >= 2
+  ) {
+    direction = "BUY";
+  } else if (
+    sellCount >= 2
+  ) {
+    direction = "SELL";
+  }
+
+  /*
+   * حالت انعطاف‌پذیر جدید:
+   *
+   * اگر فقط یک تایم‌فریم جهت مشخص دارد
+   * و هیچ تایم‌فریم اصلی جهت مخالف نداده،
+   * همان جهت می‌تواند به عنوان جهت اولیه استفاده شود.
+   *
+   * این باعث نمی‌شود BUY و SELL متضاد همزمان
+   * سیگنال بدهند.
+   */
+  if (
+    !direction &&
+    buyCount === 1 &&
+    sellCount === 0
   ) {
     direction = "BUY";
   }
 
   if (
-    sellCount >= 2
+    !direction &&
+    sellCount === 1 &&
+    buyCount === 0
+  ) {
+    direction = "SELL";
+  }
+
+  /*
+   * اگر تایم‌فریم‌های اصلی مبهم باشند،
+   * M1 فقط زمانی به تعیین جهت کمک می‌کند که
+   * M5 و M1 یک جهت داشته باشند و
+   * M15/H1 جهت مخالف مشخصی نداشته باشند.
+   */
+  if (
+    !direction &&
+    t1.direction ===
+      "BUY" &&
+    t5.direction ===
+      "BUY" &&
+    t15.direction !==
+      "SELL" &&
+    t1h.direction !==
+      "SELL"
+  ) {
+    direction = "BUY";
+  }
+
+  if (
+    !direction &&
+    t1.direction ===
+      "SELL" &&
+    t5.direction ===
+      "SELL" &&
+    t15.direction !==
+      "BUY" &&
+    t1h.direction !==
+      "BUY"
   ) {
     direction = "SELL";
   }
@@ -1405,9 +1446,6 @@ function analyzeMarket(
           nearResistance
         : false;
 
-  /*
-   * حداکثر واقعی این سیستم 95 است.
-   */
   let score = 0;
 
   if (direction) {
@@ -1531,6 +1569,15 @@ function analyzeMarket(
           currentPrice,
           2
         ),
+
+      selectedDirection:
+        direction,
+
+      higherTimeframeBuyCount:
+        buyCount,
+
+      higherTimeframeSellCount:
+        sellCount,
 
       m1: {
         direction:
@@ -1726,6 +1773,25 @@ async function getUsdToTomanRate(): Promise<number> {
   return rate;
 }
 
+/*
+ * نرخ تومان اختیاری است.
+ *
+ * اگر NetArz موقتاً پاسخ ندهد،
+ * خود سیگنال دلاری متوقف نمی‌شود.
+ */
+async function getSafeUsdToTomanRate(): Promise<number> {
+  try {
+    return await getUsdToTomanRate();
+  } catch (error) {
+    console.error(
+      "USD/IRT rate unavailable:",
+      error
+    );
+
+    return 0;
+  }
+}
+
 /* =========================================================
    NEWS BLOCK
 ========================================================= */
@@ -1811,6 +1877,45 @@ function signalMessage(
       ? "🟢 BUY"
       : "🔴 SELL";
 
+  const tomanSection =
+    num(
+      meta.usdToToman
+    ) > 0
+      ? [
+          "",
+          `🇮🇷 نرخ USD: <b>${Math.round(
+            num(
+              meta.usdToToman
+            )
+          ).toLocaleString(
+            "fa-IR"
+          )}</b>`,
+          `💰 ریسک تومان: <b>-${tomanText(
+            num(
+              meta.riskToman
+            )
+          )}</b>`,
+          `🥇 TP1 تومان: <b>+${tomanText(
+            num(
+              meta.tp1Toman
+            )
+          )}</b>`,
+          `🥈 TP2 تومان: <b>+${tomanText(
+            num(
+              meta.tp2Toman
+            )
+          )}</b>`,
+          `🥉 TP3 تومان: <b>+${tomanText(
+            num(
+              meta.tp3Toman
+            )
+          )}</b>`,
+        ]
+      : [
+          "",
+          "🇮🇷 نرخ تومان: <b>در حال حاضر در دسترس نیست</b>",
+        ];
+
   return [
     "━━━━━━━━━━━━━━━━━━",
     "🤖 <b>AI GOLD SIGNAL</b>",
@@ -1877,6 +1982,7 @@ function signalMessage(
         meta.totalPotentialUsd
       )
     )}</b>`,
+    ...tomanSection,
     "",
     `📈 Score: <b>${
       num(meta.score)
@@ -2037,10 +2143,6 @@ async function scanMarket() {
   const news =
     await checkNewsBlock();
 
-  /*
-   * حتی هنگام News Block هم برای نمودار
-   * داده‌ای نداریم، چون هنوز کندل‌ها گرفته نشده‌اند.
-   */
   if (news.blocked) {
     await createNoTrade(
       "HIGH_IMPACT_NEWS",
@@ -2085,10 +2187,6 @@ async function scanMarket() {
     ),
   ]);
 
-  /*
-   * نمودار از همان داده‌هایی ساخته می‌شود که
-   * موتور تحلیل همین الان دریافت کرده است.
-   */
   const chart =
     buildChartData(
       m1,
@@ -2106,6 +2204,9 @@ async function scanMarket() {
       currentPrice
     );
 
+  /*
+   * جهت باید وجود داشته باشد.
+   */
   if (
     !analysis.direction
   ) {
@@ -2126,10 +2227,16 @@ async function scanMarket() {
       score:
         analysis.score,
 
+      confirmations:
+        analysis.confirmations,
+
       currentPrice,
     };
   }
 
+  /*
+   * آستانه Score جدید.
+   */
   if (
     analysis.score <
     SCORE_TO_SIGNAL
@@ -2154,10 +2261,16 @@ async function scanMarket() {
       threshold:
         SCORE_TO_SIGNAL,
 
+      confirmations:
+        analysis.confirmations,
+
       currentPrice,
     };
   }
 
+  /*
+   * حداقل 3 تأییدیه.
+   */
   if (
     analysis.confirmations <
     MIN_CONFIRMATIONS
@@ -2178,6 +2291,9 @@ async function scanMarket() {
 
       confirmations:
         analysis.confirmations,
+
+      minimum:
+        MIN_CONFIRMATIONS,
 
       currentPrice,
     };
@@ -2245,7 +2361,7 @@ async function scanMarket() {
         );
 
   /*
-   * بررسی فضای کافی تا TP3.
+   * فضای کافی تا TP3.
    */
   const roomToTarget =
     direction === "BUY"
@@ -2285,12 +2401,29 @@ async function scanMarket() {
           2
         ),
 
+      requiredRoom:
+        round(
+          requiredRoom,
+          2
+        ),
+
       currentPrice,
     };
   }
 
+  /*
+   * نرخ تومان دیگر blocker سیگنال نیست.
+   *
+   * اگر NetArz جواب ندهد:
+   * - Signal در USD ساخته می‌شود.
+   * - Telegram ارسال می‌شود.
+   * - مقدار تومان 0 می‌ماند.
+   *
+   * این باعث می‌شود خرابی موقت NetArz
+   * موتور اصلی XAUUSD را متوقف نکند.
+   */
   const fx =
-    await getUsdToTomanRate();
+    await getSafeUsdToTomanRate();
 
   const meta: RunMeta = {
     kind:
@@ -2354,20 +2487,30 @@ async function scanMarket() {
       fx,
 
     riskToman:
-      RISK_USD * fx,
+      fx > 0
+        ? RISK_USD * fx
+        : 0,
 
     tp1Toman:
-      TP1_USD * fx,
+      fx > 0
+        ? TP1_USD * fx
+        : 0,
 
     tp2Toman:
-      TP2_USD * fx,
+      fx > 0
+        ? TP2_USD * fx
+        : 0,
 
     tp3Toman:
-      TP3_USD * fx,
+      fx > 0
+        ? TP3_USD * fx
+        : 0,
 
     totalPotentialToman:
-      TOTAL_POTENTIAL_USD *
-      fx,
+      fx > 0
+        ? TOTAL_POTENTIAL_USD *
+          fx
+        : 0,
 
     session:
       sessionName(),
@@ -2531,7 +2674,7 @@ async function registerEvent(
       {}) as RunMeta;
 
   const fx =
-    await getUsdToTomanRate();
+    await getSafeUsdToTomanRate();
 
   const eventPnl =
     getEventPnl(
@@ -2539,7 +2682,9 @@ async function registerEvent(
     );
 
   const pnlToman =
-    eventPnl.pnl * fx;
+    fx > 0
+      ? eventPnl.pnl * fx
+      : 0;
 
   const events =
     Array.isArray(
@@ -2704,9 +2849,11 @@ async function registerEvent(
       `💵 سود: <b>+${money(
         TP1_USD
       )}</b>`,
-      `🇮🇷 تومان: <b>+${tomanText(
-        pnlToman
-      )}</b>`,
+      fx > 0
+        ? `🇮🇷 تومان: <b>+${tomanText(
+            pnlToman
+          )}</b>`
+        : "🇮🇷 تومان: <b>در دسترس نیست</b>",
       "",
       "📦 بسته‌شده: <b>0.04 lot</b>",
       "🛡 حد ضرر باقی‌مانده به Entry منتقل شود.",
@@ -2730,9 +2877,11 @@ async function registerEvent(
       `💵 سود: <b>+${money(
         TP2_USD
       )}</b>`,
-      `🇮🇷 تومان: <b>+${tomanText(
-        pnlToman
-      )}</b>`,
+      fx > 0
+        ? `🇮🇷 تومان: <b>+${tomanText(
+            pnlToman
+          )}</b>`
+        : "🇮🇷 تومان: <b>در دسترس نیست</b>",
       "",
       "📦 بسته‌شده: <b>0.03 lot</b>",
       "📌 حجم باقی‌مانده: <b>0.03 lot</b>",
@@ -2755,9 +2904,11 @@ async function registerEvent(
       `💵 سود TP3: <b>+${money(
         TP3_USD
       )}</b>`,
-      `🇮🇷 تومان: <b>+${tomanText(
-        pnlToman
-      )}</b>`,
+      fx > 0
+        ? `🇮🇷 تومان: <b>+${tomanText(
+            pnlToman
+          )}</b>`
+        : "🇮🇷 تومان: <b>در دسترس نیست</b>",
       "",
       "📦 بسته‌شده: <b>0.03 lot</b>",
       `💎 مجموع سود برنامه: <b>+${money(
@@ -2803,11 +2954,13 @@ async function registerEvent(
       `💵 زیان: <b>-${money(
         RISK_USD
       )}</b>`,
-      `🇮🇷 تومان: <b>-${tomanText(
-        Math.abs(
-          pnlToman
-        )
-      )}</b>`,
+      fx > 0
+        ? `🇮🇷 تومان: <b>-${tomanText(
+            Math.abs(
+              pnlToman
+            )
+          )}</b>`
+        : "🇮🇷 تومان: <b>در دسترس نیست</b>",
       "",
       "⚠️ معامله بسته شد.",
       "",
@@ -3116,10 +3269,6 @@ async function monitorRun(
     };
   }
 
-  /*
-   * قیمت جاری را در DB ذخیره می‌کنیم.
-   * chart قبلی نیز حفظ می‌شود.
-   */
   await prisma.analysisRun.update(
     {
       where: {
@@ -3321,14 +3470,8 @@ async function getDashboard() {
     await getPerformance();
 
   const usdToToman =
-    await getUsdToTomanRate().catch(
-      () => 0
-    );
+    await getSafeUsdToTomanRate();
 
-  /*
-   * مهم:
-   * اینجا Twelve Data برای dashboard صدا زده نمی‌شود.
-   */
   const rows =
     await prisma.analysisRun.findMany(
       {
@@ -3346,10 +3489,6 @@ async function getDashboard() {
       }
     );
 
-  /*
-   * ابتدا رکوردی را پیدا می‌کنیم که
-   * نمودار واقعی در آن ذخیره شده باشد.
-   */
   let chartRow =
     rows.find(
       (row: any) => {
@@ -3371,9 +3510,6 @@ async function getDashboard() {
       }
     );
 
-  /*
-   * سپس آخرین رکورد دارای قیمت را پیدا می‌کنیم.
-   */
   let marketRow =
     rows.find(
       (row: any) => {
@@ -3389,10 +3525,6 @@ async function getDashboard() {
       }
     );
 
-  /*
-   * اگر هنوز هیچ قیمت ذخیره‌شده‌ای وجود ندارد،
-   * فقط یک بار قیمت می‌گیریم تا dashboard خالی نباشد.
-   */
   if (!marketRow) {
     try {
       const price =
@@ -3440,10 +3572,6 @@ async function getDashboard() {
     }
   }
 
-  /*
-   * اگر chartRow پیدا نشد، ممکن است همان marketRow
-   * حاوی chart باشد.
-   */
   if (
     !chartRow &&
     marketRow
@@ -3472,10 +3600,6 @@ async function getDashboard() {
           {}) as RunMeta)
       : {};
 
-  /*
-   * اگر chart از یک signal/no-trade قدیمی‌تر باشد،
-   * current price همچنان از جدیدترین marketRow گرفته می‌شود.
-   */
   const chart =
     chartMeta.chart ||
     null;
@@ -3537,14 +3661,8 @@ async function getDashboard() {
         }
       : null,
 
-    /*
-     * خروجی مخصوص نمودار جدید.
-     */
     chart,
 
-    /*
-     * مقادیر اصلی برای رسم خطوط روی نمودار.
-     */
     chartMeta: {
       entry:
         num(
@@ -3653,9 +3771,6 @@ async function getDashboard() {
   };
 }
 
-/*
- * دسترسی امن به metadata رکورد active.
- */
 function metaValue(
   metadata: unknown,
   key: string
@@ -3822,10 +3937,12 @@ async function createSessionReport(
   }
 
   const fx =
-    await getUsdToTomanRate();
+    await getSafeUsdToTomanRate();
 
   const toman =
-    pnl * fx;
+    fx > 0
+      ? pnl * fx
+      : 0;
 
   const message = [
     "━━━━━━━━━━━━━━━━━━",
@@ -3841,13 +3958,15 @@ async function createSessionReport(
         ? "+"
         : ""
     }${money(pnl)}</b>`,
-    `🇮🇷 تومان: <b>${
-      toman >= 0
-        ? "+"
-        : "-"
-    }${tomanText(
-      Math.abs(toman)
-    )}</b>`,
+    fx > 0
+      ? `🇮🇷 تومان: <b>${
+          toman >= 0
+            ? "+"
+            : "-"
+        }${tomanText(
+          Math.abs(toman)
+        )}</b>`
+      : "🇮🇷 تومان: <b>در دسترس نیست</b>",
     "",
     "━━━━━━━━━━━━━━━━━━",
   ].join("\n");
@@ -3970,10 +4089,6 @@ export async function GET(
     const session =
       await getSession();
 
-    /*
-     * پروژه شما session.user ندارد.
-     * ساختار session شامل userId است.
-     */
     if (
       !session?.userId
     ) {
