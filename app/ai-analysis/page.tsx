@@ -14,6 +14,7 @@ function money(v: number | null | undefined) {
 
 function toman(v: number | null | undefined) {
   const n = Number(v);
+
   return `${tomanFmt.format(
     Math.round(Number.isFinite(n) ? n : 0)
   )} تومان`;
@@ -21,6 +22,7 @@ function toman(v: number | null | undefined) {
 
 function price(v: number | null | undefined) {
   const n = Number(v);
+
   return Number.isFinite(n) ? n.toFixed(2) : "—";
 }
 
@@ -203,6 +205,28 @@ const defaultTimeframes = [
   "4h",
 ];
 
+const ACTIVE_SIGNAL_STATES = new Set([
+  "AI_PENDING",
+  "AI_TP1",
+  "AI_TP2",
+]);
+
+function isActiveSignal(
+  active?: Dashboard["active"]
+): active is NonNullable<Dashboard["active"]> {
+  if (!active) {
+    return false;
+  }
+
+  if (!ACTIVE_SIGNAL_STATES.has(active.status)) {
+    return false;
+  }
+
+  const direction = active.metadata?.direction;
+
+  return direction === "BUY" || direction === "SELL";
+}
+
 export default function AIAnalysisPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [busy, setBusy] = useState(true);
@@ -275,8 +299,27 @@ export default function AIAnalysisPage() {
     };
   }, [load]);
 
+  /*
+   * مهم:
+   * برای نمودار دیگر latest را به عنوان سیگنال فعال استفاده نمی‌کنیم.
+   * فقط active معتبر اجازه نمایش Entry / SL / TP را دارد.
+   */
+  const activeSignal = useMemo(() => {
+    return isActiveSignal(data?.active)
+      ? data.active
+      : null;
+  }, [data?.active]);
+
+  const activeMeta: Meta | null =
+    activeSignal?.metadata || null;
+
+  /*
+   * برای کارت‌های اطلاعاتی، اگر سیگنال فعال باشد
+   * اطلاعات active نمایش داده می‌شود.
+   * در غیر این صورت آخرین تحلیل ثبت‌شده نمایش داده می‌شود.
+   */
   const meta: Meta | null =
-    data?.active?.metadata ||
+    activeSignal?.metadata ||
     data?.latest?.metadata ||
     null;
 
@@ -532,8 +575,9 @@ export default function AIAnalysisPage() {
 
           <GoldChart
             candles={candles}
-            meta={meta}
+            meta={activeMeta}
             timeframe={selectedTimeframe}
+            hasActiveSignal={Boolean(activeSignal)}
           />
         </section>
 
@@ -546,16 +590,20 @@ export default function AIAnalysisPage() {
 
               <span
                 className={
-                  meta?.direction === "BUY"
+                  activeSignal?.metadata?.direction ===
+                  "BUY"
                     ? "buy"
-                    : meta?.direction === "SELL"
+                    : activeSignal?.metadata?.direction ===
+                      "SELL"
                     ? "sell"
                     : "neutral"
                 }
               >
-                {meta?.direction === "BUY"
+                {activeSignal?.metadata?.direction ===
+                "BUY"
                   ? "🟢 BUY"
-                  : meta?.direction === "SELL"
+                  : activeSignal?.metadata?.direction ===
+                    "SELL"
                   ? "🔴 SELL"
                   : "NO TRADE"}
               </span>
@@ -565,11 +613,19 @@ export default function AIAnalysisPage() {
               {typeof meta?.currentPrice ===
               "number"
                 ? price(meta.currentPrice)
+                : candles.length
+                ? price(
+                    candles[
+                      candles.length - 1
+                    ]?.close
+                  )
                 : "—"}
             </div>
 
             <div className="price-sub">
-              آخرین قیمت ثبت‌شده توسط موتور بازار
+              {activeSignal
+                ? "قیمت فعلی و سیگنال فعال XAUUSD"
+                : "آخرین قیمت ثبت‌شده XAUUSD"}
             </div>
 
             <div className="meta-row">
@@ -673,20 +729,20 @@ export default function AIAnalysisPage() {
         <section className="levels-grid">
           <Level
             title="ورود"
-            value={meta?.entry}
+            value={activeMeta?.entry}
             tone="entry"
           />
 
           <Level
             title="حد ضرر"
-            value={meta?.stopLoss}
+            value={activeMeta?.stopLoss}
             tone="sl"
             extra={
-              meta
+              activeMeta
                 ? `-${money(
-                    meta.riskUsd
+                    activeMeta.riskUsd
                   )} · ${toman(
-                    meta.riskToman
+                    activeMeta.riskToman
                   )}`
                 : undefined
             }
@@ -694,14 +750,14 @@ export default function AIAnalysisPage() {
 
           <Level
             title="TP1 · 0.04 lot"
-            value={meta?.tp1}
+            value={activeMeta?.tp1}
             tone="tp"
             extra={
-              meta
+              activeMeta
                 ? `+${money(
-                    meta.tp1Usd
+                    activeMeta.tp1Usd
                   )} · 🇮🇷 ${toman(
-                    meta.tp1Toman
+                    activeMeta.tp1Toman
                   )}`
                 : undefined
             }
@@ -709,14 +765,14 @@ export default function AIAnalysisPage() {
 
           <Level
             title="TP2 · 0.03 lot"
-            value={meta?.tp2}
+            value={activeMeta?.tp2}
             tone="tp"
             extra={
-              meta
+              activeMeta
                 ? `+${money(
-                    meta.tp2Usd
+                    activeMeta.tp2Usd
                   )} · 🇮🇷 ${toman(
-                    meta.tp2Toman
+                    activeMeta.tp2Toman
                   )}`
                 : undefined
             }
@@ -724,14 +780,14 @@ export default function AIAnalysisPage() {
 
           <Level
             title="TP3 · 0.03 lot"
-            value={meta?.tp3}
+            value={activeMeta?.tp3}
             tone="tp"
             extra={
-              meta
+              activeMeta
                 ? `+${money(
-                    meta.tp3Usd
+                    activeMeta.tp3Usd
                   )} · 🇮🇷 ${toman(
-                    meta.tp3Toman
+                    activeMeta.tp3Toman
                   )}`
                 : undefined
             }
@@ -750,16 +806,16 @@ export default function AIAnalysisPage() {
           <Info
             title="ریسک استاپ"
             value={
-              meta
+              activeMeta
                 ? `-${money(
-                    meta.riskUsd
+                    activeMeta.riskUsd
                   )}`
                 : "-$40"
             }
             sub={
-              meta
+              activeMeta
                 ? `🇮🇷 ${toman(
-                    meta.riskToman
+                    activeMeta.riskToman
                   )}`
                 : "بر اساس نرخ ثبت‌شده"
             }
@@ -769,16 +825,16 @@ export default function AIAnalysisPage() {
           <Info
             title="حداکثر سود"
             value={
-              meta
+              activeMeta
                 ? `+${money(
-                    meta.totalPotentialUsd
+                    activeMeta.totalPotentialUsd
                   )}`
                 : "+$80"
             }
             sub={
-              meta
+              activeMeta
                 ? `🇮🇷 ${toman(
-                    meta.totalPotentialToman
+                    activeMeta.totalPotentialToman
                   )}`
                 : "TP1 + TP2 + TP3"
             }
@@ -1251,10 +1307,12 @@ function GoldChart({
   candles,
   meta,
   timeframe,
+  hasActiveSignal,
 }: {
   candles: Candle[];
   meta: Meta | null;
   timeframe: string;
+  hasActiveSignal: boolean;
 }) {
   const width = 1200;
   const height = 520;
@@ -1286,20 +1344,35 @@ function GoldChart({
       ]
     );
 
+    /*
+     * خیلی مهم:
+     * فقط وقتی سیگنال فعال داریم Entry/SL/TP
+     * در محدوده قیمت نمودار دخالت داده می‌شوند.
+     *
+     * در حالت NO TRADE هیچ سطح قبلی وارد
+     * محاسبه ارتفاع نمودار نمی‌شود.
+     */
+    const signalLevels = hasActiveSignal
+      ? [
+          meta?.entry,
+          meta?.stopLoss,
+          meta?.tp1,
+          meta?.tp2,
+          meta?.tp3,
+        ].filter(
+          (v): v is number =>
+            typeof v === "number" &&
+            Number.isFinite(v)
+        )
+      : [];
+
     const levels = [
-      meta?.entry,
-      meta?.stopLoss,
-      meta?.tp1,
-      meta?.tp2,
-      meta?.tp3,
-      meta?.analysis?.support,
-      meta?.analysis?.resistance,
-      meta?.currentPrice,
-    ].filter(
-      (v): v is number =>
-        typeof v === "number" &&
-        Number.isFinite(v)
-    );
+      ...signalLevels,
+      /*
+       * Support/Resistance دیگر هرگز روی
+       * نمودار رسم نمی‌شوند.
+       */
+    ];
 
     const minRaw = Math.min(
       ...allValues,
@@ -1377,6 +1450,7 @@ function GoldChart({
   }, [
     visibleCandles,
     meta,
+    hasActiveSignal,
   ]);
 
   if (
@@ -1416,71 +1490,59 @@ function GoldChart({
     x,
   } = chartData;
 
-  const priceLevels = [
-    {
-      name: "ENTRY",
-      value: meta?.entry,
-      className: "chart-entry",
-    },
-    {
-      name: "SL",
-      value: meta?.stopLoss,
-      className: "chart-sl",
-    },
-    {
-      name: "TP1",
-      value: meta?.tp1,
-      className: "chart-tp",
-    },
-    {
-      name: "TP2",
-      value: meta?.tp2,
-      className: "chart-tp",
-    },
-    {
-      name: "TP3",
-      value: meta?.tp3,
-      className: "chart-tp",
-    },
-  ].filter(
-    (
-      level
-    ): level is {
-      name: string;
-      value: number;
-      className: string;
-    } =>
-      typeof level.value === "number" &&
-      Number.isFinite(level.value)
-  );
+  /*
+   * فقط در صورت وجود سیگنال فعال
+   * این خطوط روی نمودار ساخته می‌شوند.
+   */
+  const priceLevels = hasActiveSignal
+    ? [
+        {
+          name: "ENTRY",
+          value: meta?.entry,
+          className: "chart-entry",
+        },
+        {
+          name: "SL",
+          value: meta?.stopLoss,
+          className: "chart-sl",
+        },
+        {
+          name: "TP1",
+          value: meta?.tp1,
+          className: "chart-tp",
+        },
+        {
+          name: "TP2",
+          value: meta?.tp2,
+          className: "chart-tp",
+        },
+        {
+          name: "TP3",
+          value: meta?.tp3,
+          className: "chart-tp",
+        },
+      ].filter(
+        (
+          level
+        ): level is {
+          name: string;
+          value: number;
+          className: string;
+        } =>
+          typeof level.value === "number" &&
+          Number.isFinite(level.value)
+      )
+    : [];
 
-  const extraLevels = [
-    {
-      name: "SUPPORT",
-      value: meta?.analysis?.support,
-      className: "chart-support",
-    },
-    {
-      name: "RESISTANCE",
-      value:
-        meta?.analysis?.resistance,
-      className: "chart-resistance",
-    },
-  ].filter(
-    (
-      level
-    ): level is {
-      name: string;
-      value: number;
-      className: string;
-    } =>
-      typeof level.value === "number" &&
-      Number.isFinite(level.value)
-  );
+  /*
+   * Support / Resistance عمداً حذف شده است.
+   * طبق طراحی جدید، در حالت عادی و حتی در
+   * سیگنال فعال هم روی نمودار نمایش داده نمی‌شوند.
+   */
 
   const currentPrice =
     typeof meta?.currentPrice ===
-    "number" &&
+      "number" &&
     Number.isFinite(meta.currentPrice)
       ? meta.currentPrice
       : visibleCandles[
@@ -1507,15 +1569,22 @@ function GoldChart({
             {visibleCandles.length} کندل
           </span>
 
-          {meta?.direction && (
-            <span
-              className={
-                meta.direction === "BUY"
-                  ? "chart-buy"
-                  : "chart-sell"
-              }
-            >
-              {meta.direction}
+          {hasActiveSignal &&
+            meta?.direction && (
+              <span
+                className={
+                  meta.direction === "BUY"
+                    ? "chart-buy"
+                    : "chart-sell"
+                }
+              >
+                {meta.direction}
+              </span>
+            )}
+
+          {!hasActiveSignal && (
+            <span className="chart-neutral">
+              NO TRADE
             </span>
           )}
         </div>
@@ -1701,72 +1770,6 @@ function GoldChart({
                     }
                     opacity="0.95"
                   />
-                </g>
-              );
-            }
-          )}
-
-          {extraLevels.map(
-            (level) => {
-              const yy =
-                y(level.value);
-
-              return (
-                <g
-                  key={level.name}
-                >
-                  <line
-                    x1={
-                      padding.left
-                    }
-                    x2={
-                      width -
-                      padding.right
-                    }
-                    y1={yy}
-                    y2={yy}
-                    stroke={
-                      level.name ===
-                      "SUPPORT"
-                        ? "#55d88c"
-                        : "#ff9c52"
-                    }
-                    strokeOpacity="0.55"
-                    strokeDasharray="4 7"
-                  />
-
-                  <rect
-                    x={
-                      padding.left +
-                      8
-                    }
-                    y={yy - 14}
-                    width="88"
-                    height="23"
-                    rx="7"
-                    fill="#08090b"
-                    stroke="#ffffff"
-                    strokeOpacity="0.08"
-                  />
-
-                  <text
-                    x={
-                      padding.left +
-                      18
-                    }
-                    y={yy + 2}
-                    fill={
-                      level.name ===
-                      "SUPPORT"
-                        ? "#55d88c"
-                        : "#ff9c52"
-                    }
-                    fontSize="10"
-                    fontWeight="800"
-                    direction="ltr"
-                  >
-                    {level.name}
-                  </text>
                 </g>
               );
             }
@@ -2000,30 +2003,29 @@ function GoldChart({
       </div>
 
       <div className="chart-legend">
-        <span>
-          <i className="legend-entry" />
-          Entry
-        </span>
+        {hasActiveSignal ? (
+          <>
+            <span>
+              <i className="legend-entry" />
+              Entry
+            </span>
 
-        <span>
-          <i className="legend-sl" />
-          Stop Loss
-        </span>
+            <span>
+              <i className="legend-sl" />
+              Stop Loss
+            </span>
 
-        <span>
-          <i className="legend-tp" />
-          TP1 / TP2 / TP3
-        </span>
-
-        <span>
-          <i className="legend-support" />
-          Support
-        </span>
-
-        <span>
-          <i className="legend-resistance" />
-          Resistance
-        </span>
+            <span>
+              <i className="legend-tp" />
+              TP1 / TP2 / TP3
+            </span>
+          </>
+        ) : (
+          <span className="chart-only-price">
+            <i className="legend-price" />
+            قیمت فعلی · بدون سیگنال فعال
+          </span>
+        )}
 
         <span>
           <i className="legend-price" />
@@ -2557,6 +2559,11 @@ button{
   font-weight:900;
 }
 
+.chart-neutral{
+  color:#858c97;
+  font-weight:800;
+}
+
 .svg-chart-wrap{
   width:100%;
   padding:0 12px 12px;
@@ -2605,16 +2612,12 @@ button{
   background:#d6ad45;
 }
 
-.legend-support{
-  background:#55d88c;
-}
-
-.legend-resistance{
-  background:#ff9c52;
-}
-
 .legend-price{
   background:#f2f4f7;
+}
+
+.chart-only-price{
+  color:#a0a6b0;
 }
 
 .chart-empty{
