@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // ============================================================
-// AI ANALYSIS / XAUUSD
+// TRADING AI ENGINE
+// XAUUSD / GOLD
 // ============================================================
 
 const SYMBOL = "XAU/USD";
@@ -18,7 +19,7 @@ const CONTRACT_SIZE = 100;
 // TRADE CONFIG
 // ============================================================
 
-const TOTAL_LOT = 0.10;
+const TOTAL_LOT = 0.1;
 
 const TP1_LOT = 0.04;
 const TP2_LOT = 0.03;
@@ -32,7 +33,7 @@ const TP3_USD = 36;
 
 const TOTAL_POTENTIAL_USD = 80;
 
-// فاصله‌ها بر اساس حجم و ارزش دلاری
+// Dollar value / lot calculation
 const STOP_DISTANCE =
   STOP_USD / (TOTAL_LOT * CONTRACT_SIZE);
 
@@ -45,20 +46,31 @@ const TP2_DISTANCE =
 const TP3_DISTANCE =
   TP3_USD / (TP3_LOT * CONTRACT_SIZE);
 
-const DEFAULT_NEWS_MINUTES = 30;
-
 // ============================================================
 // SIGNAL FILTER
-// عمداً نسبت به نسخه قبلی آسان‌تر شده
 // ============================================================
 
 const SCORE_TO_SIGNAL = 60;
 const CONFIRMATIONS_TO_SIGNAL = 2;
 
-const MONITOR_STALE_MS = 60_000;
+// جلوگیری از ساختن صدها تحلیل در هر refresh
+const SCAN_COOLDOWN_MS = 60_000;
+
+// بعد از یک دقیقه دوباره وضعیت معامله بررسی می‌شود
+const MONITOR_STALE_MS = 30_000;
+
+// ============================================================
+// TELEGRAM
+// ============================================================
 
 const TELEGRAM_RETRY_COUNT = 3;
 const TELEGRAM_RETRY_DELAY_MS = 800;
+
+// ============================================================
+// NEWS
+// ============================================================
+
+const DEFAULT_NEWS_MINUTES = 30;
 
 // ============================================================
 // ENV
@@ -73,7 +85,7 @@ const CRON_SECRET =
   process.env.NEWS_CRON_SECRET;
 
 // ============================================================
-// MARKET SESSIONS
+// SESSION
 // ============================================================
 
 const SESSION_ZONES = {
@@ -129,6 +141,14 @@ type EventType =
   | "SL"
   | "BREAKEVEN";
 
+type ChartTimeframe =
+  | "1min"
+  | "5min"
+  | "15min"
+  | "30min"
+  | "1h"
+  | "4h";
+
 // ============================================================
 // TYPES
 // ============================================================
@@ -150,6 +170,7 @@ type EventRecord = {
   pnlUsd: number;
   pnlToman: number;
   usdToToman: number;
+
   telegramMessageId?: string;
   telegramDelivered?: boolean;
   telegramError?: string;
@@ -233,103 +254,129 @@ type RunMeta = {
   telegramDelivered?: boolean;
 
   telegramError?: string;
+
+  lastTelegramAttemptAt?: string;
 };
 
 // ============================================================
-// BASIC HELPERS
+// HELPERS
 // ============================================================
 
-function num(v: unknown): number {
+function num(value: unknown): number {
   const n =
-    typeof v === "number"
-      ? v
-      : Number(v);
+    typeof value === "number"
+      ? value
+      : Number(value);
 
   return Number.isFinite(n) ? n : 0;
 }
 
 function round(
-  v: number,
+  value: number,
   digits = 2,
 ): number {
-  const p = 10 ** digits;
+  const factor = 10 ** digits;
 
-  return Math.round(v * p) / p;
+  return (
+    Math.round(value * factor) /
+    factor
+  );
 }
 
-function money(v: number): number {
-  return Math.round(v * 100) / 100;
+function money(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
-function toman(v: number): number {
-  return Math.round(v);
+function toman(value: number): number {
+  return Math.round(value);
 }
 
-function formatToman(v: number): string {
-  return `${new Intl.NumberFormat("fa-IR").format(
-    Math.round(v),
-  )} تومان`;
-}
-
-function formatUsd(v: number): string {
-  return `$${new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(Math.abs(v))}`;
-}
-
-function fmtPrice(v: number): string {
-  return v.toFixed(2);
-}
-
-function sleep(ms: number): Promise<void> {
+function sleep(
+  ms: number,
+): Promise<void> {
   return new Promise(resolve =>
     setTimeout(resolve, ms),
   );
 }
 
-// ============================================================
-// IRAN TIME
-// ============================================================
+function fmtPrice(
+  value: number,
+): string {
+  return Number.isFinite(value)
+    ? value.toFixed(2)
+    : "—";
+}
 
-function faDateTime(date: Date): string {
-  return new Intl.DateTimeFormat("fa-IR", {
-    timeZone: "Asia/Tehran",
+function formatUsd(
+  value: number,
+): string {
+  return `$${new Intl.NumberFormat(
+    "en-US",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    },
+  ).format(Math.abs(value))}`;
+}
 
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-
-    hour12: false,
-  }).format(date);
+function formatToman(
+  value: number,
+): string {
+  return `${new Intl.NumberFormat(
+    "fa-IR",
+  ).format(Math.round(value))} تومان`;
 }
 
 // ============================================================
-// SESSION
+// IRAN DATE
+// ============================================================
+
+function faDateTime(
+  date: Date,
+): string {
+  return new Intl.DateTimeFormat(
+    "fa-IR",
+    {
+      timeZone: "Asia/Tehran",
+
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+
+      hour12: false,
+    },
+  ).format(date);
+}
+
+// ============================================================
+// SESSION HELPERS
 // ============================================================
 
 function localHour(
   date: Date,
   timezone: string,
 ): number {
-  const parts = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      timeZone: timezone,
-      hour: "2-digit",
-      hour12: false,
-    },
-  ).formatToParts(date);
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: timezone,
+        hour: "2-digit",
+        hour12: false,
+      },
+    ).formatToParts(date);
 
-  const value = Number(
-    parts.find(x => x.type === "hour")?.value ?? 0,
+  const hour = Number(
+    parts.find(
+      part => part.type === "hour",
+    )?.value ?? 0,
   );
 
-  return value === 24 ? 0 : value;
+  return hour === 24 ? 0 : hour;
 }
 
 function sessionIsOpen(
@@ -340,9 +387,15 @@ function sessionIsOpen(
   },
   date = new Date(),
 ): boolean {
-  const h = localHour(date, zone.timezone);
+  const hour = localHour(
+    date,
+    zone.timezone,
+  );
 
-  return h >= zone.start && h < zone.end;
+  return (
+    hour >= zone.start &&
+    hour < zone.end
+  );
 }
 
 function currentSession(
@@ -378,12 +431,15 @@ function currentSession(
   return "Sydney";
 }
 
-function sessionInfo(name: SessionName) {
-  const s = SESSION_ZONES[name];
+function sessionInfo(
+  name: SessionName,
+) {
+  const session =
+    SESSION_ZONES[name];
 
   return {
-    ...s,
-    label: `${s.flag} ${s.fa}`,
+    ...session,
+    label: `${session.flag} ${session.fa}`,
   };
 }
 
@@ -395,12 +451,15 @@ function sessionKey(
     SESSION_ZONES[name].timezone;
 
   const dateText =
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(date);
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      },
+    ).format(date);
 
   return `${name}-${dateText}`;
 }
@@ -409,20 +468,34 @@ function sessionKey(
 // TWELVE DATA
 // ============================================================
 
-async function td(url: string): Promise<any> {
+async function td(
+  path: string,
+): Promise<any> {
   if (!TD_KEY) {
     throw new Error(
       "TWELVE_DATA_API_KEY تنظیم نشده است.",
     );
   }
 
-  const full =
-    `${url}${url.includes("?") ? "&" : "?"}` +
-    `apikey=${encodeURIComponent(TD_KEY)}`;
+  const separator =
+    path.includes("?")
+      ? "&"
+      : "?";
 
-  const response = await fetch(full, {
-    cache: "no-store",
-  });
+  const url =
+    `${path}${separator}` +
+    `apikey=${encodeURIComponent(
+      TD_KEY,
+    )}`;
+
+  const response =
+    await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Accept:
+          "application/json",
+      },
+    });
 
   const data =
     await response
@@ -448,43 +521,59 @@ async function td(url: string): Promise<any> {
 // ============================================================
 
 async function candles(
-  interval: string,
+  interval: ChartTimeframe | string,
   outputsize: number,
 ): Promise<Candle[]> {
-  const data = await td(
-    `https://api.twelvedata.com/time_series` +
-      `?symbol=${encodeURIComponent(SYMBOL)}` +
-      `&interval=${interval}` +
-      `&outputsize=${outputsize}` +
-      `&order=ASC` +
-      `&timezone=UTC`,
-  );
+  const data =
+    await td(
+      "https://api.twelvedata.com/time_series" +
+        `?symbol=${encodeURIComponent(
+          SYMBOL,
+        )}` +
+        `&interval=${encodeURIComponent(
+          interval,
+        )}` +
+        `&outputsize=${outputsize}` +
+        `&order=ASC` +
+        `&timezone=UTC`,
+    );
 
-  if (!Array.isArray(data?.values)) {
+  if (
+    !Array.isArray(
+      data?.values,
+    )
+  ) {
     throw new Error(
       `داده کندل ${interval} دریافت نشد.`,
     );
   }
 
   return data.values
-    .map((x: any) => ({
-      datetime: String(x.datetime),
+    .map((item: any) => ({
+      datetime:
+        String(
+          item.datetime,
+        ),
 
-      open: num(x.open),
-      high: num(x.high),
-      low: num(x.low),
-      close: num(x.close),
-
-      volume: num(x.volume),
+      open: num(item.open),
+      high: num(item.high),
+      low: num(item.low),
+      close: num(item.close),
+      volume: num(item.volume),
     }))
     .filter(
-      (x: Candle) =>
-        x.close > 0 &&
-        x.high > 0 &&
-        x.low > 0,
+      (item: Candle) =>
+        item.open > 0 &&
+        item.high > 0 &&
+        item.low > 0 &&
+        item.close > 0 &&
+        item.high >= item.low,
     )
     .sort(
-      (a: Candle, b: Candle) =>
+      (
+        a: Candle,
+        b: Candle,
+      ) =>
         a.datetime.localeCompare(
           b.datetime,
         ),
@@ -496,12 +585,16 @@ async function candles(
 // ============================================================
 
 async function latestPrice(): Promise<number> {
-  const data = await td(
-    `https://api.twelvedata.com/price` +
-      `?symbol=${encodeURIComponent(SYMBOL)}`,
-  );
+  const data =
+    await td(
+      "https://api.twelvedata.com/price" +
+        `?symbol=${encodeURIComponent(
+          SYMBOL,
+        )}`,
+    );
 
-  const price = num(data?.price);
+  const price =
+    num(data?.price);
 
   if (!price) {
     throw new Error(
@@ -520,14 +613,17 @@ function sma(
   values: number[],
   period: number,
 ): number {
-  if (!values.length) return 0;
+  if (!values.length) {
+    return 0;
+  }
 
   const slice =
     values.slice(-period);
 
   return (
     slice.reduce(
-      (a, b) => a + b,
+      (sum, value) =>
+        sum + value,
       0,
     ) / slice.length
   );
@@ -537,30 +633,36 @@ function ema(
   values: number[],
   period: number,
 ): number {
-  if (!values.length) return 0;
-
-  const k = 2 / (period + 1);
-
-  let out = values[0];
-
-  for (
-    let i = 1;
-    i < values.length;
-    i++
-  ) {
-    out =
-      values[i] * k +
-      out * (1 - k);
+  if (!values.length) {
+    return 0;
   }
 
-  return out;
+  const k =
+    2 / (period + 1);
+
+  let result =
+    values[0];
+
+  for (
+    let index = 1;
+    index < values.length;
+    index++
+  ) {
+    result =
+      values[index] * k +
+      result * (1 - k);
+  }
+
+  return result;
 }
 
 function rsi(
   values: number[],
   period = 14,
 ): number {
-  if (values.length <= period) {
+  if (
+    values.length <= period
+  ) {
     return 50;
   }
 
@@ -572,14 +674,14 @@ function rsi(
     i <= period;
     i++
   ) {
-    const d =
+    const difference =
       values[i] -
       values[i - 1];
 
-    if (d >= 0) {
-      gain += d;
+    if (difference >= 0) {
+      gain += difference;
     } else {
-      loss -= d;
+      loss -= difference;
     }
   }
 
@@ -591,22 +693,32 @@ function rsi(
     i < values.length;
     i++
   ) {
-    const d =
+    const difference =
       values[i] -
       values[i - 1];
 
     gain =
-      (gain * (period - 1) +
-        Math.max(d, 0)) /
+      (gain *
+        (period - 1) +
+        Math.max(
+          difference,
+          0,
+        )) /
       period;
 
     loss =
-      (loss * (period - 1) +
-        Math.max(-d, 0)) /
+      (loss *
+        (period - 1) +
+        Math.max(
+          -difference,
+          0,
+        )) /
       period;
   }
 
-  if (loss === 0) return 100;
+  if (loss === 0) {
+    return 100;
+  }
 
   return (
     100 -
@@ -616,39 +728,46 @@ function rsi(
 }
 
 function atr(
-  c: Candle[],
+  data: Candle[],
   period = 14,
 ): number {
-  if (c.length < period + 1) {
+  if (
+    data.length <
+    period + 1
+  ) {
     return 0;
   }
 
-  const tr: number[] = [];
+  const trueRanges: number[] =
+    [];
 
   for (
     let i = 1;
-    i < c.length;
+    i < data.length;
     i++
   ) {
-    tr.push(
+    trueRanges.push(
       Math.max(
-        c[i].high -
-          c[i].low,
+        data[i].high -
+          data[i].low,
 
         Math.abs(
-          c[i].high -
-            c[i - 1].close,
+          data[i].high -
+            data[i - 1].close,
         ),
 
         Math.abs(
-          c[i].low -
-            c[i - 1].close,
+          data[i].low -
+            data[i - 1].close,
         ),
       ),
     );
   }
 
-  return sma(tr, period);
+  return sma(
+    trueRanges,
+    period,
+  );
 }
 
 function macd(
@@ -661,13 +780,13 @@ function macd(
 }
 
 function swings(
-  c: Candle[],
+  data: Candle[],
   lookback = 30,
 ) {
-  const data =
-    c.slice(-lookback);
+  const sample =
+    data.slice(-lookback);
 
-  if (!data.length) {
+  if (!sample.length) {
     return {
       support: 0,
       resistance: 0,
@@ -676,22 +795,32 @@ function swings(
 
   return {
     support: Math.min(
-      ...data.map(x => x.low),
+      ...sample.map(
+        item => item.low,
+      ),
     ),
 
     resistance: Math.max(
-      ...data.map(x => x.high),
+      ...sample.map(
+        item => item.high,
+      ),
     ),
   };
 }
 
 function candleBias(
-  c: Candle[],
+  data: Candle[],
 ): number {
-  const previous = c.at(-2);
-  const current = c.at(-1);
+  const previous =
+    data.at(-2);
 
-  if (!previous || !current) {
+  const current =
+    data.at(-1);
+
+  if (
+    !previous ||
+    !current
+  ) {
     return 0;
   }
 
@@ -712,7 +841,8 @@ function candleBias(
     current.close >
       current.open &&
     (
-      body / range > 0.45 ||
+      body / range >
+        0.45 ||
       current.close >
         previous.high
     )
@@ -724,7 +854,8 @@ function candleBias(
     current.close <
       current.open &&
     (
-      body / range > 0.45 ||
+      body / range >
+        0.45 ||
       current.close <
         previous.low
     )
@@ -735,11 +866,17 @@ function candleBias(
   return 0;
 }
 
+// ============================================================
+// TREND
+// ============================================================
+
 function trendScore(
-  c: Candle[],
+  data: Candle[],
 ) {
   const closes =
-    c.map(x => x.close);
+    data.map(
+      item => item.close,
+    );
 
   const ema20 =
     ema(closes, 20);
@@ -771,12 +908,9 @@ function trendScore(
 
   return {
     direction,
-
     ema20,
     ema50,
-
     rsi: rsiValue,
-
     macd: macdValue,
   };
 }
@@ -813,20 +947,20 @@ function analyzeMarket(
 
   const buyVotes =
     directions.filter(
-      x => x === "BUY",
+      direction =>
+        direction === "BUY",
     ).length;
 
   const sellVotes =
     directions.filter(
-      x => x === "SELL",
+      direction =>
+        direction === "SELL",
     ).length;
 
   let direction:
     | Direction
     | null = null;
 
-  // سیستم نرم‌تر:
-  // 2 رأی هم‌جهت کافی است.
   if (
     buyVotes >= 2 &&
     buyVotes > sellVotes
@@ -840,8 +974,12 @@ function analyzeMarket(
   }
 
   const last =
-    num(m1.at(-1)?.close) ||
-    num(m5.at(-1)?.close);
+    num(
+      m1.at(-1)?.close,
+    ) ||
+    num(
+      m5.at(-1)?.close,
+    );
 
   const structure =
     swings(m5, 30);
@@ -853,24 +991,31 @@ function analyzeMarket(
     candleBias(m5);
 
   const volume =
-    num(m5.at(-1)?.volume);
+    num(
+      m5.at(-1)?.volume,
+    );
 
   const averageVolume =
     sma(
       m5
         .slice(0, -1)
-        .map(x => x.volume),
+        .map(
+          item =>
+            item.volume,
+        ),
       20,
     );
 
   let score = 0;
+
   let confirmations = 0;
 
-  const reasons: string[] = [];
+  const reasons: string[] =
+    [];
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // MTF
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (direction) {
     score += 25;
@@ -917,9 +1062,9 @@ function analyzeMarket(
     );
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // SUPPORT / RESISTANCE
-  // ==========================================================
+  // ----------------------------------------------------------
 
   const nearSupport =
     direction === "BUY" &&
@@ -953,9 +1098,9 @@ function analyzeMarket(
     );
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // CANDLE
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     (
@@ -975,15 +1120,15 @@ function analyzeMarket(
     );
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // VOLUME
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     volume > 0 &&
     averageVolume > 0 &&
     volume >=
-      averageVolume * 0.90
+      averageVolume * 0.9
   ) {
     score += 5;
     confirmations++;
@@ -993,9 +1138,9 @@ function analyzeMarket(
     );
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // MOMENTUM
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     direction === "BUY" &&
@@ -1023,9 +1168,9 @@ function analyzeMarket(
     );
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // EMA
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     direction &&
@@ -1048,9 +1193,9 @@ function analyzeMarket(
     );
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // RANGE
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     atrValue > 0 &&
@@ -1086,7 +1231,8 @@ function analyzeMarket(
     resistance:
       structure.resistance,
 
-    atr: atrValue,
+    atr:
+      atrValue,
 
     t1,
     t5,
@@ -1110,26 +1256,32 @@ async function newsBlock() {
           60_000,
     );
 
-  return prisma.economicEvent.findMany(
-    {
-      where: {
-        eventTime: {
-          gte: now,
-          lte: until,
+  try {
+    return await prisma.economicEvent.findMany(
+      {
+        where: {
+          eventTime: {
+            gte: now,
+            lte: until,
+          },
+
+          importance: {
+            gte: 3,
+          },
         },
 
-        importance: {
-          gte: 3,
+        orderBy: {
+          eventTime: "asc",
         },
-      },
 
-      orderBy: {
-        eventTime: "asc",
+        take: 10,
       },
-
-      take: 10,
-    },
-  );
+    );
+  } catch {
+    // اگر جدول/داده خبر مشکل داشت
+    // کل موتور سیگنال نباید از کار بیفتد.
+    return [];
+  }
 }
 
 // ============================================================
@@ -1138,65 +1290,70 @@ async function newsBlock() {
 
 async function getUsdToTomanRate() {
   if (!NETARZ_KEY) {
-    throw new Error(
-      "NETARZ_API_KEY تنظیم نشده است.",
-    );
+    return {
+      rate: 0,
+      asOf: "unavailable",
+    };
   }
 
-  const response =
-    await fetch(
-      "https://netarz.ir/api/fx/v1/rates?codes=USD",
-      {
-        headers: {
-          Authorization:
-            `Bearer ${NETARZ_KEY}`,
+  try {
+    const response =
+      await fetch(
+        "https://netarz.ir/api/fx/v1/rates?codes=USD",
+        {
+          headers: {
+            Authorization:
+              `Bearer ${NETARZ_KEY}`,
+          },
+
+          cache: "no-store",
         },
+      );
 
-        cache: "no-store",
-      },
-    );
+    const data =
+      await response
+        .json()
+        .catch(() => null);
 
-  const data =
-    await response
-      .json()
-      .catch(() => null);
+    if (!response.ok) {
+      return {
+        rate: 0,
+        asOf: "unavailable",
+      };
+    }
 
-  if (!response.ok) {
-    throw new Error(
-      data?.error?.message ||
-        "دریافت نرخ دلار ناموفق بود.",
-    );
+    const row =
+      Array.isArray(data?.data)
+        ? data.data.find(
+            (item: any) =>
+              item.code ===
+              "USD",
+          )
+        : null;
+
+    const rate =
+      num(
+        row?.mid ??
+          data?.meta?.usd_irt,
+      );
+
+    return {
+      rate: rate
+        ? Math.round(rate)
+        : 0,
+
+      asOf: String(
+        row?.as_of ??
+          data?.meta?.as_of ??
+          new Date().toISOString(),
+      ),
+    };
+  } catch {
+    return {
+      rate: 0,
+      asOf: "unavailable",
+    };
   }
-
-  const row =
-    Array.isArray(data?.data)
-      ? data.data.find(
-          (x: any) =>
-            x.code === "USD",
-        )
-      : null;
-
-  const rate =
-    num(
-      row?.mid ??
-        data?.meta?.usd_irt,
-    );
-
-  if (!rate) {
-    throw new Error(
-      "نرخ USD/IRR از سرویس نرخ ارز دریافت نشد.",
-    );
-  }
-
-  return {
-    rate: Math.round(rate),
-
-    asOf: String(
-      row?.as_of ??
-        data?.meta?.as_of ??
-        new Date().toISOString(),
-    ),
-  };
 }
 
 // ============================================================
@@ -1207,7 +1364,9 @@ function levels(
   entry: number,
   direction: Direction,
 ) {
-  if (direction === "BUY") {
+  if (
+    direction === "BUY"
+  ) {
     return {
       stopLoss: round(
         entry -
@@ -1320,7 +1479,7 @@ function eventPnl(
 // ============================================================
 
 async function sendTelegram(
-  text: string,
+  message: string,
 ): Promise<string> {
   const token =
     process.env.TELEGRAM_BOT_TOKEN;
@@ -1340,7 +1499,7 @@ async function sendTelegram(
   for (
     let attempt = 1;
     attempt <=
-      TELEGRAM_RETRY_COUNT;
+    TELEGRAM_RETRY_COUNT;
     attempt++
   ) {
     try {
@@ -1356,11 +1515,13 @@ async function sendTelegram(
             },
 
             body: JSON.stringify({
-              chat_id: chatId,
+              chat_id:
+                chatId,
 
-              text,
+              text: message,
 
-              parse_mode: "HTML",
+              parse_mode:
+                "HTML",
 
               disable_web_page_preview:
                 true,
@@ -1381,7 +1542,8 @@ async function sendTelegram(
       ) {
         return String(
           data.result
-            ?.message_id ?? "",
+            ?.message_id ??
+            "",
         );
       }
 
@@ -1412,7 +1574,7 @@ async function sendTelegram(
 }
 
 // ============================================================
-// TELEGRAM INITIAL SIGNAL
+// TELEGRAM SIGNAL
 // ============================================================
 
 function buildSignalTelegram(
@@ -1431,17 +1593,27 @@ function buildSignalTelegram(
         ? "متوسط"
         : "فعال";
 
-  return [
-    "🤖 <b>سیگنال هوش مصنوعی XAUUSD</b>",
+  const tomanLine =
+    meta.usdToToman > 0
+      ? `💱 دلار: <b>${new Intl.NumberFormat(
+          "fa-IR",
+        ).format(
+          meta.usdToToman,
+        )} تومان</b>`
+      : "💱 نرخ دلار تومان: <b>در دسترس نیست</b>";
 
-    "⚠️ این تحلیل توسط سیستم هوش مصنوعی تولید شده و تضمین‌کننده سود نیست.",
+  return [
+    "🤖 <b>TRADING AI — XAUUSD</b>",
+
+    "⚠️ این تحلیل سیگنال معاملاتی است و تضمین‌کننده سود نیست.",
 
     "",
 
     `🪙 <b>XAUUSD</b> | ${
-      meta.direction === "BUY"
-        ? "🟢 خرید BUY"
-        : "🔴 فروش SELL"
+      meta.direction ===
+      "BUY"
+        ? "🟢 BUY / خرید"
+        : "🔴 SELL / فروش"
     }`,
 
     `⭐ قدرت: <b>${strength}</b>`,
@@ -1451,7 +1623,9 @@ function buildSignalTelegram(
     `🕐 سشن: <b>${session.flag} ${session.fa}</b>`,
 
     `⏱️ ایران: <b>${faDateTime(
-      new Date(meta.createdAt),
+      new Date(
+        meta.createdAt,
+      ),
     )}</b>`,
 
     "",
@@ -1490,7 +1664,7 @@ function buildSignalTelegram(
       meta.tp3Usd,
     )}</b>`,
 
-    `📦 حجم: <b>${meta.totalLot.toFixed(
+    `📦 حجم کل: <b>${meta.totalLot.toFixed(
       2,
     )} lot</b>`,
 
@@ -1502,28 +1676,29 @@ function buildSignalTelegram(
 
     "🛡️ <b>مدیریت معامله</b>",
 
-    "• بعد از TP1 حد ضرر باقی‌مانده به ورود منتقل می‌شود.",
+    "• بعد از TP1 حد ضرر بخش باقی‌مانده به ورود منتقل می‌شود.",
 
-    "• بعد از TP2 حجم نهایی باقی می‌ماند.",
+    "• بعد از TP2 حد محافظتی روی TP1 قرار می‌گیرد.",
 
     "• TP3 معامله را کامل می‌کند.",
 
     "",
 
-    `💱 دلار: <b>${new Intl.NumberFormat(
-      "fa-IR",
-    ).format(
-      meta.usdToToman,
-    )} تومان</b>`,
+    tomanLine,
 
-    `🕒 نرخ: ${rateAsOf}`,
+    rateAsOf !==
+    "unavailable"
+      ? `🕒 نرخ: ${rateAsOf}`
+      : "",
 
     "",
 
-    "🟢 <b>سیگنال فعال است</b>",
+    "🟢 <b>سیگنال فعال شد</b>",
 
-    "📡 سیستم مانیتورینگ TP و SL را انجام می‌دهد.",
-  ].join("\n");
+    "📡 سیستم مانیتورینگ قیمت و TP/SL فعال است.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ============================================================
@@ -1547,97 +1722,148 @@ function buildEventTelegram(
       : event.type === "TP2"
         ? "🟢 هدف دوم فعال شد"
         : event.type === "TP3"
-          ? "🏆 فول تارگت — معامله برد"
-          : event.type === "BREAKEVEN"
+          ? "🏆 فول تارگت — معامله کامل شد"
+          : event.type ===
+              "BREAKEVEN"
             ? "🛡️ ریسک‌فری فعال شد"
             : "🔴 حد ضرر فعال شد";
 
-  let extra: string[] = [];
+  const extra: string[] =
+    [];
 
-  if (event.type === "TP1") {
-    extra = [
+  if (
+    event.type ===
+    "TP1"
+  ) {
+    extra.push(
       "",
       "🛡️ <b>ریسک‌فری فعال شد</b>",
       "",
-      "0.04 lot بسته شد.",
-      "0.06 lot باقی ماند.",
+      `${TP1_LOT.toFixed(
+        2,
+      )} lot بسته شد.`,
+      `${(
+        TOTAL_LOT -
+        TP1_LOT
+      ).toFixed(
+        2,
+      )} lot باقی ماند.`,
       "حد ضرر → نقطه ورود.",
       "",
       "📡 مانیتورینگ ادامه دارد.",
-    ];
+    );
   }
 
-  if (event.type === "TP2") {
-    extra = [
+  if (
+    event.type ===
+    "TP2"
+  ) {
+    extra.push(
       "",
       "🛡️ <b>مدیریت بعد از TP2</b>",
       "",
-      "0.03 lot بسته شد.",
-      "0.03 lot نهایی باقی ماند.",
+      `${TP2_LOT.toFixed(
+        2,
+      )} lot بسته شد.`,
+      `${(
+        TOTAL_LOT -
+        TP1_LOT -
+        TP2_LOT
+      ).toFixed(
+        2,
+      )} lot نهایی باقی ماند.`,
       `حد محافظتی → ${fmtPrice(
         meta.tp1,
       )}`,
       "",
       "📡 مانیتورینگ TP3 ادامه دارد.",
-    ];
+    );
   }
 
-  if (event.type === "TP3") {
-    extra = [
+  if (
+    event.type ===
+    "TP3"
+  ) {
+    extra.push(
       "",
       "🏆 <b>همه اهداف تکمیل شد.</b>",
       "",
       "معامله تمام شد.",
       "نتیجه: ✅ برد",
       "در کارنامه ثبت شد.",
-    ];
+    );
   }
 
   if (
-    event.type === "BREAKEVEN"
+    event.type ===
+    "BREAKEVEN"
   ) {
-    extra = [
+    extra.push(
       "",
       "🛡️ <b>معامله به حد محافظتی برگشت.</b>",
       "",
       "بخش باقی‌مانده بدون زیان بسته شد.",
       "نتیجه: 🛡️ ریسک‌فری",
       "در کارنامه ثبت شد.",
-    ];
+    );
   }
 
-  if (event.type === "SL") {
-    extra = [
+  if (
+    event.type ===
+    "SL"
+  ) {
+    extra.push(
       "",
       "⛔ <b>حد ضرر لمس شد.</b>",
       "",
       "معامله بسته شد.",
       "نتیجه: ❌ باخت",
       "در کارنامه ثبت شد.",
-    ];
+    );
   }
 
+  const tomanResult =
+    event.usdToToman > 0
+      ? `${
+          event.pnlToman >=
+          0
+            ? "+"
+            : "-"
+        }${formatToman(
+          Math.abs(
+            event.pnlToman,
+          ),
+        )}`
+      : "نرخ تومان در دسترس نیست";
+
   return [
-    "🤖 <b>به‌روزرسانی سیگنال XAUUSD</b>",
+    "🤖 <b>TRADING AI — XAUUSD</b>",
 
     status,
 
     "",
 
     `🪙 XAUUSD | ${
-      meta.direction === "BUY"
-        ? "🟢 خرید"
-        : "🔴 فروش"
+      meta.direction ===
+      "BUY"
+        ? "🟢 BUY"
+        : "🔴 SELL"
     }`,
 
     `🕐 سشن: ${
-      sessionInfo(meta.session).flag
+      sessionInfo(
+        meta.session,
+      ).flag
     } ${
-      sessionInfo(meta.session).fa
+      sessionInfo(
+        meta.session,
+      ).fa
     }`,
 
     `⏱️ ایران: <b>${faDateTime(
-      new Date(event.at),
+      new Date(
+        event.at,
+      ),
     )}</b>`,
 
     `📍 ورود: ${fmtPrice(
@@ -1648,7 +1874,7 @@ function buildEventTelegram(
       event.price,
     )}</b>`,
 
-    `📦 حجم: ${event.lotClosed.toFixed(
+    `📦 حجم بسته‌شده: ${event.lotClosed.toFixed(
       2,
     )} lot`,
 
@@ -1656,24 +1882,22 @@ function buildEventTelegram(
       event.pnlUsd,
     )}</b>`,
 
-    `🇮🇷 نتیجه: <b>${
-      event.pnlToman >= 0
-        ? "+"
-        : "-"
-    }${formatToman(
-      Math.abs(event.pnlToman),
-    )}</b>`,
+    `🇮🇷 نتیجه: <b>${tomanResult}</b>`,
 
     ...extra,
 
     "",
 
-    `💱 دلار: ${new Intl.NumberFormat(
-      "fa-IR",
-    ).format(
-      event.usdToToman,
-    )} تومان`,
-  ].join("\n");
+    event.usdToToman > 0
+      ? `💱 دلار: ${new Intl.NumberFormat(
+          "fa-IR",
+        ).format(
+          event.usdToToman,
+        )} تومان`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ============================================================
@@ -1691,18 +1915,20 @@ function normalizeMeta(
   }
 
   const direction: Direction =
-    raw.direction === "SELL"
+    raw.direction ===
+    "SELL"
       ? "SELL"
       : "BUY";
 
-  const validStates: State[] = [
-    "AI_PENDING",
-    "AI_TP1",
-    "AI_TP2",
-    "AI_TP3",
-    "AI_SL",
-    "AI_BE",
-  ];
+  const validStates: State[] =
+    [
+      "AI_PENDING",
+      "AI_TP1",
+      "AI_TP2",
+      "AI_TP3",
+      "AI_SL",
+      "AI_BE",
+    ];
 
   const state: State =
     validStates.includes(
@@ -1719,22 +1945,25 @@ function normalizeMeta(
       ? raw.session
       : currentSession();
 
-  const s =
+  const sessionData =
     sessionInfo(session);
 
   return {
     kind: "AI_SCALP",
 
     userId:
-      typeof raw.userId === "string"
+      typeof raw.userId ===
+      "string"
         ? raw.userId
         : undefined,
 
-    symbol: DISPLAY_SYMBOL,
+    symbol:
+      DISPLAY_SYMBOL,
 
     direction,
 
-    entry: num(raw.entry),
+    entry:
+      num(raw.entry),
 
     stopLoss:
       num(raw.stopLoss),
@@ -1745,9 +1974,14 @@ function normalizeMeta(
           raw.stopLoss,
       ),
 
-    tp1: num(raw.tp1),
-    tp2: num(raw.tp2),
-    tp3: num(raw.tp3),
+    tp1:
+      num(raw.tp1),
+
+    tp2:
+      num(raw.tp2),
+
+    tp3:
+      num(raw.tp3),
 
     totalLot:
       num(
@@ -1810,7 +2044,9 @@ function normalizeMeta(
       ),
 
     usdToToman:
-      num(raw.usdToToman),
+      num(
+        raw.usdToToman,
+      ),
 
     riskToman:
       num(raw.riskToman),
@@ -1831,15 +2067,19 @@ function normalizeMeta(
 
     session,
 
-    sessionFa: s.fa,
+    sessionFa:
+      sessionData.fa,
 
-    sessionFlag: s.flag,
+    sessionFlag:
+      sessionData.flag,
 
     score:
       num(raw.score),
 
     confirmations:
-      num(raw.confirmations),
+      num(
+        raw.confirmations,
+      ),
 
     timeframe:
       typeof raw.timeframe ===
@@ -1850,13 +2090,19 @@ function normalizeMeta(
     state,
 
     breakeven:
-      Boolean(raw.breakeven),
+      Boolean(
+        raw.breakeven,
+      ),
 
     currentPrice:
-      num(raw.currentPrice),
+      num(
+        raw.currentPrice,
+      ),
 
     events:
-      Array.isArray(raw.events)
+      Array.isArray(
+        raw.events,
+      )
         ? raw.events
         : [],
 
@@ -1886,8 +2132,10 @@ function normalizeMeta(
         : undefined,
 
     finalResult:
-      raw.finalResult === "WIN" ||
-      raw.finalResult === "LOSS" ||
+      raw.finalResult ===
+        "WIN" ||
+      raw.finalResult ===
+        "LOSS" ||
       raw.finalResult ===
         "BREAKEVEN"
         ? raw.finalResult
@@ -1909,6 +2157,12 @@ function normalizeMeta(
       "string"
         ? raw.telegramError
         : undefined,
+
+    lastTelegramAttemptAt:
+      typeof raw.lastTelegramAttemptAt ===
+      "string"
+        ? raw.lastTelegramAttemptAt
+        : undefined,
   };
 }
 
@@ -1921,7 +2175,8 @@ async function activeRun() {
     await prisma.analysisRun.findMany(
       {
         where: {
-          symbol: DISPLAY_SYMBOL,
+          symbol:
+            DISPLAY_SYMBOL,
 
           status: {
             in: [
@@ -1931,18 +2186,22 @@ async function activeRun() {
             ],
           },
 
-          signalGenerated: true,
+          signalGenerated:
+            true,
         },
 
         orderBy: {
-          createdAt: "desc",
+          createdAt:
+            "desc",
         },
 
-        take: 5,
+        take: 10,
       },
     );
 
-  for (const row of rows) {
+  for (
+    const row of rows
+  ) {
     const meta =
       normalizeMeta(
         row.metadata,
@@ -1950,7 +2209,8 @@ async function activeRun() {
 
     if (
       meta &&
-      !meta.closedAt
+      !meta.closedAt &&
+      meta.remainingLot > 0
     ) {
       return row;
     }
@@ -1972,11 +2232,13 @@ async function saveMeta(
     | null,
 ) {
   const data: any = {
-    metadata: meta as any,
+    metadata:
+      meta as any,
   };
 
   if (status) {
-    data.status = status;
+    data.status =
+      status;
   }
 
   if (
@@ -1989,7 +2251,9 @@ async function saveMeta(
 
   await prisma.analysisRun.update(
     {
-      where: { id },
+      where: {
+        id,
+      },
 
       data,
     },
@@ -2001,19 +2265,17 @@ async function saveMeta(
 // ============================================================
 
 async function createNoTradeRun(
-  m1: Candle[],
-  m5: Candle[],
-  m15: Candle[],
-  h1: Candle[],
   analysis: ReturnType<
     typeof analyzeMarket
   >,
+  candlesCount: number,
   reason: string,
 ) {
   return prisma.analysisRun.create(
     {
       data: {
-        symbol: DISPLAY_SYMBOL,
+        symbol:
+          DISPLAY_SYMBOL,
 
         timeframe:
           "5min + MTF",
@@ -2025,10 +2287,7 @@ async function createNoTradeRun(
           false,
 
         candlesAnalyzed:
-          m1.length +
-          m5.length +
-          m15.length +
-          h1.length,
+          candlesCount,
 
         confirmationsFound:
           analysis.confirmations,
@@ -2048,6 +2307,9 @@ async function createNoTradeRun(
           confirmations:
             analysis.confirmations,
 
+          direction:
+            analysis.direction,
+
           reasons:
             analysis.reasons,
 
@@ -2056,9 +2318,83 @@ async function createNoTradeRun(
 
           resistance:
             analysis.resistance,
+
+          atr:
+            analysis.atr,
+
+          createdAt:
+            new Date().toISOString(),
         } as any,
       },
     },
+  );
+}
+
+// ============================================================
+// RECENT SCAN CHECK
+// ============================================================
+
+async function hasRecentScan(): Promise<boolean> {
+  const recent =
+    await prisma.analysisRun.findFirst(
+      {
+        where: {
+          symbol:
+            DISPLAY_SYMBOL,
+
+          OR: [
+            {
+              status:
+                "AI_NO_TRADE",
+            },
+            {
+              status:
+                "AI_PENDING",
+            },
+            {
+              status:
+                "AI_TP1",
+            },
+            {
+              status:
+                "AI_TP2",
+            },
+            {
+              status:
+                "AI_TP3",
+            },
+            {
+              status:
+                "AI_SL",
+            },
+            {
+              status:
+                "AI_BE",
+            },
+          ],
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+
+        select: {
+          id: true,
+          createdAt: true,
+          status: true,
+        },
+      },
+    );
+
+  if (!recent) {
+    return false;
+  }
+
+  return (
+    Date.now() -
+      recent.createdAt.getTime() <
+    SCAN_COOLDOWN_MS
   );
 }
 
@@ -2069,14 +2405,26 @@ async function createNoTradeRun(
 async function scan(
   userId?: string,
 ) {
-  const active =
+  const existing =
     await activeRun();
 
-  if (active) {
+  if (existing) {
     return {
       created: false,
-      reason: "active_trade",
-      id: active.id,
+      reason:
+        "active_trade",
+      id:
+        existing.id,
+    };
+  }
+
+  if (
+    await hasRecentScan()
+  ) {
+    return {
+      created: false,
+      reason:
+        "scan_cooldown",
     };
   }
 
@@ -2095,10 +2443,15 @@ async function scan(
         "high_impact_news",
 
       news: news.map(
-        (x: any) => ({
-          event: x.event,
-          currency: x.currency,
-          time: x.eventTime,
+        (item: any) => ({
+          event:
+            item.event,
+
+          currency:
+            item.currency,
+
+          time:
+            item.eventTime,
         }),
       ),
     };
@@ -2114,11 +2467,54 @@ async function scan(
     m15,
     h1,
   ] = await Promise.all([
-    candles("1min", 160),
-    candles("5min", 120),
-    candles("15min", 100),
-    candles("1h", 80),
+    candles(
+      "1min",
+      160,
+    ),
+
+    candles(
+      "5min",
+      120,
+    ),
+
+    candles(
+      "15min",
+      100,
+    ),
+
+    candles(
+      "1h",
+      80,
+    ),
   ]);
+
+  if (
+    m1.length < 50 ||
+    m5.length < 50 ||
+    m15.length < 50 ||
+    h1.length < 50
+  ) {
+    return {
+      created: false,
+
+      reason:
+        "insufficient_market_data",
+
+      counts: {
+        m1:
+          m1.length,
+
+        m5:
+          m5.length,
+
+        m15:
+          m15.length,
+
+        h1:
+          h1.length,
+      },
+    };
+  }
 
   const analysis =
     analyzeMarket(
@@ -2129,7 +2525,7 @@ async function scan(
     );
 
   // ----------------------------------------------------------
-  // SOFT SIGNAL FILTER
+  // SIGNAL FILTER
   // ----------------------------------------------------------
 
   if (
@@ -2140,12 +2536,14 @@ async function scan(
       CONFIRMATIONS_TO_SIGNAL
   ) {
     await createNoTradeRun(
-      m1,
-      m5,
-      m15,
-      h1,
       analysis,
-      "بازار هنوز حداقل شرایط نرم سیگنال را ندارد",
+
+      m1.length +
+        m5.length +
+        m15.length +
+        h1.length,
+
+      "بازار هنوز حداقل شرایط سیگنال را ندارد",
     );
 
     return {
@@ -2153,6 +2551,9 @@ async function scan(
 
       reason:
         "no_trade",
+
+      direction:
+        analysis.direction,
 
       score:
         analysis.score,
@@ -2166,21 +2567,36 @@ async function scan(
   }
 
   // ----------------------------------------------------------
-  // ENTRY
+  // REAL ENTRY PRICE
   // ----------------------------------------------------------
 
-  const entry =
-    num(
-      m1.at(-1)?.close ||
+  let entry =
+    0;
+
+  try {
+    entry =
+      await latestPrice();
+  } catch {
+    entry =
+      num(
+        m1.at(-1)?.close,
+      ) ||
+      num(
         m5.at(-1)?.close,
-    );
+      );
+  }
 
   if (!entry) {
     return {
       created: false,
-      reason: "no_price",
+      reason:
+        "no_price",
     };
   }
+
+  // ----------------------------------------------------------
+  // LEVELS
+  // ----------------------------------------------------------
 
   const lv =
     levels(
@@ -2190,6 +2606,8 @@ async function scan(
 
   // ----------------------------------------------------------
   // FX
+  // مهم:
+  // نرخ تومان دیگر مانع ساخت سیگنال نیست.
   // ----------------------------------------------------------
 
   const fx =
@@ -2201,12 +2619,12 @@ async function scan(
   const session =
     currentSession(now);
 
-  const s =
+  const sessionData =
     sessionInfo(session);
 
   const confirmations =
     Math.max(
-      2,
+      CONFIRMATIONS_TO_SIGNAL,
       analysis.confirmations,
     );
 
@@ -2215,11 +2633,13 @@ async function scan(
   // ----------------------------------------------------------
 
   const meta: RunMeta = {
-    kind: "AI_SCALP",
+    kind:
+      "AI_SCALP",
 
     userId,
 
-    symbol: DISPLAY_SYMBOL,
+    symbol:
+      DISPLAY_SYMBOL,
 
     direction:
       analysis.direction,
@@ -2308,10 +2728,10 @@ async function scan(
     session,
 
     sessionFa:
-      s.fa,
+      sessionData.fa,
 
     sessionFlag:
-      s.flag,
+      sessionData.flag,
 
     score:
       analysis.score,
@@ -2362,6 +2782,9 @@ async function scan(
 
       contractSize:
         CONTRACT_SIZE,
+
+      engine:
+        "REAL_MARKET_MTF",
     },
 
     createdAt:
@@ -2369,10 +2792,13 @@ async function scan(
 
     lastUpdate:
       now.toISOString(),
+
+    telegramDelivered:
+      false,
   };
 
   // ----------------------------------------------------------
-  // CREATE RUN
+  // CREATE DB RUN
   // ----------------------------------------------------------
 
   const created =
@@ -2447,14 +2873,15 @@ async function scan(
   return {
     created: true,
 
-    id: created.id,
+    id:
+      created.id,
 
     meta,
   };
 }
 
 // ============================================================
-// RETRY TELEGRAM
+// TELEGRAM RETRY
 // ============================================================
 
 async function retryInitialTelegram(
@@ -2467,16 +2894,43 @@ async function retryInitialTelegram(
     return;
   }
 
+  const lastAttempt =
+    meta.lastTelegramAttemptAt
+      ? new Date(
+          meta.lastTelegramAttemptAt,
+        ).getTime()
+      : 0;
+
+  if (
+    lastAttempt &&
+    Date.now() -
+      lastAttempt <
+      30_000
+  ) {
+    return;
+  }
+
+  meta.lastTelegramAttemptAt =
+    new Date().toISOString();
+
+  await saveMeta(
+    runId,
+    meta,
+  );
+
+  const fxAsOf =
+    String(
+      meta.analysis
+        ?.fxAsOf ??
+        "unavailable",
+    );
+
   try {
     const messageId =
       await sendTelegram(
         buildSignalTelegram(
           meta,
-          String(
-            meta.analysis
-              .fxAsOf ??
-              "نامشخص",
-          ),
+          fxAsOf,
         ),
       );
 
@@ -2537,11 +2991,14 @@ async function monitorOne(
       "AI_TP3",
       "AI_SL",
       "AI_BE",
-    ].includes(meta.state)
+    ].includes(
+      meta.state,
+    )
   ) {
     return {
       ok: true,
-      state: meta.state,
+      state:
+        meta.state,
       closed: true,
     };
   }
@@ -2555,31 +3012,46 @@ async function monitorOne(
     );
   }
 
+  // ----------------------------------------------------------
+  // LIVE PRICE
+  // ----------------------------------------------------------
+
   const price =
     await latestPrice();
+
+  // ----------------------------------------------------------
+  // RECENT 1M CANDLES
+  // ----------------------------------------------------------
 
   const recent =
     await candles(
       "1min",
       3,
     ).catch(
-      () => [] as Candle[],
+      () =>
+        [] as Candle[],
+    );
+
+  const highValues =
+    recent.map(
+      item => item.high,
+    );
+
+  const lowValues =
+    recent.map(
+      item => item.low,
     );
 
   const observedHigh =
     Math.max(
       price,
-      ...recent.map(
-        x => x.high,
-      ),
+      ...highValues,
     );
 
   const observedLow =
     Math.min(
       price,
-      ...recent.map(
-        x => x.low,
-      ),
+      ...lowValues,
     );
 
   meta.currentPrice =
@@ -2587,6 +3059,10 @@ async function monitorOne(
 
   meta.lastUpdate =
     new Date().toISOString();
+
+  // ----------------------------------------------------------
+  // FX
+  // ----------------------------------------------------------
 
   const fx =
     await getUsdToTomanRate();
@@ -2599,6 +3075,10 @@ async function monitorOne(
         event.type ===
         type,
     );
+
+  // ----------------------------------------------------------
+  // EVENT PUSH
+  // ----------------------------------------------------------
 
   const push = async (
     type: EventType,
@@ -2645,6 +3125,10 @@ async function monitorOne(
       event,
     );
 
+    // --------------------------------------------------------
+    // TP1
+    // --------------------------------------------------------
+
     if (
       type === "TP1"
     ) {
@@ -2662,7 +3146,13 @@ async function monitorOne(
           TOTAL_LOT -
             TP1_LOT,
         );
-    } else if (
+    }
+
+    // --------------------------------------------------------
+    // TP2
+    // --------------------------------------------------------
+
+    else if (
       type === "TP2"
     ) {
       meta.state =
@@ -2677,7 +3167,13 @@ async function monitorOne(
             TP1_LOT -
             TP2_LOT,
         );
-    } else if (
+    }
+
+    // --------------------------------------------------------
+    // TP3
+    // --------------------------------------------------------
+
+    else if (
       type === "TP3"
     ) {
       meta.state =
@@ -2691,7 +3187,13 @@ async function monitorOne(
 
       meta.finalResult =
         "WIN";
-    } else if (
+    }
+
+    // --------------------------------------------------------
+    // SL
+    // --------------------------------------------------------
+
+    else if (
       type === "SL"
     ) {
       meta.state =
@@ -2705,7 +3207,13 @@ async function monitorOne(
 
       meta.finalResult =
         "LOSS";
-    } else {
+    }
+
+    // --------------------------------------------------------
+    // BREAK EVEN
+    // --------------------------------------------------------
+
+    else {
       meta.state =
         "AI_BE";
 
@@ -2719,21 +3227,28 @@ async function monitorOne(
         "BREAKEVEN";
     }
 
-    await saveMeta(
-      run.id,
-      meta,
-      meta.state,
+    const terminal =
       [
         "AI_TP3",
         "AI_SL",
         "AI_BE",
       ].includes(
         meta.state,
-      )
-        ? new Date(event.at)
+      );
+
+    // اول DB
+    await saveMeta(
+      run.id,
+      meta,
+      meta.state,
+      terminal
+        ? new Date(
+            event.at,
+          )
         : null,
     );
 
+    // بعد Telegram
     try {
       const messageId =
         await sendTelegram(
@@ -2761,18 +3276,15 @@ async function monitorOne(
           : String(error);
     }
 
+    // دوباره DB
     await saveMeta(
       run.id,
       meta,
       meta.state,
-      [
-        "AI_TP3",
-        "AI_SL",
-        "AI_BE",
-      ].includes(
-        meta.state,
-      )
-        ? new Date(event.at)
+      terminal
+        ? new Date(
+            event.at,
+          )
         : null,
     );
 
@@ -2811,12 +3323,15 @@ async function monitorOne(
         meta.tp1,
       );
 
+    // محافظه‌کارانه:
+    // اگر در همان بازه SL و TP هر دو لمس شده باشند،
+    // SL اولویت دارد.
     if (slTouched) {
       return push(
         "SL",
 
         meta.direction ===
-          "BUY"
+        "BUY"
           ? Math.min(
               price,
               observedLow,
@@ -2833,7 +3348,7 @@ async function monitorOne(
         "TP1",
 
         meta.direction ===
-          "BUY"
+        "BUY"
           ? Math.max(
               price,
               observedHigh,
@@ -2847,7 +3362,7 @@ async function monitorOne(
   }
 
   // ==========================================================
-  // TP1
+  // TP1 STATE
   // ==========================================================
 
   if (
@@ -2885,7 +3400,7 @@ async function monitorOne(
         "BREAKEVEN",
 
         meta.direction ===
-          "BUY"
+        "BUY"
           ? Math.min(
               price,
               observedLow,
@@ -2902,7 +3417,7 @@ async function monitorOne(
         "TP2",
 
         meta.direction ===
-          "BUY"
+        "BUY"
           ? Math.max(
               price,
               observedHigh,
@@ -2916,7 +3431,7 @@ async function monitorOne(
   }
 
   // ==========================================================
-  // TP2
+  // TP2 STATE
   // ==========================================================
 
   if (
@@ -2954,7 +3469,7 @@ async function monitorOne(
         "BREAKEVEN",
 
         meta.direction ===
-          "BUY"
+        "BUY"
           ? Math.min(
               price,
               observedLow,
@@ -2971,7 +3486,7 @@ async function monitorOne(
         "TP3",
 
         meta.direction ===
-          "BUY"
+        "BUY"
           ? Math.max(
               price,
               observedHigh,
@@ -2997,7 +3512,8 @@ async function monitorOne(
     state:
       meta.state,
 
-    price,
+    price:
+      price,
   };
 }
 
@@ -3008,7 +3524,7 @@ async function monitorOne(
 function eventTotals(
   rows: any[],
 ) {
-  const out = {
+  const output = {
     trades: 0,
 
     wins: 0,
@@ -3053,19 +3569,19 @@ function eventTotals(
       continue;
     }
 
-    out.trades++;
+    output.trades++;
 
     for (
       const event of
-        meta.events
+      meta.events
     ) {
       if (
         event.type ===
         "TP1"
       ) {
-        out.tp1++;
+        output.tp1++;
 
-        out.tp1Toman +=
+        output.tp1Toman +=
           num(
             event.pnlToman,
           );
@@ -3075,9 +3591,9 @@ function eventTotals(
         event.type ===
         "TP2"
       ) {
-        out.tp2++;
+        output.tp2++;
 
-        out.tp2Toman +=
+        output.tp2Toman +=
           num(
             event.pnlToman,
           );
@@ -3087,9 +3603,9 @@ function eventTotals(
         event.type ===
         "TP3"
       ) {
-        out.tp3++;
+        output.tp3++;
 
-        out.tp3Toman +=
+        output.tp3Toman +=
           num(
             event.pnlToman,
           );
@@ -3099,9 +3615,9 @@ function eventTotals(
         event.type ===
         "SL"
       ) {
-        out.sl++;
+        output.sl++;
 
-        out.slToman +=
+        output.slToman +=
           num(
             event.pnlToman,
           );
@@ -3111,12 +3627,12 @@ function eventTotals(
         event.type !==
         "BREAKEVEN"
       ) {
-        out.pnlUsd +=
+        output.pnlUsd +=
           num(
             event.pnlUsd,
           );
 
-        out.pnlToman +=
+        output.pnlToman +=
           num(
             event.pnlToman,
           );
@@ -3129,36 +3645,38 @@ function eventTotals(
       meta.state ===
         "AI_TP3"
     ) {
-      out.wins++;
+      output.wins++;
     } else if (
       meta.finalResult ===
         "LOSS" ||
       meta.state ===
         "AI_SL"
     ) {
-      out.losses++;
+      output.losses++;
     } else if (
       meta.finalResult ===
         "BREAKEVEN" ||
       meta.state ===
         "AI_BE"
     ) {
-      out.breakeven++;
+      output.breakeven++;
     }
   }
 
   const decided =
-    out.wins +
-    out.losses;
+    output.wins +
+    output.losses;
 
   return {
-    ...out,
+    ...output,
 
     winRate:
       decided
         ? round(
-            (out.wins /
-              decided) *
+            (
+              output.wins /
+              decided
+            ) *
               100,
             1,
           )
@@ -3166,32 +3684,32 @@ function eventTotals(
 
     tp1Toman:
       Math.round(
-        out.tp1Toman,
+        output.tp1Toman,
       ),
 
     tp2Toman:
       Math.round(
-        out.tp2Toman,
+        output.tp2Toman,
       ),
 
     tp3Toman:
       Math.round(
-        out.tp3Toman,
+        output.tp3Toman,
       ),
 
     slToman:
       Math.round(
-        out.slToman,
+        output.slToman,
       ),
 
     pnlUsd:
       money(
-        out.pnlUsd,
+        output.pnlUsd,
       ),
 
     pnlToman:
       Math.round(
-        out.pnlToman,
+        output.pnlToman,
       ),
   };
 }
@@ -3206,10 +3724,10 @@ function startOfPeriod(
     | "week"
     | "month",
 ) {
-  const d =
+  const date =
     new Date();
 
-  d.setUTCHours(
+  date.setUTCHours(
     0,
     0,
     0,
@@ -3219,27 +3737,27 @@ function startOfPeriod(
   if (
     kind === "day"
   ) {
-    return d;
+    return date;
   }
 
   if (
     kind === "week"
   ) {
     const day =
-      d.getUTCDay() || 7;
+      date.getUTCDay() || 7;
 
-    d.setUTCDate(
-      d.getUTCDate() -
+    date.setUTCDate(
+      date.getUTCDate() -
         day +
         1,
     );
 
-    return d;
+    return date;
   }
 
-  d.setUTCDate(1);
+  date.setUTCDate(1);
 
-  return d;
+  return date;
 }
 
 // ============================================================
@@ -3419,7 +3937,6 @@ async function sessionReport(
   ) {
     return {
       sent: false,
-
       reason:
         "already_sent",
     };
@@ -3453,14 +3970,14 @@ async function sessionReport(
 
         return Boolean(
           meta &&
-            meta.session ===
-              name &&
-            sessionKey(
-              name,
-              new Date(
-                meta.createdAt,
-              ),
-            ) === key,
+          meta.session ===
+            name &&
+          sessionKey(
+            name,
+            new Date(
+              meta.createdAt,
+            ),
+          ) === key,
         );
       },
     );
@@ -3468,7 +3985,6 @@ async function sessionReport(
   if (!rows.length) {
     return {
       sent: false,
-
       reason:
         "no_trades",
     };
@@ -3480,8 +3996,8 @@ async function sessionReport(
   const fx =
     await getUsdToTomanRate();
 
-  const msg = [
-    "🤖 <b>کارنامه پایان سشن — XAUUSD</b>",
+  const message = [
+    "🤖 <b>TRADING AI — کارنامه سشن XAUUSD</b>",
 
     `${
       sessionInfo(name).flag
@@ -3524,7 +4040,8 @@ async function sessionReport(
     "",
 
     `💰 خالص: <b>${
-      totals.pnlUsd >= 0
+      totals.pnlUsd >=
+      0
         ? "+"
         : "-"
     }${formatUsd(
@@ -3534,7 +4051,8 @@ async function sessionReport(
     )}</b>`,
 
     `🇮🇷 خالص: <b>${
-      totals.pnlToman >= 0
+      totals.pnlToman >=
+      0
         ? "+"
         : "-"
     }${formatToman(
@@ -3543,11 +4061,13 @@ async function sessionReport(
       ),
     )}</b>`,
 
-    `💱 دلار: <b>${new Intl.NumberFormat(
-      "fa-IR",
-    ).format(
-      fx.rate,
-    )} تومان</b>`,
+    fx.rate > 0
+      ? `💱 دلار: <b>${new Intl.NumberFormat(
+          "fa-IR",
+        ).format(
+          fx.rate,
+        )} تومان</b>`
+      : "💱 نرخ دلار: در دسترس نیست",
 
     "",
 
@@ -3560,10 +4080,10 @@ async function sessionReport(
   try {
     telegramMessageId =
       await sendTelegram(
-        msg,
+        message,
       );
   } catch {
-    // ثبت گزارش حتی اگر Telegram موقتاً خطا بدهد.
+    // گزارش DB ثبت می‌شود حتی اگر Telegram مشکل داشته باشد.
   }
 
   await prisma.analysisRun.create(
@@ -3606,7 +4126,6 @@ async function sessionReport(
 
   return {
     sent: true,
-
     totals,
   };
 }
@@ -3669,39 +4188,39 @@ async function cronCycle() {
 }
 
 // ============================================================
-// LIVE CHART DATA
+// CHART
 // ============================================================
 
-async function liveChart(
+function chartOutput(
+  chartCandles: Candle[],
+  price: number,
   activeMeta: RunMeta | null,
+  interval: ChartTimeframe,
+  error?: string,
 ) {
-  const [
-    chartCandles,
-    price,
-  ] = await Promise.all([
-    candles("1min", 120),
-    latestPrice(),
-  ]);
-
-  const last =
-    chartCandles.at(-1);
-
-  const currentPrice =
-    price ||
-    num(last?.close);
-
   return {
     symbol:
       DISPLAY_SYMBOL,
 
     timeframe:
-      "1min",
+      interval,
 
     price:
-      round(currentPrice),
+      round(price),
 
     updatedAt:
       new Date().toISOString(),
+
+    dataStatus:
+      chartCandles.length &&
+      price > 0
+        ? "LIVE"
+        : price > 0
+          ? "PRICE_ONLY"
+          : "UNAVAILABLE",
+
+    error:
+      error || null,
 
     candles:
       chartCandles.map(
@@ -3792,41 +4311,197 @@ async function liveChart(
 }
 
 // ============================================================
+// LIVE CHART
+// ============================================================
+
+async function liveChart(
+  activeMeta: RunMeta | null,
+  interval: ChartTimeframe,
+) {
+  const size =
+    interval === "1min"
+      ? 120
+      : interval === "5min"
+        ? 120
+        : interval === "15min"
+          ? 100
+          : interval === "30min"
+            ? 100
+            : interval === "1h"
+              ? 100
+              : 80;
+
+  const [
+    candleResult,
+    priceResult,
+  ] = await Promise.allSettled([
+    candles(
+      interval,
+      size,
+    ),
+
+    latestPrice(),
+  ]);
+
+  const chartCandles =
+    candleResult.status ===
+    "fulfilled"
+      ? candleResult.value
+      : [];
+
+  const apiPrice =
+    priceResult.status ===
+    "fulfilled"
+      ? priceResult.value
+      : 0;
+
+  const candlePrice =
+    num(
+      chartCandles.at(-1)
+        ?.close,
+    );
+
+  const price =
+    apiPrice ||
+    candlePrice;
+
+  const errors: string[] =
+    [];
+
+  if (
+    candleResult.status ===
+    "rejected"
+  ) {
+    errors.push(
+      candleResult.reason instanceof
+        Error
+        ? candleResult.reason.message
+        : "خطای دریافت کندل",
+    );
+  }
+
+  if (
+    priceResult.status ===
+    "rejected"
+  ) {
+    errors.push(
+      priceResult.reason instanceof
+        Error
+        ? priceResult.reason.message
+        : "خطای دریافت قیمت",
+    );
+  }
+
+  return chartOutput(
+    chartCandles,
+    price,
+    activeMeta,
+    interval,
+    errors.length
+      ? errors.join(" | ")
+      : undefined,
+  );
+}
+
+// ============================================================
 // DASHBOARD
 // ============================================================
 
 async function dashboard(
   userId: string,
+  requestedTimeframe: ChartTimeframe,
 ) {
+  // ----------------------------------------------------------
+  // FIND ACTIVE TRADE
+  // ----------------------------------------------------------
+
   let active =
     await activeRun();
 
+  // ----------------------------------------------------------
+  // MONITOR ACTIVE TRADE
+  // ----------------------------------------------------------
+
   if (active) {
-    const meta =
+    const activeMetaBefore =
       normalizeMeta(
         active.metadata,
       );
 
     if (
-      meta &&
-      Date.now() -
-        new Date(
-          meta.lastUpdate,
-        ).getTime() >
-        MONITOR_STALE_MS
+      activeMetaBefore
     ) {
-      try {
-        await monitorOne(
-          active,
-        );
+      const lastUpdate =
+        new Date(
+          activeMetaBefore.lastUpdate,
+        ).getTime();
 
-        active =
-          await activeRun();
-      } catch {
-        // خطای لحظه‌ای بازار نباید داشبورد را خراب کند.
+      if (
+        Date.now() -
+          lastUpdate >
+        MONITOR_STALE_MS
+      ) {
+        try {
+          await monitorOne(
+            active,
+          );
+
+          active =
+            await activeRun();
+        } catch (error) {
+          console.error(
+            "ACTIVE_MONITOR_ERROR",
+            error,
+          );
+        }
       }
     }
   }
+
+  // ----------------------------------------------------------
+  // IF THERE IS NO ACTIVE TRADE,
+  // RUN THE REAL SCANNER.
+  //
+  // این مهم‌ترین اصلاح نسخه جدید است.
+  // ----------------------------------------------------------
+
+  let scanResult:
+    | any
+    | null = null;
+
+  if (!active) {
+    try {
+      scanResult =
+        await scan(
+          userId,
+        );
+
+      active =
+        await activeRun();
+    } catch (error) {
+      console.error(
+        "AI_SCAN_ERROR",
+        error,
+      );
+
+      scanResult = {
+        created: false,
+
+        reason:
+          "scan_error",
+
+        error:
+          error instanceof
+          Error
+            ? error.message
+            : String(error),
+      };
+    }
+  }
+
+  // ----------------------------------------------------------
+  // ACTIVE META
+  // ----------------------------------------------------------
 
   const activeMeta =
     active
@@ -3835,11 +4510,48 @@ async function dashboard(
         )
       : null;
 
+  // ----------------------------------------------------------
+  // LIVE CHART
+  // ----------------------------------------------------------
+
+  const chart =
+    await liveChart(
+      activeMeta,
+      requestedTimeframe,
+    ).catch(
+      error =>
+        chartOutput(
+          [],
+          0,
+          activeMeta,
+          requestedTimeframe,
+          error instanceof
+          Error
+            ? error.message
+            : "خطای نمودار",
+        ),
+    );
+
+  // ----------------------------------------------------------
+  // UPDATE DISPLAY PRICE
+  // ----------------------------------------------------------
+
+  if (
+    activeMeta &&
+    chart.price > 0
+  ) {
+    activeMeta.currentPrice =
+      chart.price;
+  }
+
+  // ----------------------------------------------------------
+  // PARALLEL DATA
+  // ----------------------------------------------------------
+
   const [
     perf,
     latest,
     fx,
-    chart,
   ] = await Promise.all([
     performance(),
 
@@ -3860,87 +4572,7 @@ async function dashboard(
       },
     ),
 
-    getUsdToTomanRate()
-      .catch(
-        () => null,
-      ),
-
-    liveChart(
-      activeMeta,
-    ).catch(
-      () => ({
-        symbol:
-          DISPLAY_SYMBOL,
-
-        timeframe:
-          "1min",
-
-        price: 0,
-
-        updatedAt:
-          new Date().toISOString(),
-
-        candles: [],
-
-        signal:
-          activeMeta
-            ? {
-                id:
-                  activeMeta.createdAt,
-
-                direction:
-                  activeMeta.direction,
-
-                state:
-                  activeMeta.state,
-
-                entry:
-                  activeMeta.entry,
-
-                stopLoss:
-                  activeMeta.stopLoss,
-
-                protectedStop:
-                  activeMeta.protectedStop,
-
-                tp1:
-                  activeMeta.tp1,
-
-                tp2:
-                  activeMeta.tp2,
-
-                tp3:
-                  activeMeta.tp3,
-
-                currentPrice:
-                  activeMeta.currentPrice,
-
-                score:
-                  activeMeta.score,
-
-                confirmations:
-                  activeMeta.confirmations,
-
-                createdAt:
-                  activeMeta.createdAt,
-
-                events:
-                  activeMeta.events.map(
-                    event => ({
-                      type:
-                        event.type,
-
-                      at:
-                        event.at,
-
-                      price:
-                        event.price,
-                    }),
-                  ),
-              }
-            : null,
-      }),
-    ),
+    getUsdToTomanRate(),
   ]);
 
   const latestMeta =
@@ -3950,12 +4582,20 @@ async function dashboard(
         )
       : null;
 
+  // ----------------------------------------------------------
+  // RESPONSE
+  // ----------------------------------------------------------
+
   return {
     symbol:
       DISPLAY_SYMBOL,
 
     contractSize:
       CONTRACT_SIZE,
+
+    // --------------------------------------------------------
+    // LIVE
+    // --------------------------------------------------------
 
     live: {
       price:
@@ -3966,13 +4606,37 @@ async function dashboard(
 
       timeframe:
         chart.timeframe,
+
+      status:
+        chart.dataStatus,
+
+      error:
+        chart.error,
     },
 
-    // ========================================================
-    // این قسمت برای نمودار است
-    // ========================================================
+    // --------------------------------------------------------
+    // COMPATIBILITY FOR FRONTEND
+    // صفحه ai-analysis فعلی همین‌ها را انتظار دارد.
+    // --------------------------------------------------------
+
+    currentPrice:
+      chart.price,
+
+    updatedAt:
+      chart.updatedAt,
+
+    candles:
+      chart.candles,
+
+    // --------------------------------------------------------
+    // FULL CHART
+    // --------------------------------------------------------
 
     chart,
+
+    // --------------------------------------------------------
+    // POSITION CONFIG
+    // --------------------------------------------------------
 
     position: {
       totalLot:
@@ -4003,6 +4667,10 @@ async function dashboard(
         TOTAL_POTENTIAL_USD,
     },
 
+    // --------------------------------------------------------
+    // ACTIVE SIGNAL
+    // --------------------------------------------------------
+
     active:
       active &&
       activeMeta
@@ -4017,6 +4685,10 @@ async function dashboard(
               activeMeta,
           }
         : null,
+
+    // --------------------------------------------------------
+    // LATEST SIGNAL
+    // --------------------------------------------------------
 
     latest:
       latest &&
@@ -4033,17 +4705,108 @@ async function dashboard(
           }
         : null,
 
+    // --------------------------------------------------------
+    // PERFORMANCE
+    // --------------------------------------------------------
+
     performance:
       perf,
+
+    // --------------------------------------------------------
+    // FX
+    // --------------------------------------------------------
 
     usdToToman:
       fx,
 
+    // --------------------------------------------------------
+    // SESSION
+    // --------------------------------------------------------
+
     sessions:
       SESSION_ZONES,
 
+    // --------------------------------------------------------
+    // SCAN STATUS
+    // --------------------------------------------------------
+
+    engine: {
+      status:
+        "REAL_MARKET_ENGINE",
+
+      symbol:
+        DISPLAY_SYMBOL,
+
+      marketData:
+        chart.price > 0
+          ? "LIVE"
+          : "UNAVAILABLE",
+
+      chart:
+        chart.candles.length >
+        0
+          ? "LIVE"
+          : "UNAVAILABLE",
+
+      signal:
+        activeMeta
+          ? "ACTIVE"
+          : scanResult?.reason ===
+              "no_trade"
+            ? "WAITING"
+            : "SCANNING",
+
+      telegram:
+        activeMeta
+          ? activeMeta.telegramDelivered
+            ? "CONNECTED"
+            : "PENDING"
+          : "READY",
+
+      lastScan:
+        scanResult,
+    },
+
     userId,
   };
+}
+
+// ============================================================
+// TIMEFRAME
+// ============================================================
+
+function normalizeTimeframe(
+  value: string | null,
+): ChartTimeframe {
+  if (
+    value === "1min" ||
+    value === "5min" ||
+    value === "15min" ||
+    value === "30min" ||
+    value === "1h" ||
+    value === "4h"
+  ) {
+    return value;
+  }
+
+  // بعضی frontendها ممکن است 1m / 5m بفرستند.
+  if (value === "1m") {
+    return "1min";
+  }
+
+  if (value === "5m") {
+    return "5min";
+  }
+
+  if (value === "15m") {
+    return "15min";
+  }
+
+  if (value === "30m") {
+    return "30min";
+  }
+
+  return "1min";
 }
 
 // ============================================================
@@ -4083,16 +4846,16 @@ export async function GET(
     const url =
       new URL(req.url);
 
-    const cron =
+    const isCron =
       url.searchParams.get(
         "cron",
       ) === "1";
 
-    // ========================================================
+    // --------------------------------------------------------
     // CRON
-    // ========================================================
+    // --------------------------------------------------------
 
-    if (cron) {
+    if (isCron) {
       if (
         !isCronAuthorized(req)
       ) {
@@ -4130,9 +4893,9 @@ export async function GET(
       );
     }
 
-    // ========================================================
-    // USER
-    // ========================================================
+    // --------------------------------------------------------
+    // AUTH
+    // --------------------------------------------------------
 
     const session =
       await getSession();
@@ -4153,9 +4916,25 @@ export async function GET(
       );
     }
 
+    // --------------------------------------------------------
+    // TIMEFRAME
+    // --------------------------------------------------------
+
+    const timeframe =
+      normalizeTimeframe(
+        url.searchParams.get(
+          "timeframe",
+        ),
+      );
+
+    // --------------------------------------------------------
+    // DASHBOARD
+    // --------------------------------------------------------
+
     const data =
       await dashboard(
         session.userId,
+        timeframe,
       );
 
     return NextResponse.json(
@@ -4167,7 +4946,10 @@ export async function GET(
       {
         headers: {
           "Cache-Control":
-            "no-store, no-cache, must-revalidate",
+            "no-store, no-cache, must-revalidate, max-age=0",
+
+          Pragma:
+            "no-cache",
         },
       },
     );
@@ -4182,7 +4964,8 @@ export async function GET(
         ok: false,
 
         error:
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : "خطای داخلی سرور",
       },
@@ -4192,7 +4975,8 @@ export async function GET(
         headers: {
           "Cache-Control":
             "no-store",
-          "Pragma":
+
+          Pragma:
             "no-cache",
         },
       },
