@@ -22,21 +22,39 @@ type SignalMeta = {
     tp3Dollars?: number;
     contractSize?: number;
   };
+
   levels?: {
+    entry?: number;
     sl?: number;
     tp1?: number;
     tp2?: number;
     tp3?: number;
   };
+
   events?: EventRow[];
+
   state?: {
     tp1Hit?: boolean;
     tp2Hit?: boolean;
     tp3Hit?: boolean;
     slHit?: boolean;
+    breakeven?: boolean;
   };
+
   lastPrice?: number;
   lastPriceAt?: string;
+
+  telegram?: {
+    sent?: boolean;
+    messageId?: string | null;
+    sentAt?: string | null;
+  };
+
+  market?: {
+    price?: number;
+    priceAt?: string;
+    isOpen?: boolean;
+  };
 };
 
 type Signal = {
@@ -44,13 +62,17 @@ type Signal = {
   symbol: string;
   timeframe: string;
   direction: Direction;
+
   entry: number;
   stopLoss: number;
   takeProfit: number;
+
   riskReward?: number | null;
   score?: number | null;
   confidence?: number | null;
+
   status: string;
+
   source?: string | null;
   marketStructure?: string | null;
   supportResistance?: string | null;
@@ -58,14 +80,7 @@ type Signal = {
   pullback?: string | null;
   candlePattern?: string | null;
   volumeConfirmation?: string | null;
-
-  /*
-   * مهم:
-   * نام صحیح این فیلد طبق Type بالا:
-   * multiTimeframeConfirmation
-   */
   multiTimeframeConfirmation?: string | null;
-
   sessionConfirmation?: string | null;
   volatilityConfirmation?: string | null;
   newsConfirmation?: string | null;
@@ -105,12 +120,21 @@ type Performance = {
 type ApiData = {
   ok?: boolean;
 
+  error?: string;
+
   engine?: {
     source?: string;
     monitored?: unknown;
 
+    state?: string;
+
+    marketOpen?: boolean;
+
+    lastRunAt?: string | null;
+
     scanned?: {
       bots?: number;
+
       made?: Signal[];
 
       errors?: {
@@ -121,7 +145,26 @@ type ApiData = {
     };
   };
 
+  market?: {
+    symbol?: string;
+    price?: number;
+    priceAt?: string | null;
+    isOpen?: boolean;
+    status?: string;
+  };
+
+  telegram?: {
+    enabled?: boolean;
+    connected?: boolean;
+  };
+
   signals?: Signal[];
+
+  active?: Signal | null;
+
+  currentSignal?: Signal | null;
+
+  latest?: Signal | null;
 
   performance?: Performance;
 };
@@ -141,6 +184,23 @@ const priceFmt = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+
+const ACTIVE_STATUSES = new Set([
+  "WAITING",
+  "ACTIVE",
+  "TP1_HIT",
+  "TP2_HIT",
+  "TP3_HIT",
+]);
+
+const CLOSED_STATUSES = new Set([
+  "CLOSED",
+  "SL_HIT",
+  "COMPLETED",
+  "TP3_COMPLETED",
+  "BREAKEVEN",
+  "BE",
+]);
 
 function price(value: unknown) {
   const n = Number(value);
@@ -171,9 +231,7 @@ function toman(value: unknown) {
     return "—";
   }
 
-  return `${tomanFmt.format(
-    Math.round(Math.abs(n))
-  )} تومان`;
+  return `${tomanFmt.format(Math.round(Math.abs(n)))} تومان`;
 }
 
 function dateFa(value?: string | null) {
@@ -192,18 +250,30 @@ function dateFa(value?: string | null) {
 }
 
 function directionFa(direction?: string) {
-  return direction === "BUY" ? "خرید" : "فروش";
+  if (direction === "BUY") {
+    return "خرید";
+  }
+
+  if (direction === "SELL") {
+    return "فروش";
+  }
+
+  return "—";
 }
 
 function statusFa(status?: string) {
   const map: Record<string, string> = {
-    WAITING: "در انتظار",
+    WAITING: "در انتظار ورود",
     ACTIVE: "فعال",
     TP1_HIT: "TP1 ثبت شد",
     TP2_HIT: "TP2 ثبت شد",
     TP3_HIT: "TP3 ثبت شد",
     CLOSED: "بسته شد",
-    SL_HIT: "حد ضرر فعال شد",
+    SL_HIT: "حد ضرر",
+    COMPLETED: "تکمیل شد",
+    TP3_COMPLETED: "TP3 تکمیل شد",
+    BREAKEVEN: "سر‌به‌سر",
+    BE: "سر‌به‌سر",
   };
 
   return map[status || ""] || status || "—";
@@ -220,6 +290,7 @@ function eventFa(type?: string) {
     TP3: "TP3",
     SL: "STOP LOSS",
     BREAKEVEN: "BREAKEVEN",
+    BE: "BREAKEVEN",
   };
 
   return map[type || ""] || type || "رویداد";
@@ -227,10 +298,6 @@ function eventFa(type?: string) {
 
 function getMeta(signal: Signal): SignalMeta {
   return signal.metadata || {};
-}
-
-function getLatestSignal(signals: Signal[]) {
-  return signals.length > 0 ? signals[0] : null;
 }
 
 function getConfirmationCount(signal: Signal) {
@@ -247,15 +314,183 @@ function getConfirmationCount(signal: Signal) {
 }
 
 function getRiskLabel(signal: Signal) {
-  const risk = signal.metadata?.risk;
-
-  const lot = Number(risk?.lotSize);
+  const lot = Number(signal.metadata?.risk?.lotSize);
 
   if (Number.isFinite(lot) && lot > 0) {
     return `${lot.toFixed(2)} lot`;
   }
 
-  return "0.10 lot";
+  return "—";
+}
+
+function isActiveSignal(signal: Signal) {
+  return ACTIVE_STATUSES.has(
+    String(signal.status || "").toUpperCase()
+  );
+}
+
+function isClosedSignal(signal: Signal) {
+  return CLOSED_STATUSES.has(
+    String(signal.status || "").toUpperCase()
+  );
+}
+
+function getSignalLevels(signal: Signal) {
+  const meta = signal.metadata || {};
+  const levels = meta.levels || {};
+
+  const entry =
+    Number(levels.entry) ||
+    Number(signal.entry) ||
+    Number(meta.lastPrice) ||
+    0;
+
+  const sl =
+    Number(levels.sl) ||
+    Number(signal.stopLoss) ||
+    0;
+
+  const tp1 =
+    Number(levels.tp1) || 0;
+
+  const tp2 =
+    Number(levels.tp2) || 0;
+
+  const tp3 =
+    Number(levels.tp3) ||
+    Number(signal.takeProfit) ||
+    0;
+
+  return {
+    entry,
+    sl,
+    tp1,
+    tp2,
+    tp3,
+  };
+}
+
+function getLatestPrice(signal?: Signal | null) {
+  if (!signal) {
+    return 0;
+  }
+
+  return (
+    Number(signal.metadata?.lastPrice) ||
+    Number(signal.metadata?.market?.price) ||
+    Number(signal.entry) ||
+    0
+  );
+}
+
+function calculateDistance(
+  direction: Direction,
+  from: number,
+  to: number
+) {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) {
+    return 0;
+  }
+
+  if (direction === "BUY") {
+    return to - from;
+  }
+
+  return from - to;
+}
+
+function getProgress(signal: Signal) {
+  const { entry, tp3 } = getSignalLevels(signal);
+  const current = getLatestPrice(signal);
+
+  if (!entry || !tp3 || !current) {
+    return 0;
+  }
+
+  const total = calculateDistance(
+    signal.direction,
+    entry,
+    tp3
+  );
+
+  const done = calculateDistance(
+    signal.direction,
+    entry,
+    current
+  );
+
+  if (total <= 0) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, (done / total) * 100)
+  );
+}
+
+function getSignalAge(signal: Signal) {
+  const created = new Date(signal.createdAt).getTime();
+
+  if (!Number.isFinite(created)) {
+    return "";
+  }
+
+  const diff = Date.now() - created;
+
+  if (diff < 60_000) {
+    return "کمتر از ۱ دقیقه";
+  }
+
+  const minutes = Math.floor(diff / 60_000);
+
+  if (minutes < 60) {
+    return `${minutes} دقیقه`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} ساعت`;
+  }
+
+  return `${Math.floor(hours / 24)} روز`;
+}
+
+function sortNewest(a: Signal, b: Signal) {
+  return (
+    new Date(b.createdAt).getTime() -
+    new Date(a.createdAt).getTime()
+  );
+}
+
+function findSupportResistance(signal?: Signal | null) {
+  if (!signal) {
+    return {
+      support: null as number | null,
+      resistance: null as number | null,
+    };
+  }
+
+  const text = signal.supportResistance || "";
+
+  const supportMatch = text.match(
+    /S\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/i
+  );
+
+  const resistanceMatch = text.match(
+    /R\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/i
+  );
+
+  return {
+    support: supportMatch
+      ? Number(supportMatch[1])
+      : null,
+
+    resistance: resistanceMatch
+      ? Number(resistanceMatch[1])
+      : null,
+  };
 }
 
 export default function SignalsPage() {
@@ -289,7 +524,7 @@ export default function SignalsPage() {
             method: "GET",
             cache: "no-store",
             headers: {
-              "Cache-Control": "no-cache",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
               Pragma: "no-cache",
             },
           }
@@ -307,7 +542,7 @@ export default function SignalsPage() {
 
         if (!response.ok || !json.ok) {
           throw new Error(
-            (json as { error?: string })?.error ||
+            json.error ||
               "خطا در دریافت موتور سیگنال"
           );
         }
@@ -336,54 +571,99 @@ export default function SignalsPage() {
 
     const timer = window.setInterval(() => {
       void loadSignals();
-    }, 20000);
+    }, 10_000);
 
     return () => {
       window.clearInterval(timer);
     };
   }, [loadSignals]);
 
-  const signals = useMemo(() => {
+  const allSignals = useMemo(() => {
     const rows = Array.isArray(data?.signals)
       ? [...data.signals]
       : [];
 
-    rows.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() -
-        new Date(a.createdAt).getTime()
-    );
+    rows.sort(sortNewest);
 
     return rows;
   }, [data]);
 
-  const activeSignals = useMemo(
-    () =>
-      signals.filter((signal) =>
-        [
-          "WAITING",
-          "ACTIVE",
-          "TP1_HIT",
-          "TP2_HIT",
-          "TP3_HIT",
-        ].includes(signal.status)
-      ),
-    [signals]
-  );
+  /*
+   * مهم:
+   * اگر API خودش active/currentSignal را برگرداند،
+   * همان را در اولویت قرار می‌دهیم.
+   *
+   * اگر API چنین فیلدی نداشت،
+   * از signals فقط ACTIVE/WAITING/TP1/TP2/TP3 را
+   * استخراج می‌کنیم.
+   */
+  const activeSignal = useMemo(() => {
+    const direct =
+      data?.active ||
+      data?.currentSignal ||
+      null;
 
-  const filteredSignals = useMemo(() => {
-    if (filter === "ALL") {
-      return signals;
+    if (direct && isActiveSignal(direct)) {
+      return direct;
     }
 
-    return signals.filter(
-      (signal) =>
-        signal.direction === filter
-    );
-  }, [signals, filter]);
+    const activeRows =
+      allSignals
+        .filter(isActiveSignal)
+        .sort(sortNewest);
 
-  const latest =
-    getLatestSignal(signals);
+    /*
+     * سیستم فقط یک سیگنال جاری را نشان می‌دهد.
+     * اگر API اشتباهاً چند سیگنال فعال برگرداند،
+     * قدیمی‌ترها در بخش تاریخچه جاری نمایش داده نمی‌شوند.
+     */
+    return activeRows[0] || null;
+  }, [
+    data?.active,
+    data?.currentSignal,
+    allSignals,
+  ]);
+
+  const closedSignals = useMemo(() => {
+    const rows = allSignals
+      .filter(isClosedSignal)
+      .filter(
+        (signal) =>
+          signal.id !== activeSignal?.id
+      )
+      .sort(sortNewest);
+
+    if (filter === "ALL") {
+      return rows.slice(0, 12);
+    }
+
+    return rows
+      .filter(
+        (signal) =>
+          signal.direction === filter
+      )
+      .slice(0, 12);
+  }, [
+    allSignals,
+    filter,
+    activeSignal?.id,
+  ]);
+
+  const activeDirectionMatches =
+    !activeSignal ||
+    filter === "ALL" ||
+    activeSignal.direction === filter;
+
+  const latestForLevels =
+    activeSignal ||
+    data?.latest ||
+    allSignals[0] ||
+    null;
+
+  const levels =
+    findSupportResistance(
+      latestForLevels
+    );
 
   const daily =
     data?.performance?.daily || {};
@@ -394,38 +674,68 @@ export default function SignalsPage() {
   const monthly =
     data?.performance?.monthly || {};
 
-  const latestMeta =
-    latest ? getMeta(latest) : {};
+  const marketPrice =
+    Number(data?.market?.price) ||
+    getLatestPrice(activeSignal);
 
-  const morningLevels = useMemo(() => {
-    if (!latest) {
-      return {
-        support: null as number | null,
-        resistance: null as number | null,
-      };
-    }
+  const marketOpen =
+    data?.market?.isOpen !== false;
 
-    const text =
-      latest.supportResistance || "";
-
-    const supportMatch = text.match(
-      /S\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/i
+  const telegramEnabled =
+    Boolean(
+      data?.telegram?.enabled ||
+        data?.telegram?.connected
     );
 
-    const resistanceMatch = text.match(
-      /R\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/i
-    );
+  const engineState =
+    activeSignal
+      ? "ACTIVE"
+      : "SEARCHING";
 
-    return {
-      support: supportMatch
-        ? Number(supportMatch[1])
-        : null,
+  const activeMeta =
+    activeSignal
+      ? getMeta(activeSignal)
+      : {};
 
-      resistance: resistanceMatch
-        ? Number(resistanceMatch[1])
-        : null,
-    };
-  }, [latest]);
+  const activeLevels =
+    activeSignal
+      ? getSignalLevels(activeSignal)
+      : {
+          entry: 0,
+          sl: 0,
+          tp1: 0,
+          tp2: 0,
+          tp3: 0,
+        };
+
+  const activeRisk =
+    activeMeta.risk || {};
+
+  const progress =
+    activeSignal
+      ? getProgress(activeSignal)
+      : 0;
+
+  const activeEvents =
+    Array.isArray(activeMeta.events)
+      ? activeMeta.events
+      : [];
+
+  const activeState =
+    activeMeta.state || {};
+
+  const activeReasons =
+    activeSignal &&
+    Array.isArray(activeSignal.reasons)
+      ? activeSignal.reasons
+      : [];
+
+  const confirmationCount =
+    activeSignal
+      ? getConfirmationCount(
+          activeSignal
+        )
+      : 0;
 
   return (
     <main
@@ -437,71 +747,149 @@ export default function SignalsPage() {
           box-sizing:border-box;
         }
 
-        body{
+        html,body{
           margin:0;
-          background:#050806;
-          color:#f7f7f2;
-          font-family:Tahoma,Arial,sans-serif;
+          padding:0;
+          background:#050606;
+        }
+
+        body{
+          color:#f4f2e9;
+          font-family:
+            Tahoma,
+            Arial,
+            sans-serif;
+        }
+
+        button{
+          font-family:inherit;
         }
 
         .signals-page{
           min-height:100vh;
           padding:18px;
           background:
-            radial-gradient(circle at 85% 0%,rgba(198,157,44,.12),transparent 28%),
-            radial-gradient(circle at 5% 50%,rgba(20,120,75,.08),transparent 30%),
-            linear-gradient(135deg,#050806,#0a0d0b 55%,#050806);
+            radial-gradient(
+              circle at 85% -5%,
+              rgba(211,170,55,.14),
+              transparent 30%
+            ),
+            radial-gradient(
+              circle at 5% 45%,
+              rgba(35,125,82,.08),
+              transparent 28%
+            ),
+            linear-gradient(
+              135deg,
+              #040605 0%,
+              #090c0a 50%,
+              #040605 100%
+            );
         }
 
         .container{
           width:100%;
-          max-width:1450px;
+          max-width:1480px;
           margin:0 auto;
+        }
+
+        .glass{
+          background:
+            linear-gradient(
+              145deg,
+              rgba(19,23,20,.94),
+              rgba(8,11,9,.96)
+            );
+          border:1px solid rgba(218,177,61,.14);
+          box-shadow:
+            0 22px 70px rgba(0,0,0,.28),
+            inset 0 1px 0 rgba(255,255,255,.025);
+          backdrop-filter:blur(20px);
         }
 
         .topbar{
           display:flex;
           align-items:center;
           justify-content:space-between;
-          gap:15px;
-          padding:18px 20px;
-          border:1px solid rgba(214,174,61,.18);
-          border-radius:22px;
-          background:rgba(15,18,16,.86);
-          backdrop-filter:blur(18px);
-          box-shadow:0 20px 60px rgba(0,0,0,.28);
+          gap:20px;
+          padding:20px;
+          border-radius:24px;
         }
 
-        .title-wrap h1{
+        .brand{
+          display:flex;
+          align-items:center;
+          gap:13px;
+        }
+
+        .brand-icon{
+          width:48px;
+          height:48px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          border-radius:15px;
+          color:#11100a;
+          font-size:22px;
+          font-weight:900;
+          background:
+            linear-gradient(
+              135deg,
+              #9b7720,
+              #e3c45d,
+              #8b6b1b
+            );
+          box-shadow:
+            0 10px 30px rgba(208,164,45,.18);
+        }
+
+        .brand-text h1{
           margin:0;
-          font-size:23px;
+          font-size:22px;
           letter-spacing:-.5px;
         }
 
-        .title-wrap p{
-          margin:7px 0 0;
-          color:#777c76;
-          font-size:11px;
+        .brand-text p{
+          margin:6px 0 0;
+          color:#696f68;
+          font-size:10px;
         }
 
-        .engine-status{
+        .top-status{
           display:flex;
           align-items:center;
-          gap:9px;
-          padding:9px 13px;
-          border:1px solid rgba(68,211,128,.18);
-          border-radius:999px;
-          color:#9aa39c;
-          font-size:10px;
-          background:rgba(38,120,72,.05);
+          gap:8px;
+          flex-wrap:wrap;
         }
 
-        .dot{
+        .status-pill{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:9px 12px;
+          border-radius:999px;
+          border:1px solid #20251f;
+          background:#0a0e0b;
+          color:#858b84;
+          font-size:9px;
+        }
+
+        .status-dot{
           width:8px;
           height:8px;
           border-radius:50%;
-          background:#35d77b;
-          box-shadow:0 0 12px #35d77b;
+          background:#37d689;
+          box-shadow:0 0 12px rgba(55,214,137,.8);
+        }
+
+        .status-dot.gold{
+          background:#d8b64d;
+          box-shadow:0 0 12px rgba(216,182,77,.65);
+        }
+
+        .status-dot.red{
+          background:#e86470;
+          box-shadow:0 0 12px rgba(232,100,112,.6);
         }
 
         .controls{
@@ -509,122 +897,151 @@ export default function SignalsPage() {
           align-items:center;
           justify-content:space-between;
           gap:12px;
-          margin-top:16px;
+          margin-top:15px;
           flex-wrap:wrap;
         }
 
         .filters{
           display:flex;
-          gap:7px;
+          gap:5px;
           padding:5px;
-          border:1px solid #252923;
           border-radius:15px;
-          background:#0b0e0c;
+          background:#080b09;
+          border:1px solid #1b201c;
         }
 
         .filter-btn{
-          border:0;
-          cursor:pointer;
-          min-width:75px;
-          padding:9px 13px;
+          min-width:76px;
+          padding:9px 14px;
+          border:1px solid transparent;
           border-radius:10px;
-          color:#777d76;
           background:transparent;
-          font-family:inherit;
-          font-size:11px;
+          color:#656c65;
+          cursor:pointer;
+          font-size:10px;
+        }
+
+        .filter-btn:hover{
+          color:#b9beb7;
         }
 
         .filter-btn.active{
-          color:#e4c55b;
-          background:rgba(194,157,48,.11);
-          border:1px solid rgba(194,157,48,.2);
+          color:#e3c45d;
+          background:rgba(213,174,60,.09);
+          border-color:rgba(213,174,60,.17);
         }
 
         .scan-btn{
-          border:1px solid rgba(214,174,61,.3);
-          background:linear-gradient(135deg,#9c7a20,#d2ac3f);
-          color:#10100c;
-          font-family:inherit;
-          font-weight:bold;
-          font-size:11px;
-          border-radius:12px;
-          padding:11px 17px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          gap:8px;
+          min-width:190px;
+          padding:11px 16px;
+          border-radius:13px;
+          border:1px solid rgba(220,179,58,.35);
+          color:#12110b;
+          background:
+            linear-gradient(
+              135deg,
+              #98751f,
+              #e2c158
+            );
+          font-size:10px;
+          font-weight:900;
           cursor:pointer;
-          box-shadow:0 8px 24px rgba(188,145,35,.13);
+          box-shadow:
+            0 10px 28px rgba(194,150,35,.13);
+        }
+
+        .scan-btn:hover{
+          transform:translateY(-1px);
         }
 
         .scan-btn:disabled{
           opacity:.55;
           cursor:wait;
+          transform:none;
         }
 
         .notice{
           margin-top:14px;
-          padding:12px 15px;
-          border-radius:14px;
-          border:1px solid rgba(214,174,61,.14);
-          background:rgba(194,157,48,.045);
-          color:#92978f;
-          font-size:10px;
+          padding:13px 16px;
+          border-radius:15px;
+          border:1px solid rgba(215,176,57,.11);
+          background:rgba(215,176,57,.035);
+          color:#777e76;
+          font-size:9px;
           line-height:2;
         }
 
         .error{
           margin-top:14px;
-          padding:12px 15px;
-          border-radius:14px;
-          border:1px solid rgba(235,80,90,.2);
-          background:rgba(180,40,50,.06);
-          color:#e9959c;
+          padding:13px 16px;
+          border-radius:15px;
+          border:1px solid rgba(230,84,96,.2);
+          background:rgba(160,35,46,.07);
+          color:#e8949c;
           font-size:10px;
           line-height:2;
         }
 
         .stats{
           display:grid;
-          grid-template-columns:repeat(4,1fr);
+          grid-template-columns:
+            repeat(4,1fr);
           gap:12px;
-          margin-top:16px;
+          margin-top:15px;
         }
 
         .stat{
-          min-height:105px;
+          min-height:108px;
           padding:17px;
           border-radius:19px;
-          border:1px solid #1c211d;
-          background:linear-gradient(145deg,#101411,#0b0e0c);
-          box-shadow:0 12px 35px rgba(0,0,0,.2);
+          border:1px solid #1a201b;
+          background:
+            linear-gradient(
+              145deg,
+              #101411,
+              #090c0a
+            );
+          box-shadow:
+            0 14px 35px rgba(0,0,0,.2);
         }
 
-        .stat span{
-          display:block;
-          color:#656c65;
+        .stat-label{
+          color:#626961;
           font-size:9px;
         }
 
-        .stat strong{
+        .stat-value{
           display:block;
           margin-top:10px;
-          font-size:22px;
+          font-size:24px;
+          font-weight:900;
         }
 
-        .stat small{
+        .stat-sub{
           display:block;
           margin-top:7px;
-          color:#777d76;
-          font-size:9px;
+          color:#666d66;
+          font-size:8px;
         }
 
         .gold{
-          color:#dfbc4f;
+          color:#dfbd51;
         }
 
         .green{
-          color:#37d68a;
+          color:#3bd68a;
         }
 
         .red{
-          color:#ed6875;
+          color:#e96a76;
+        }
+
+        .muted{
+          color:#6a716a;
         }
 
         .section{
@@ -636,7 +1053,7 @@ export default function SignalsPage() {
           align-items:center;
           justify-content:space-between;
           gap:12px;
-          margin-bottom:10px;
+          margin-bottom:11px;
         }
 
         .section-head h2{
@@ -645,142 +1062,190 @@ export default function SignalsPage() {
         }
 
         .section-head span{
+          color:#5f665f;
+          font-size:9px;
+        }
+
+        .market-card{
+          display:grid;
+          grid-template-columns:
+            1.3fr
+            1fr
+            1fr;
+          gap:10px;
+        }
+
+        .market-box{
+          min-height:92px;
+          padding:15px;
+          border-radius:17px;
+          border:1px solid #1b211c;
+          background:#090d0a;
+        }
+
+        .market-box span{
+          display:block;
           color:#606760;
-          font-size:9px;
+          font-size:8px;
         }
 
-        .levels{
-          display:grid;
-          grid-template-columns:1fr 1fr;
-          gap:12px;
-        }
-
-        .level{
-          padding:17px;
-          border-radius:18px;
-          border:1px solid #1d221e;
-          background:#0c100d;
-        }
-
-        .level span{
+        .market-box strong{
           display:block;
-          color:#6c726c;
-          font-size:9px;
+          margin-top:9px;
+          font-size:20px;
         }
 
-        .level strong{
-          display:block;
-          margin-top:8px;
-          font-size:21px;
-        }
-
-        .level small{
-          display:block;
-          margin-top:6px;
-          color:#626961;
-          font-size:9px;
-        }
-
-        .signal-list{
-          display:grid;
-          gap:14px;
-        }
-
-        .empty{
-          padding:45px 20px;
+        .searching{
+          position:relative;
+          overflow:hidden;
+          padding:30px 20px;
           text-align:center;
-          border:1px dashed #242a25;
-          border-radius:20px;
-          color:#666d66;
-          background:#090c0a;
+          border-radius:25px;
+          border:1px solid rgba(215,176,57,.15);
+          background:
+            radial-gradient(
+              circle at 50% 0%,
+              rgba(214,174,59,.08),
+              transparent 45%
+            ),
+            linear-gradient(
+              145deg,
+              #101411,
+              #080b09
+            );
+        }
+
+        .search-icon{
+          width:58px;
+          height:58px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          margin:0 auto 14px;
+          border-radius:18px;
+          border:1px solid rgba(215,176,59,.2);
+          background:rgba(215,176,59,.05);
+          color:#d9b74e;
+          font-size:25px;
+          animation:pulse 1.8s infinite;
+        }
+
+        @keyframes pulse{
+          0%,100%{
+            box-shadow:
+              0 0 0 0 rgba(215,176,59,.08);
+          }
+
+          50%{
+            box-shadow:
+              0 0 0 13px rgba(215,176,59,0);
+          }
+        }
+
+        .searching h3{
+          margin:0;
+          font-size:17px;
+        }
+
+        .searching p{
+          margin:8px auto 0;
+          max-width:620px;
+          color:#686f68;
+          font-size:9px;
+          line-height:2;
         }
 
         .signal-card{
-          position:relative;
           overflow:hidden;
-          border-radius:24px;
-          border:1px solid rgba(210,171,57,.16);
+          border-radius:25px;
+          border:1px solid rgba(215,176,59,.16);
           background:
-            linear-gradient(145deg,rgba(18,21,19,.97),rgba(8,11,9,.98));
-          box-shadow:0 18px 55px rgba(0,0,0,.28);
+            linear-gradient(
+              145deg,
+              rgba(18,22,19,.98),
+              rgba(7,10,8,.99)
+            );
+          box-shadow:
+            0 25px 70px rgba(0,0,0,.3);
         }
 
         .signal-card.buy{
-          border-top:2px solid rgba(54,213,133,.6);
+          border-top:2px solid #35d485;
         }
 
         .signal-card.sell{
-          border-top:2px solid rgba(226,77,89,.65);
+          border-top:2px solid #e15c69;
         }
 
-        .signal-head{
+        .signal-header{
           display:flex;
           align-items:center;
           justify-content:space-between;
           gap:15px;
           padding:19px 20px;
-          border-bottom:1px solid #1b201c;
+          border-bottom:1px solid #1a201b;
         }
 
-        .symbol{
+        .signal-main{
           display:flex;
           align-items:center;
           gap:12px;
         }
 
         .direction{
-          min-width:78px;
-          padding:11px 13px;
+          min-width:82px;
+          padding:12px 13px;
           border-radius:14px;
           text-align:center;
           font-size:15px;
-          font-weight:bold;
+          font-weight:900;
         }
 
         .direction.buy{
-          color:#49df91;
-          background:rgba(44,210,124,.08);
-          border:1px solid rgba(44,210,124,.16);
+          color:#48df91;
+          background:rgba(52,211,132,.07);
+          border:1px solid rgba(52,211,132,.17);
         }
 
         .direction.sell{
-          color:#ed6875;
-          background:rgba(220,70,82,.08);
-          border:1px solid rgba(220,70,82,.16);
+          color:#eb6874;
+          background:rgba(224,77,91,.07);
+          border:1px solid rgba(224,77,91,.17);
         }
 
-        .symbol-text strong{
+        .signal-name strong{
           display:block;
-          font-size:21px;
+          font-size:20px;
         }
 
-        .symbol-text small{
+        .signal-name small{
           display:block;
           margin-top:5px;
-          color:#656c65;
-          font-size:9px;
+          color:#616861;
+          font-size:8px;
         }
 
         .badges{
           display:flex;
-          flex-wrap:wrap;
+          align-items:center;
           justify-content:flex-end;
           gap:6px;
+          flex-wrap:wrap;
         }
 
         .badge{
           padding:7px 9px;
           border-radius:9px;
-          color:#777e77;
-          background:#111512;
+          background:#101411;
           border:1px solid #202620;
-          font-size:9px;
+          color:#767d76;
+          font-size:8px;
         }
 
         .badge.gold-badge{
-          color:#d9b64b;
-          border-color:rgba(214,174,61,.17);
-          background:rgba(214,174,61,.05);
+          color:#dbb94f;
+          border-color:rgba(215,176,57,.18);
+          background:rgba(215,176,57,.045);
         }
 
         .signal-body{
@@ -789,70 +1254,149 @@ export default function SignalsPage() {
 
         .price-grid{
           display:grid;
-          grid-template-columns:repeat(4,1fr);
+          grid-template-columns:
+            repeat(5,1fr);
           gap:9px;
         }
 
         .price-box{
-          padding:14px;
-          border-radius:15px;
-          background:#0b0f0c;
-          border:1px solid #1c211d;
+          min-height:82px;
+          padding:13px;
+          border-radius:14px;
+          background:#090d0a;
+          border:1px solid #1b211c;
         }
 
         .price-box span{
           display:block;
-          color:#626961;
+          color:#5e655e;
           font-size:8px;
         }
 
         .price-box strong{
           display:block;
-          margin-top:8px;
-          font-size:17px;
+          margin-top:9px;
+          font-size:16px;
+          font-weight:900;
+        }
+
+        .price-box.entry{
+          border-color:rgba(215,176,57,.18);
         }
 
         .price-box.entry strong{
-          color:#e8dfbf;
+          color:#eee5c8;
         }
 
         .price-box.sl{
-          border-color:rgba(221,75,87,.16);
+          border-color:rgba(228,81,96,.18);
         }
 
         .price-box.sl strong{
-          color:#ed6875;
+          color:#ec6874;
         }
 
         .price-box.tp strong{
           color:#3bd68a;
         }
 
+        .progress-wrap{
+          margin-top:12px;
+          padding:13px;
+          border-radius:14px;
+          background:#080c09;
+          border:1px solid #171d18;
+        }
+
+        .progress-head{
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+          gap:10px;
+          color:#666d66;
+          font-size:8px;
+        }
+
+        .progress-head strong{
+          color:#d8b64c;
+          font-size:9px;
+        }
+
+        .progress-track{
+          height:7px;
+          margin-top:10px;
+          overflow:hidden;
+          border-radius:999px;
+          background:#161b17;
+        }
+
+        .progress-bar{
+          height:100%;
+          border-radius:999px;
+          background:
+            linear-gradient(
+              90deg,
+              #82631a,
+              #dfbd50
+            );
+          transition:width .35s ease;
+        }
+
+        .money-grid{
+          display:grid;
+          grid-template-columns:
+            repeat(4,1fr);
+          gap:9px;
+          margin-top:10px;
+        }
+
+        .money-box{
+          padding:13px;
+          border-radius:14px;
+          background:#090d0a;
+          border:1px solid #1a201b;
+        }
+
+        .money-box span{
+          display:block;
+          color:#5e655e;
+          font-size:8px;
+        }
+
+        .money-box strong{
+          display:block;
+          margin-top:8px;
+          font-size:14px;
+        }
+
         .confirmations{
           display:grid;
-          grid-template-columns:repeat(4,1fr);
+          grid-template-columns:
+            repeat(5,1fr);
           gap:8px;
           margin-top:10px;
         }
 
         .confirmation{
-          padding:11px;
-          border-radius:13px;
-          background:#0a0e0b;
-          border:1px solid #1b201c;
+          min-height:62px;
+          padding:10px;
+          border-radius:12px;
+          background:#080c09;
+          border:1px solid #181e19;
         }
 
         .confirmation span{
           display:block;
-          color:#646b64;
-          font-size:8px;
+          color:#5d645d;
+          font-size:7px;
         }
 
         .confirmation strong{
           display:block;
-          margin-top:5px;
-          color:#aab0aa;
-          font-size:10px;
+          margin-top:6px;
+          color:#aeb4ad;
+          font-size:9px;
+          line-height:1.5;
         }
 
         .positive{
@@ -860,34 +1404,96 @@ export default function SignalsPage() {
         }
 
         .negative{
-          color:#e96d77 !important;
+          color:#e96c77 !important;
         }
 
-        .signal-footer{
+        .management{
+          margin-top:11px;
+          padding:13px;
+          border-radius:14px;
+          background:#080c09;
+          border:1px solid #181e19;
+        }
+
+        .management-head{
           display:flex;
           justify-content:space-between;
           align-items:center;
           gap:10px;
-          margin-top:13px;
-          padding-top:14px;
-          border-top:1px solid #191e1a;
-          color:#646b64;
-          font-size:9px;
+        }
+
+        .management-head span{
+          color:#606760;
+          font-size:8px;
+        }
+
+        .management-head strong{
+          color:#d6d9d4;
+          font-size:10px;
+        }
+
+        .target-row{
+          display:flex;
           flex-wrap:wrap;
+          gap:6px;
+          margin-top:9px;
         }
 
-        .telegram-ok{
-          color:#37d68a;
+        .target{
+          padding:7px 9px;
+          border-radius:8px;
+          border:1px solid #202620;
+          background:#101511;
+          color:#707770;
+          font-size:8px;
         }
 
-        .telegram-failed{
-          color:#e96d77;
+        .target.hit{
+          color:#39d789;
+          background:rgba(55,214,137,.08);
+          border-color:rgba(55,214,137,.16);
+        }
+
+        .target.stop{
+          color:#e96a76;
+          background:rgba(233,106,118,.08);
+          border-color:rgba(233,106,118,.16);
+        }
+
+        .reasons{
+          margin-top:11px;
+          padding:13px;
+          border-radius:14px;
+          background:#080c09;
+          border:1px solid #181e19;
+        }
+
+        .reasons-title{
+          color:#aeb3ad;
+          font-size:9px;
+          font-weight:900;
+        }
+
+        .reason-list{
+          display:flex;
+          flex-wrap:wrap;
+          gap:6px;
+          margin-top:8px;
+        }
+
+        .reason{
+          padding:6px 8px;
+          border-radius:8px;
+          background:#101511;
+          border:1px solid #202620;
+          color:#747b74;
+          font-size:8px;
         }
 
         .events{
           display:grid;
-          gap:7px;
-          margin-top:12px;
+          gap:6px;
+          margin-top:11px;
         }
 
         .event{
@@ -897,8 +1503,8 @@ export default function SignalsPage() {
           gap:10px;
           padding:10px 11px;
           border-radius:11px;
-          background:#080b09;
-          border:1px solid #171c18;
+          background:#080c09;
+          border:1px solid #171d18;
         }
 
         .event-left{
@@ -908,82 +1514,254 @@ export default function SignalsPage() {
         }
 
         .event-left strong{
-          font-size:10px;
+          color:#c7cbc5;
+          font-size:9px;
         }
 
         .event-left small{
+          color:#5f665f;
+          font-size:7px;
+        }
+
+        .signal-footer{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          flex-wrap:wrap;
+          margin-top:13px;
+          padding-top:13px;
+          border-top:1px solid #171d18;
+          color:#5f665f;
+          font-size:8px;
+        }
+
+        .telegram-ok{
+          color:#39d789;
+        }
+
+        .telegram-failed{
+          color:#e86b76;
+        }
+
+        .history{
+          display:grid;
+          gap:8px;
+        }
+
+        .history-item{
+          display:grid;
+          grid-template-columns:
+            95px
+            1fr
+            110px
+            130px
+            120px;
+          align-items:center;
+          gap:12px;
+          padding:13px;
+          border-radius:15px;
+          background:#090d0a;
+          border:1px solid #181e19;
+        }
+
+        .history-direction{
+          padding:8px;
+          border-radius:9px;
+          text-align:center;
+          font-size:9px;
+          font-weight:900;
+        }
+
+        .history-direction.buy{
+          color:#3bd68a;
+          background:rgba(55,214,137,.07);
+        }
+
+        .history-direction.sell{
+          color:#e96a76;
+          background:rgba(233,106,118,.07);
+        }
+
+        .history-symbol strong{
+          display:block;
+          font-size:10px;
+        }
+
+        .history-symbol small{
+          display:block;
+          margin-top:4px;
+          color:#5e655e;
+          font-size:7px;
+        }
+
+        .history-price{
+          color:#b7bcb6;
+          font-size:9px;
+        }
+
+        .history-status{
+          color:#a7aca6;
+          font-size:9px;
+        }
+
+        .history-time{
+          color:#5d645d;
+          font-size:8px;
+        }
+
+        .levels{
+          display:grid;
+          grid-template-columns:
+            1fr 1fr;
+          gap:10px;
+        }
+
+        .level{
+          padding:16px;
+          border-radius:17px;
+          background:#090d0a;
+          border:1px solid #1a201b;
+        }
+
+        .level span{
+          display:block;
           color:#606760;
+          font-size:8px;
+        }
+
+        .level strong{
+          display:block;
+          margin-top:9px;
+          font-size:20px;
+        }
+
+        .level small{
+          display:block;
+          margin-top:6px;
+          color:#5f665f;
           font-size:8px;
         }
 
         .performance{
           display:grid;
-          grid-template-columns:repeat(3,1fr);
+          grid-template-columns:
+            repeat(3,1fr);
           gap:12px;
         }
 
         .performance-card{
           padding:17px;
           border-radius:18px;
-          border:1px solid #1c211d;
-          background:#0c100d;
+          background:#090d0a;
+          border:1px solid #1a201b;
         }
 
         .performance-card h3{
           margin:0;
           font-size:11px;
-          color:#9a9f99;
+          color:#a0a59f;
         }
 
         .performance-row{
           display:grid;
-          grid-template-columns:repeat(3,1fr);
-          gap:8px;
-          margin-top:12px;
+          grid-template-columns:
+            repeat(3,1fr);
+          gap:7px;
+          margin-top:11px;
         }
 
-        .performance-row div{
+        .performance-cell{
           padding:9px;
-          border-radius:11px;
-          background:#090c0a;
+          border-radius:10px;
+          background:#070a08;
         }
 
-        .performance-row span{
+        .performance-cell span{
           display:block;
-          color:#5f665f;
-          font-size:8px;
+          color:#5b625b;
+          font-size:7px;
         }
 
-        .performance-row strong{
+        .performance-cell strong{
           display:block;
           margin-top:5px;
-          font-size:12px;
+          font-size:11px;
         }
 
         .footer{
           margin-top:20px;
-          padding:16px;
+          padding:18px;
           text-align:center;
-          color:#505750;
-          font-size:9px;
+          color:#4f564f;
+          font-size:8px;
           line-height:2;
         }
 
-        @media(max-width:1000px){
+        .loading{
+          padding:50px 20px;
+          text-align:center;
+          color:#6a716a;
+          border:1px dashed #202620;
+          border-radius:20px;
+          background:#080b09;
+          font-size:10px;
+        }
+
+        @media(max-width:1100px){
           .stats{
-            grid-template-columns:repeat(2,1fr);
+            grid-template-columns:
+              repeat(2,1fr);
           }
 
           .price-grid{
-            grid-template-columns:repeat(2,1fr);
+            grid-template-columns:
+              repeat(3,1fr);
           }
 
           .confirmations{
-            grid-template-columns:repeat(2,1fr);
+            grid-template-columns:
+              repeat(3,1fr);
+          }
+
+          .history-item{
+            grid-template-columns:
+              90px
+              1fr
+              100px;
+          }
+
+          .history-price,
+          .history-time{
+            display:none;
           }
         }
 
-        @media(max-width:700px){
+        @media(max-width:800px){
+          .market-card{
+            grid-template-columns:
+              1fr 1fr;
+          }
+
+          .market-box:first-child{
+            grid-column:1/-1;
+          }
+
+          .performance{
+            grid-template-columns:1fr;
+          }
+
+          .signal-header{
+            align-items:flex-start;
+            flex-direction:column;
+          }
+
+          .badges{
+            justify-content:flex-start;
+          }
+        }
+
+        @media(max-width:650px){
           .signals-page{
             padding:9px;
           }
@@ -991,11 +1769,21 @@ export default function SignalsPage() {
           .topbar{
             align-items:flex-start;
             flex-direction:column;
+            padding:16px;
+          }
+
+          .top-status{
+            width:100%;
+          }
+
+          .status-pill{
+            flex:1;
+            justify-content:center;
           }
 
           .controls{
-            align-items:stretch;
             flex-direction:column;
+            align-items:stretch;
           }
 
           .filters{
@@ -1011,58 +1799,129 @@ export default function SignalsPage() {
           }
 
           .stats{
-            grid-template-columns:1fr 1fr;
+            grid-template-columns:
+              1fr 1fr;
             gap:8px;
           }
 
-          .levels,
-          .performance{
+          .price-grid,
+          .money-grid{
+            grid-template-columns:
+              1fr 1fr;
+          }
+
+          .confirmations{
+            grid-template-columns:
+              1fr 1fr;
+          }
+
+          .levels{
             grid-template-columns:1fr;
           }
 
-          .signal-head{
-            align-items:flex-start;
-            flex-direction:column;
+          .signal-body{
+            padding:14px;
           }
 
-          .badges{
-            justify-content:flex-start;
+          .history-item{
+            grid-template-columns:
+              78px
+              1fr;
+          }
+
+          .history-status{
+            display:none;
+          }
+
+          .brand-text h1{
+            font-size:18px;
           }
         }
 
-        @media(max-width:450px){
+        @media(max-width:420px){
           .stats{
             grid-template-columns:1fr;
           }
 
           .price-grid,
+          .money-grid,
           .confirmations{
             grid-template-columns:1fr 1fr;
           }
 
-          .symbol-text strong{
-            font-size:18px;
+          .direction{
+            min-width:70px;
           }
         }
       `}</style>
 
       <div className="container">
-        <header className="topbar">
-          <div className="title-wrap">
-            <h1>
-              سیگنال‌های معاملاتی
-            </h1>
+        {/* HEADER */}
 
-            <p>
-              موتور واقعی XAUUSD · تحلیل چندتایم‌فریمی · ارسال Telegram
-            </p>
+        <header className="topbar glass">
+          <div className="brand">
+            <div className="brand-icon">
+              AI
+            </div>
+
+            <div className="brand-text">
+              <h1>
+                Signal Engine
+              </h1>
+
+              <p>
+                موتور سیگنال XAUUSD · مدیریت معامله · Telegram
+              </p>
+            </div>
           </div>
 
-          <div className="engine-status">
-            <span className="dot" />
-            موتور سیگنال فعال
+          <div className="top-status">
+            <div className="status-pill">
+              <span
+                className={`status-dot ${
+                  engineState === "ACTIVE"
+                    ? ""
+                    : "gold"
+                }`}
+              />
+
+              {engineState === "ACTIVE"
+                ? "سیگنال فعال"
+                : "در حال جستجوی سیگنال"}
+            </div>
+
+            <div className="status-pill">
+              <span
+                className={`status-dot ${
+                  marketOpen
+                    ? ""
+                    : "red"
+                }`}
+              />
+
+              {marketOpen
+                ? "بازار باز"
+                : "بازار بسته"}
+            </div>
+
+            <div className="status-pill">
+              <span
+                className={`status-dot ${
+                  telegramEnabled
+                    ? ""
+                    : "red"
+                }`}
+              />
+
+              Telegram{" "}
+              {telegramEnabled
+                ? "فعال"
+                : "غیرفعال"}
+            </div>
           </div>
         </header>
+
+        {/* CONTROLS */}
 
         <div className="controls">
           <div className="filters">
@@ -1118,10 +1977,12 @@ export default function SignalsPage() {
             }
           >
             {scanning
-              ? "در حال اسکن بازار..."
-              : "⟳ اسکن و بروزرسانی"}
+              ? "در حال بررسی بازار..."
+              : "⟳ بروزرسانی موتور"}
           </button>
         </div>
+
+        {/* ERROR */}
 
         {error && (
           <div className="error">
@@ -1129,17 +1990,27 @@ export default function SignalsPage() {
           </div>
         )}
 
+        {/* NOTICE */}
+
         <div className="notice">
-          🤖 این بخش از داده واقعی موتور
-          Twelve Data استفاده می‌کند.
-          صفحه هر ۲۰ ثانیه موتور سیگنال را
-          بررسی می‌کند.
-
+          <strong
+            style={{
+              color: "#d5b34d",
+            }}
+          >
+            موتور سیگنال
+          </strong>{" "}
+          وضعیت سیگنال جاری را از API می‌گیرد.
+          تا زمانی که معامله جاری به TP نهایی،
+          SL یا حالت نهایی خود نرسیده باشد،
+          این صفحه سیگنال دیگری را به‌عنوان
+          سیگنال جاری نمایش نمی‌دهد.
           <br />
-
-          ⚠️ سیگنال‌ها تحلیل خودکار بازار هستند
-          و تضمین سود نیستند.
-
+          بروزرسانی خودکار هر ۱۰ ثانیه انجام می‌شود.
+          <br />
+          ⚠️ تحلیل بازار تضمین سود نیست و نتیجه
+          نهایی به اجرای واقعی معامله و شرایط بازار
+          وابسته است.
           {lastUpdate && (
             <>
               <br />
@@ -1149,81 +2020,772 @@ export default function SignalsPage() {
           )}
         </div>
 
+        {/* STATS */}
+
         <section className="stats">
           <div className="stat">
-            <span>
-              سیگنال‌های فعال
+            <span className="stat-label">
+              سیگنال جاری
             </span>
 
-            <strong className="gold">
-              {activeSignals.length}
+            <strong
+              className={`stat-value ${
+                activeSignal
+                  ? "green"
+                  : "gold"
+              }`}
+            >
+              {activeSignal
+                ? "۱"
+                : "۰"}
             </strong>
 
-            <small>
-              در انتظار TP / SL
-            </small>
+            <span className="stat-sub">
+              {activeSignal
+                ? `${activeSignal.symbol} · ${activeSignal.direction}`
+                : "در حال جستجو"}
+            </span>
           </div>
 
           <div className="stat">
-            <span>
-              سیگنال‌های ثبت‌شده
+            <span className="stat-label">
+              قیمت XAUUSD
             </span>
 
-            <strong>
-              {signals.length}
+            <strong className="stat-value">
+              {marketPrice
+                ? price(marketPrice)
+                : "—"}
             </strong>
 
-            <small>
-              داده واقعی دیتابیس
-            </small>
+            <span className="stat-sub">
+              {data?.market?.priceAt
+                ? dateFa(
+                    data.market.priceAt
+                  )
+                : "قیمت زنده"}
+            </span>
           </div>
 
           <div className="stat">
-            <span>
+            <span className="stat-label">
               برد امروز
             </span>
 
-            <strong className="green">
+            <strong className="stat-value green">
               {daily.wins ?? 0}
             </strong>
 
-            <small>
+            <span className="stat-sub">
               {daily.winRate ?? 0}% ·{" "}
               {usd(daily.pnlUsd ?? 0)}
-            </small>
+            </span>
           </div>
 
           <div className="stat">
-            <span>
+            <span className="stat-label">
               عملکرد ماه
             </span>
 
             <strong
-              className={
+              className={`stat-value ${
                 Number(
                   monthly.pnlUsd || 0
                 ) >= 0
                   ? "green"
                   : "red"
-              }
+              }`}
             >
-              {usd(monthly.pnlUsd ?? 0)}
+              {usd(
+                monthly.pnlUsd ?? 0
+              )}
             </strong>
 
-            <small>
+            <span className="stat-sub">
               {monthly.signals ?? 0} سیگنال
-            </small>
+            </span>
           </div>
         </section>
+
+        {/* MARKET */}
 
         <section className="section">
           <div className="section-head">
             <h2>
-              حمایت و مقاومت بازار
+              وضعیت بازار
             </h2>
 
             <span>
-              آخرین سطوح واقعی ثبت‌شده توسط موتور
+              XAUUSD · قیمت جاری
+            </span>
+          </div>
+
+          <div className="market-card">
+            <div className="market-box">
+              <span>
+                قیمت فعلی
+              </span>
+
+              <strong
+                className={
+                  marketPrice
+                    ? "gold"
+                    : "muted"
+                }
+              >
+                {marketPrice
+                  ? price(marketPrice)
+                  : "—"}
+              </strong>
+            </div>
+
+            <div className="market-box">
+              <span>
+                وضعیت
+              </span>
+
+              <strong
+                className={
+                  marketOpen
+                    ? "green"
+                    : "red"
+                }
+              >
+                {marketOpen
+                  ? "بازار باز"
+                  : "بازار بسته"}
+              </strong>
+            </div>
+
+            <div className="market-box">
+              <span>
+                موتور
+              </span>
+
+              <strong
+                className={
+                  activeSignal
+                    ? "green"
+                    : "gold"
+                }
+              >
+                {activeSignal
+                  ? "MONITORING"
+                  : "SEARCHING"}
+              </strong>
+            </div>
+          </div>
+        </section>
+
+        {/* CURRENT SIGNAL */}
+
+        <section className="section">
+          <div className="section-head">
+            <h2>
+              سیگنال جاری
+            </h2>
+
+            <span>
+              فقط یک معامله جاری
+            </span>
+          </div>
+
+          {!activeSignal ||
+          !activeDirectionMatches ? (
+            <div className="searching">
+              <div className="search-icon">
+                ⌕
+              </div>
+
+              <h3>
+                {marketOpen
+                  ? "در حال جستجوی بهترین سیگنال"
+                  : "بازار بسته است"}
+              </h3>
+
+              <p>
+                {marketOpen
+                  ? "در حال حاضر هیچ سیگنال فعالی با شرایط تأییدشده وجود ندارد. موتور بازار را بررسی می‌کند و پس از تشکیل شرایط معتبر، سیگنال جدید در همین بخش نمایش داده می‌شود."
+                  : "تا زمان باز شدن بازار، سیگنال جدیدی ایجاد یا نمایش داده نمی‌شود."}
+              </p>
+
+              {!marketOpen && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    color: "#e96a76",
+                    fontSize: 9,
+                  }}
+                >
+                  بازار بسته است
+                </div>
+              )}
+            </div>
+          ) : (
+            <article
+              className={`signal-card ${
+                activeSignal.direction ===
+                "BUY"
+                  ? "buy"
+                  : "sell"
+              }`}
+            >
+              {/* SIGNAL HEADER */}
+
+              <div className="signal-header">
+                <div className="signal-main">
+                  <div
+                    className={`direction ${
+                      activeSignal.direction ===
+                      "BUY"
+                        ? "buy"
+                        : "sell"
+                    }`}
+                  >
+                    {activeSignal.direction}
+
+                    <small
+                      style={{
+                        display: "block",
+                        marginTop: 4,
+                        fontSize: 7,
+                        opacity: 0.72,
+                      }}
+                    >
+                      {directionFa(
+                        activeSignal.direction
+                      )}
+                    </small>
+                  </div>
+
+                  <div className="signal-name">
+                    <strong>
+                      {activeSignal.symbol ||
+                        "XAUUSD"}
+                    </strong>
+
+                    <small>
+                      {activeSignal.timeframe ||
+                        "1min"}{" "}
+                      ·{" "}
+                      {activeSignal.source ||
+                        "Signal Engine"}
+                    </small>
+                  </div>
+                </div>
+
+                <div className="badges">
+                  <span className="badge">
+                    {statusFa(
+                      activeSignal.status
+                    )}
+                  </span>
+
+                  <span className="badge gold-badge">
+                    Score{" "}
+                    {activeSignal.score ??
+                      0}
+                    /100
+                  </span>
+
+                  <span className="badge">
+                    RR{" "}
+                    {activeSignal.riskReward ??
+                      "—"}
+                  </span>
+
+                  <span className="badge">
+                    {getRiskLabel(
+                      activeSignal
+                    )}
+                  </span>
+
+                  <span className="badge">
+                    سن سیگنال:{" "}
+                    {getSignalAge(
+                      activeSignal
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="signal-body">
+                {/* PRICE LEVELS */}
+
+                <div className="price-grid">
+                  <div className="price-box entry">
+                    <span>
+                      ENTRY
+                    </span>
+
+                    <strong>
+                      {price(
+                        activeLevels.entry
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="price-box sl">
+                    <span>
+                      STOP LOSS
+                    </span>
+
+                    <strong>
+                      {price(
+                        activeLevels.sl
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="price-box tp">
+                    <span>
+                      TAKE PROFIT 1
+                    </span>
+
+                    <strong>
+                      {price(
+                        activeLevels.tp1
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="price-box tp">
+                    <span>
+                      TAKE PROFIT 2
+                    </span>
+
+                    <strong>
+                      {price(
+                        activeLevels.tp2
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="price-box tp">
+                    <span>
+                      TAKE PROFIT 3
+                    </span>
+
+                    <strong>
+                      {price(
+                        activeLevels.tp3
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* PROGRESS */}
+
+                <div className="progress-wrap">
+                  <div className="progress-head">
+                    <span>
+                      پیشرفت مسیر تا TP3
+                    </span>
+
+                    <strong>
+                      {progress.toFixed(0)}%
+                    </strong>
+                  </div>
+
+                  <div className="progress-track">
+                    <div
+                      className="progress-bar"
+                      style={{
+                        width: `${progress}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* MONEY */}
+
+                <div className="money-grid">
+                  <div className="money-box">
+                    <span>
+                      حجم کل
+                    </span>
+
+                    <strong>
+                      {getRiskLabel(
+                        activeSignal
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="money-box">
+                    <span>
+                      ریسک SL
+                    </span>
+
+                    <strong className="red">
+                      {Number.isFinite(
+                        Number(
+                          activeRisk.stopLossDollars
+                        )
+                      )
+                        ? usd(
+                            -Math.abs(
+                              Number(
+                                activeRisk.stopLossDollars
+                              )
+                            )
+                          )
+                        : "—"}
+                    </strong>
+                  </div>
+
+                  <div className="money-box">
+                    <span>
+                      سود TP1
+                    </span>
+
+                    <strong className="green">
+                      {Number.isFinite(
+                        Number(
+                          activeRisk.tp1Dollars
+                        )
+                      )
+                        ? usd(
+                            Number(
+                              activeRisk.tp1Dollars
+                            )
+                          )
+                        : "—"}
+                    </strong>
+                  </div>
+
+                  <div className="money-box">
+                    <span>
+                      سود TP2 / TP3
+                    </span>
+
+                    <strong className="gold">
+                      {Number.isFinite(
+                        Number(
+                          activeRisk.tp2Dollars
+                        )
+                      ) &&
+                      Number.isFinite(
+                        Number(
+                          activeRisk.tp3Dollars
+                        )
+                      )
+                        ? `${usd(
+                            Number(
+                              activeRisk.tp2Dollars
+                            )
+                          )} / ${usd(
+                            Number(
+                              activeRisk.tp3Dollars
+                            )
+                          )}`
+                        : "—"}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* MANAGEMENT */}
+
+                <div className="management">
+                  <div className="management-head">
+                    <span>
+                      وضعیت مدیریت معامله
+                    </span>
+
+                    <strong>
+                      {getRiskLabel(
+                        activeSignal
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="target-row">
+                    <span
+                      className={`target ${
+                        activeState.tp1Hit
+                          ? "hit"
+                          : ""
+                      }`}
+                    >
+                      {activeState.tp1Hit
+                        ? "✓"
+                        : "○"}{" "}
+                      TP1
+                    </span>
+
+                    <span
+                      className={`target ${
+                        activeState.tp2Hit
+                          ? "hit"
+                          : ""
+                      }`}
+                    >
+                      {activeState.tp2Hit
+                        ? "✓"
+                        : "○"}{" "}
+                      TP2
+                    </span>
+
+                    <span
+                      className={`target ${
+                        activeState.tp3Hit
+                          ? "hit"
+                          : ""
+                      }`}
+                    >
+                      {activeState.tp3Hit
+                        ? "✓"
+                        : "○"}{" "}
+                      TP3
+                    </span>
+
+                    <span
+                      className={`target ${
+                        activeState.breakeven
+                          ? "hit"
+                          : ""
+                      }`}
+                    >
+                      {activeState.breakeven
+                        ? "✓"
+                        : "○"}{" "}
+                      BE
+                    </span>
+
+                    <span
+                      className={`target ${
+                        activeState.slHit
+                          ? "stop"
+                          : ""
+                      }`}
+                    >
+                      {activeState.slHit
+                        ? "✓"
+                        : "○"}{" "}
+                      SL
+                    </span>
+                  </div>
+                </div>
+
+                {/* CONFIRMATIONS */}
+
+                <div className="confirmations">
+                  <Confirmation
+                    label="Trend"
+                    value={
+                      activeSignal.marketStructure ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="Liquidity"
+                    value={
+                      activeSignal.liquidity ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="Pullback"
+                    value={
+                      activeSignal.pullback ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="Candle"
+                    value={
+                      activeSignal.candlePattern ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="Volume"
+                    value={
+                      activeSignal.volumeConfirmation ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="MTF"
+                    value={
+                      activeSignal.multiTimeframeConfirmation ||
+                      `${confirmationCount} تأیید`
+                    }
+                  />
+
+                  <Confirmation
+                    label="Session"
+                    value={
+                      activeSignal.sessionConfirmation ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="News"
+                    value={
+                      activeSignal.newsConfirmation ||
+                      "فیلتر خبر"
+                    }
+                  />
+
+                  <Confirmation
+                    label="Volatility"
+                    value={
+                      activeSignal.volatilityConfirmation ||
+                      "بررسی شد"
+                    }
+                  />
+
+                  <Confirmation
+                    label="Confidence"
+                    value={
+                      activeSignal.confidence != null
+                        ? `${activeSignal.confidence}%`
+                        : "—"
+                    }
+                  />
+                </div>
+
+                {/* REASONS */}
+
+                {activeReasons.length > 0 && (
+                  <div className="reasons">
+                    <div className="reasons-title">
+                      منطق تشکیل سیگنال
+                    </div>
+
+                    <div className="reason-list">
+                      {activeReasons.map(
+                        (
+                          reason,
+                          index
+                        ) => (
+                          <span
+                            className="reason"
+                            key={`${String(
+                              reason
+                            )}-${index}`}
+                          >
+                            ✓{" "}
+                            {String(
+                              reason
+                            )}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* EVENTS */}
+
+                {activeEvents.length >
+                  0 && (
+                  <div className="events">
+                    {[
+                      ...activeEvents,
+                    ]
+                      .reverse()
+                      .map(
+                        (
+                          event,
+                          index
+                        ) => (
+                          <div
+                            className="event"
+                            key={`${event.type}-${event.at}-${index}`}
+                          >
+                            <div className="event-left">
+                              <strong>
+                                {eventFa(
+                                  event.type
+                                )}
+                              </strong>
+
+                              <small>
+                                {dateFa(
+                                  event.at
+                                )}{" "}
+                                ·{" "}
+                                {price(
+                                  event.price
+                                )}
+                              </small>
+                            </div>
+
+                            <strong
+                              className={
+                                Number(
+                                  event.pnlUsd ||
+                                    0
+                                ) >= 0
+                                  ? "green"
+                                  : "red"
+                              }
+                            >
+                              {usd(
+                                event.pnlUsd
+                              )}
+                            </strong>
+                          </div>
+                        )
+                      )}
+                  </div>
+                )}
+
+                {/* FOOTER */}
+
+                <div className="signal-footer">
+                  <span>
+                    ایجاد:{" "}
+                    {dateFa(
+                      activeSignal.createdAt
+                    )}
+                  </span>
+
+                  <span>
+                    قیمت فعلی:{" "}
+                    {price(
+                      getLatestPrice(
+                        activeSignal
+                      )
+                    )}
+                  </span>
+
+                  <span
+                    className={
+                      activeSignal.telegramSent
+                        ? "telegram-ok"
+                        : "telegram-failed"
+                    }
+                  >
+                    Telegram:{" "}
+                    {activeSignal.telegramSent
+                      ? "✓ ارسال شد"
+                      : "— ارسال نشده"}
+                  </span>
+                </div>
+              </div>
+            </article>
+          )}
+        </section>
+
+        {/* SUPPORT / RESISTANCE */}
+
+        <section className="section">
+          <div className="section-head">
+            <h2>
+              حمایت و مقاومت
+            </h2>
+
+            <span>
+              آخرین سطوح ثبت‌شده توسط موتور
             </span>
           </div>
 
@@ -1234,15 +2796,13 @@ export default function SignalsPage() {
               </span>
 
               <strong className="green">
-                {morningLevels.support
-                  ? price(
-                      morningLevels.support
-                    )
+                {levels.support
+                  ? price(levels.support)
                   : "—"}
               </strong>
 
               <small>
-                سطح حمایت استخراج‌شده از ساختار قیمت
+                آخرین حمایت استخراج‌شده از داده موتور
               </small>
             </div>
 
@@ -1252,984 +2812,157 @@ export default function SignalsPage() {
               </span>
 
               <strong className="red">
-                {morningLevels.resistance
+                {levels.resistance
                   ? price(
-                      morningLevels.resistance
+                      levels.resistance
                     )
                   : "—"}
               </strong>
 
               <small>
-                سطح مقاومت استخراج‌شده از ساختار قیمت
+                آخرین مقاومت استخراج‌شده از داده موتور
               </small>
             </div>
           </div>
         </section>
 
-        <section className="section">
-          <div className="section-head">
-            <h2>
-              پلن مدیریت معامله
-            </h2>
-
-            <span>
-              XAUUSD · 0.10 lot
-            </span>
-          </div>
-
-          <div className="levels">
-            <div className="level">
-              <span>
-                ریسک Stop Loss
-              </span>
-
-              <strong className="red">
-                -$4
-              </strong>
-
-              <small>
-                فاصله قیمت SL برابر 4 دلار
-                برای حجم 0.10 lot
-              </small>
-            </div>
-
-            <div className="level">
-              <span>
-                TP1
-              </span>
-
-              <strong className="green">
-                +$5
-              </strong>
-
-              <small>
-                بستن 0.04 lot
-              </small>
-            </div>
-
-            <div className="level">
-              <span>
-                TP2
-              </span>
-
-              <strong className="green">
-                +$8
-              </strong>
-
-              <small>
-                بستن 0.03 lot
-              </small>
-            </div>
-
-            <div className="level">
-              <span>
-                TP3
-              </span>
-
-              <strong className="gold">
-                +$12
-              </strong>
-
-              <small>
-                بستن 0.03 lot · تکمیل 0.10 lot
-              </small>
-            </div>
-          </div>
-        </section>
+        {/* HISTORY */}
 
         <section className="section">
           <div className="section-head">
             <h2>
-              سیگنال‌ها
+              کارنامه سیگنال‌ها
             </h2>
 
             <span>
-              {busy
-                ? "در حال دریافت..."
-                : `${filteredSignals.length} مورد`}
+              فقط معاملات بسته‌شده
             </span>
           </div>
 
-          <div className="signal-list">
-            {filteredSignals.length === 0 && (
-              <div className="empty">
-                {busy
-                  ? "در حال بررسی بازار..."
-                  : "هنوز سیگنال فعالی با شرایط ثبت‌شده وجود ندارد."}
+          {busy &&
+          allSignals.length === 0 ? (
+            <div className="loading">
+              در حال دریافت کارنامه...
+            </div>
+          ) : closedSignals.length === 0 ? (
+            <div className="searching">
+              <div className="search-icon">
+                ✓
               </div>
-            )}
 
-            {filteredSignals.map(
-              (signal) => {
-                const meta =
-                  getMeta(signal);
+              <h3>
+                هنوز معامله بسته‌شده‌ای ثبت نشده
+              </h3>
 
-                const levels =
-                  meta.levels || {};
+              <p>
+                بعد از ثبت TP یا SL،
+                نتیجه معامله در این قسمت
+                ذخیره و نمایش داده می‌شود.
+              </p>
+            </div>
+          ) : (
+            <div className="history">
+              {closedSignals.map(
+                (signal) => {
+                  const signalLevels =
+                    getSignalLevels(
+                      signal
+                    );
 
-                const entry =
-                  Number(signal.entry) ||
-                  Number(
-                    meta.lastPrice
-                  ) ||
-                  0;
+                  const meta =
+                    getMeta(signal);
 
-                const sl =
-                  Number(levels.sl) ||
-                  Number(
-                    signal.stopLoss
-                  ) ||
-                  0;
+                  const events =
+                    Array.isArray(
+                      meta.events
+                    )
+                      ? meta.events
+                      : [];
 
-                const tp1 =
-                  Number(levels.tp1) ||
-                  0;
+                  const lastEvent =
+                    events.length > 0
+                      ? events[
+                          events.length -
+                            1
+                        ]
+                      : null;
 
-                const tp2 =
-                  Number(levels.tp2) ||
-                  0;
-
-                const tp3 =
-                  Number(levels.tp3) ||
-                  Number(
-                    signal.takeProfit
-                  ) ||
-                  0;
-
-                const state =
-                  meta.state || {};
-
-                const events =
-                  Array.isArray(
-                    meta.events
-                  )
-                    ? meta.events
-                    : [];
-
-                const reasons =
-                  Array.isArray(
-                    signal.reasons
-                  )
-                    ? signal.reasons
-                    : [];
-
-                const confirmationCount =
-                  getConfirmationCount(
-                    signal
-                  );
-
-                return (
-                  <article
-                    key={signal.id}
-                    className={`signal-card ${
-                      signal.direction ===
-                      "BUY"
-                        ? "buy"
-                        : "sell"
-                    }`}
-                  >
-                    <div className="signal-head">
-                      <div className="symbol">
-                        <div
-                          className={`direction ${
-                            signal.direction ===
-                            "BUY"
-                              ? "buy"
-                              : "sell"
-                          }`}
-                        >
-                          {signal.direction ===
+                  return (
+                    <div
+                      className="history-item"
+                      key={signal.id}
+                    >
+                      <div
+                        className={`history-direction ${
+                          signal.direction ===
                           "BUY"
-                            ? "BUY"
-                            : "SELL"}
-
-                          <small
-                            style={{
-                              display:
-                                "block",
-                              marginTop: 4,
-                              fontSize: 8,
-                              opacity: 0.7,
-                            }}
-                          >
-                            {directionFa(
-                              signal.direction
-                            )}
-                          </small>
-                        </div>
-
-                        <div className="symbol-text">
-                          <strong>
-                            {signal.symbol ||
-                              "XAUUSD"}
-                          </strong>
-
-                          <small>
-                            AI Signal ·{" "}
-                            {signal.timeframe ||
-                              "1min"}
-                          </small>
-                        </div>
+                            ? "buy"
+                            : "sell"
+                        }`}
+                      >
+                        {signal.direction}
                       </div>
 
-                      <div className="badges">
-                        <span className="badge">
+                      <div className="history-symbol">
+                        <strong>
+                          {signal.symbol}
+                        </strong>
+
+                        <small>
+                          Entry{" "}
+                          {price(
+                            signalLevels.entry
+                          )}{" "}
+                          ·{" "}
+                          {signal.timeframe ||
+                            "1min"}
+                        </small>
+                      </div>
+
+                      <div className="history-price">
+                        {lastEvent
+                          ? `${eventFa(
+                              lastEvent.type
+                            )} · ${price(
+                              lastEvent.price
+                            )}`
+                          : statusFa(
+                              signal.status
+                            )}
+                      </div>
+
+                      <div className="history-status">
+                        <span
+                          className={
+                            signal.status ===
+                              "SL_HIT" ||
+                            signal.status ===
+                              "BE"
+                              ? "red"
+                              : "green"
+                          }
+                        >
                           {statusFa(
                             signal.status
                           )}
                         </span>
-
-                        <span className="badge gold-badge">
-                          Score{" "}
-                          {signal.score ??
-                            0}
-                          /100
-                        </span>
-
-                        <span className="badge">
-                          TF{" "}
-                          {signal.timeframe ||
-                            "1min"}
-                        </span>
-
-                        {signal.riskReward !=
-                          null && (
-                          <span className="badge">
-                            RR{" "}
-                            {signal.riskReward}
-                          </span>
-                        )}
-
-                        <span className="badge">
-                          {getRiskLabel(
-                            signal
-                          )}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="signal-body">
-                      <div className="price-grid">
-                        <div className="price-box entry">
-                          <span>
-                            ENTRY
-                          </span>
-
-                          <strong>
-                            {price(entry)}
-                          </strong>
-                        </div>
-
-                        <div className="price-box sl">
-                          <span>
-                            STOP LOSS
-                          </span>
-
-                          <strong>
-                            {price(sl)}
-                          </strong>
-                        </div>
-
-                        <div className="price-box tp">
-                          <span>
-                            TAKE PROFIT 1
-                          </span>
-
-                          <strong>
-                            {price(tp1)}
-                          </strong>
-                        </div>
-
-                        <div className="price-box tp">
-                          <span>
-                            TAKE PROFIT 2
-                          </span>
-
-                          <strong>
-                            {price(tp2)}
-                          </strong>
-                        </div>
                       </div>
 
-                      <div
-                        className="price-grid"
-                        style={{
-                          marginTop: 9,
-                        }}
-                      >
-                        <div className="price-box tp">
-                          <span>
-                            TAKE PROFIT 3
-                          </span>
-
-                          <strong>
-                            {price(tp3)}
-                          </strong>
-                        </div>
-
-                        <div className="price-box">
-                          <span>
-                            حجم کل
-                          </span>
-
-                          <strong>
-                            {getRiskLabel(
-                              signal
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="price-box">
-                          <span>
-                            قیمت فعلی
-                          </span>
-
-                          <strong>
-                            {price(
-                              meta.lastPrice
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="price-box">
-                          <span>
-                            RR
-                          </span>
-
-                          <strong className="gold">
-                            {signal.riskReward !=
-                            null
-                              ? signal.riskReward
-                              : "1:3"}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div
-                        className="price-grid"
-                        style={{
-                          marginTop: 9,
-                        }}
-                      >
-                        <div className="price-box">
-                          <span>
-                            ریسک دلاری
-                          </span>
-
-                          <strong className="red">
-                            -$
-                            {Number(
-                              meta.risk
-                                ?.stopLossDollars ??
-                                4
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="price-box">
-                          <span>
-                            TP1 سود
-                          </span>
-
-                          <strong className="green">
-                            +$
-                            {Number(
-                              meta.risk
-                                ?.tp1Dollars ??
-                                5
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="price-box">
-                          <span>
-                            TP2 سود
-                          </span>
-
-                          <strong className="green">
-                            +$
-                            {Number(
-                              meta.risk
-                                ?.tp2Dollars ??
-                                8
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="price-box">
-                          <span>
-                            TP3 سود
-                          </span>
-
-                          <strong className="gold">
-                            +$
-                            {Number(
-                              meta.risk
-                                ?.tp3Dollars ??
-                                12
-                            )}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 10,
-                          padding: 12,
-                          borderRadius: 13,
-                          background:
-                            "#090d0a",
-                          border:
-                            "1px solid #171c18",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display:
-                              "flex",
-                            justifyContent:
-                              "space-between",
-                            alignItems:
-                              "center",
-                            gap: 10,
-                            flexWrap:
-                              "wrap",
-                          }}
-                        >
-                          <span
-                            style={{
-                              color:
-                                "#626961",
-                              fontSize: 9,
-                            }}
-                          >
-                            مدیریت حجم
-                          </span>
-
-                          <strong
-                            style={{
-                              color:
-                                "#d4d8d2",
-                              fontSize: 10,
-                            }}
-                          >
-                            0.10 lot
-                          </strong>
-                        </div>
-
-                        <div
-                          style={{
-                            display:
-                              "flex",
-                            gap: 6,
-                            flexWrap:
-                              "wrap",
-                            marginTop: 8,
-                          }}
-                        >
-                          <span
-                            style={{
-                              padding:
-                                "6px 9px",
-                              borderRadius:
-                                8,
-                              background:
-                                state.tp1Hit
-                                  ? "rgba(55,214,138,.12)"
-                                  : "#111612",
-                              border:
-                                "1px solid #202620",
-                              color:
-                                state.tp1Hit
-                                  ? "#37d68a"
-                                  : "#737a72",
-                              fontSize: 8,
-                            }}
-                          >
-                            {state.tp1Hit
-                              ? "✓"
-                              : "○"}{" "}
-                            TP1 · 0.04
-                          </span>
-
-                          <span
-                            style={{
-                              padding:
-                                "6px 9px",
-                              borderRadius:
-                                8,
-                              background:
-                                state.tp2Hit
-                                  ? "rgba(55,214,138,.12)"
-                                  : "#111612",
-                              border:
-                                "1px solid #202620",
-                              color:
-                                state.tp2Hit
-                                  ? "#37d68a"
-                                  : "#737a72",
-                              fontSize: 8,
-                            }}
-                          >
-                            {state.tp2Hit
-                              ? "✓"
-                              : "○"}{" "}
-                            TP2 · 0.03
-                          </span>
-
-                          <span
-                            style={{
-                              padding:
-                                "6px 9px",
-                              borderRadius:
-                                8,
-                              background:
-                                state.tp3Hit
-                                  ? "rgba(55,214,138,.12)"
-                                  : "#111612",
-                              border:
-                                "1px solid #202620",
-                              color:
-                                state.tp3Hit
-                                  ? "#37d68a"
-                                  : "#737a72",
-                              fontSize: 8,
-                            }}
-                          >
-                            {state.tp3Hit
-                              ? "✓"
-                              : "○"}{" "}
-                            TP3 · 0.03
-                          </span>
-
-                          <span
-                            style={{
-                              padding:
-                                "6px 9px",
-                              borderRadius:
-                                8,
-                              background:
-                                state.slHit
-                                  ? "rgba(237,104,117,.12)"
-                                  : "#111612",
-                              border:
-                                "1px solid #202620",
-                              color:
-                                state.slHit
-                                  ? "#ed6875"
-                                  : "#737a72",
-                              fontSize: 8,
-                            }}
-                          >
-                            {state.slHit
-                              ? "✓"
-                              : "○"}{" "}
-                            SL · -$4
-                          </span>
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 8,
-                            color:
-                              "#5f665f",
-                            fontSize: 8,
-                            lineHeight:
-                              1.9,
-                          }}
-                        >
-                          بعد از رسیدن به
-                          TP1، برای حجم
-                          باقی‌مانده انتقال
-                          SL به Entry پیشنهاد
-                          می‌شود.
-                        </div>
-                      </div>
-
-                      <div className="confirmations">
-                        <div className="confirmation">
-                          <span>
-                            Trend
-                          </span>
-
-                          <strong
-                            className={
-                              signal.marketStructure
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.marketStructure ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Liquidity
-                          </span>
-
-                          <strong
-                            className={
-                              signal.liquidity
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.liquidity ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Pullback
-                          </span>
-
-                          <strong
-                            className={
-                              signal.pullback
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.pullback ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Candle
-                          </span>
-
-                          <strong
-                            className={
-                              signal.candlePattern
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.candlePattern ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Volume
-                          </span>
-
-                          <strong
-                            className={
-                              signal.volumeConfirmation
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.volumeConfirmation ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            MTF
-                          </span>
-
-                          <strong
-                            className={
-                              signal.multiTimeframeConfirmation
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.multiTimeframeConfirmation ||
-                              `${confirmationCount} تأیید`}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Session
-                          </span>
-
-                          <strong
-                            className={
-                              signal.sessionConfirmation
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.sessionConfirmation ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            News
-                          </span>
-
-                          <strong
-                            className={
-                              signal.newsConfirmation
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.newsConfirmation ||
-                              "فیلتر خبر"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Volatility
-                          </span>
-
-                          <strong
-                            className={
-                              signal.volatilityConfirmation
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.volatilityConfirmation ||
-                              "بررسی شد"}
-                          </strong>
-                        </div>
-
-                        <div className="confirmation">
-                          <span>
-                            Score
-                          </span>
-
-                          <strong
-                            className={
-                              Number(
-                                signal.score ||
-                                  0
-                              ) >= 70
-                                ? "positive"
-                                : ""
-                            }
-                          >
-                            {signal.score ??
-                              0}
-                            /100
-                          </strong>
-                        </div>
-                      </div>
-
-                      {confirmationCount >
-                        0 && (
-                        <div
-                          style={{
-                            marginTop: 10,
-                            color:
-                              "#626961",
-                            fontSize: 9,
-                          }}
-                        >
-                          تعداد تأییدهای ثبت‌شده:{" "}
-                          <b
-                            style={{
-                              color:
-                                "#d4d8d2",
-                            }}
-                          >
-                            {
-                              confirmationCount
-                            }
-                          </b>
-                        </div>
-                      )}
-
-                      {reasons.length >
-                        0 && (
-                        <div
-                          style={{
-                            marginTop: 10,
-                            padding: 12,
-                            borderRadius: 13,
-                            background:
-                              "#090d0a",
-                            border:
-                              "1px solid #171c18",
-                            color:
-                              "#737a72",
-                            fontSize: 9,
-                            lineHeight:
-                              2,
-                          }}
-                        >
-                          <b
-                            style={{
-                              color:
-                                "#a9afa8",
-                            }}
-                          >
-                            منطق تحلیل:
-                          </b>
-
-                          <div
-                            style={{
-                              marginTop: 5,
-                              display:
-                                "flex",
-                              flexWrap:
-                                "wrap",
-                              gap: 5,
-                            }}
-                          >
-                            {reasons.map(
-                              (
-                                reason,
-                                index
-                              ) => (
-                                <span
-                                  key={`${String(
-                                    reason
-                                  )}-${index}`}
-                                  style={{
-                                    padding:
-                                      "5px 8px",
-                                    borderRadius:
-                                      8,
-                                    background:
-                                      "#111612",
-                                    border:
-                                      "1px solid #202620",
-                                  }}
-                                >
-                                  ✓{" "}
-                                  {String(
-                                    reason
-                                  )}
-                                </span>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="events">
-                        {events.length >
-                          0 &&
-                          [
-                            ...events,
-                          ]
-                            .reverse()
-                            .map(
-                              (
-                                event,
-                                index
-                              ) => (
-                                <div
-                                  className="event"
-                                  key={`${event.type}-${event.at}-${index}`}
-                                >
-                                  <div className="event-left">
-                                    <strong>
-                                      {eventFa(
-                                        event.type
-                                      )}
-                                    </strong>
-
-                                    <small>
-                                      {dateFa(
-                                        event.at
-                                      )}{" "}
-                                      ·{" "}
-                                      {price(
-                                        event.price
-                                      )}
-                                    </small>
-                                  </div>
-
-                                  <strong
-                                    className={
-                                      Number(
-                                        event.pnlUsd
-                                      ) >= 0
-                                        ? "green"
-                                        : "red"
-                                    }
-                                  >
-                                    {usd(
-                                      event.pnlUsd
-                                    )}
-                                  </strong>
-                                </div>
-                              )
-                            )}
-                      </div>
-
-                      <div className="signal-footer">
-                        <span>
-                          ایجاد:{" "}
-                          {dateFa(
+                      <div className="history-time">
+                        {dateFa(
+                          signal.closedAt ||
                             signal.createdAt
-                          )}
-                        </span>
-
-                        <span>
-                          {state.tp1Hit
-                            ? "✓ TP1"
-                            : "○ TP1"}{" "}
-                          ·{" "}
-                          {state.tp2Hit
-                            ? "✓ TP2"
-                            : "○ TP2"}{" "}
-                          ·{" "}
-                          {state.tp3Hit
-                            ? "✓ TP3"
-                            : "○ TP3"}{" "}
-                          ·{" "}
-                          {state.slHit
-                            ? "✓ SL"
-                            : "○ SL"}
-                        </span>
-
-                        <span
-                          className={
-                            signal.telegramSent
-                              ? "telegram-ok"
-                              : "telegram-failed"
-                          }
-                        >
-                          Telegram:{" "}
-                          {signal.telegramSent
-                            ? "✓ ارسال شد"
-                            : "— ارسال نشده"}
-                        </span>
+                        )}
                       </div>
-
-                      {signal.telegramSentAt && (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            color:
-                              "#505750",
-                            fontSize: 8,
-                            textAlign:
-                              "left",
-                          }}
-                        >
-                          Telegram:{" "}
-                          {dateFa(
-                            signal.telegramSentAt
-                          )}
-                        </div>
-                      )}
                     </div>
-                  </article>
-                );
-              }
-            )}
-          </div>
+                  );
+                }
+              )}
+            </div>
+          )}
         </section>
+
+        {/* PERFORMANCE */}
 
         <section className="section">
           <div className="section-head">
@@ -2238,7 +2971,7 @@ export default function SignalsPage() {
             </h2>
 
             <span>
-              فقط بر اساس رویدادهای ثبت‌شده سیستم
+              بر اساس داده‌های ذخیره‌شده سیستم
             </span>
           </div>
 
@@ -2260,42 +2993,71 @@ export default function SignalsPage() {
           </div>
         </section>
 
-        <div className="footer">
+        {/* FOOTER */}
+
+        <footer className="footer">
           <div>
-            XAUUSD · حجم کل 0.10 lot ·
-            TP1 = 0.04 · TP2 = 0.03 · TP3 = 0.03
+            XAUUSD · Signal Engine
           </div>
 
           <div>
-            مدیریت معامله: بعد از TP1،
-            برای 0.06 lot باقی‌مانده
-            انتقال SL به Entry پیشنهاد می‌شود.
+            سیگنال جاری تا رسیدن به وضعیت نهایی
+            جایگزین نمی‌شود.
           </div>
 
           <div>
-            {latest
-              ? `آخرین سیگنال: ${latest.direction} · ${price(
-                  latest.entry
+            {activeSignal
+              ? `سیگنال جاری: ${activeSignal.direction} · Entry ${price(
+                  activeLevels.entry
                 )}`
-              : "هنوز سیگنالی ثبت نشده است."}
+              : "در حال جستجوی بهترین سیگنال بازار"}
           </div>
 
-          {latestMeta.lastPriceAt && (
-            <div
-              style={{
-                marginTop: 5,
-                opacity: 0.7,
-              }}
-            >
+          {activeSignal?.metadata
+            ?.lastPriceAt && (
+            <div>
               آخرین قیمت ثبت‌شده:{" "}
               {dateFa(
-                latestMeta.lastPriceAt
+                activeSignal.metadata
+                  .lastPriceAt
               )}
             </div>
           )}
-        </div>
+        </footer>
       </div>
     </main>
+  );
+}
+
+function Confirmation({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  const positive =
+    Boolean(value) &&
+    ![
+      "بررسی شد",
+      "فیلتر خبر",
+      "—",
+    ].includes(value);
+
+  return (
+    <div className="confirmation">
+      <span>{label}</span>
+
+      <strong
+        className={
+          positive
+            ? "positive"
+            : ""
+        }
+      >
+        {value}
+      </strong>
+    </div>
   );
 }
 
@@ -2321,7 +3083,7 @@ function PerformanceCard({
       <h3>{title}</h3>
 
       <div className="performance-row">
-        <div>
+        <div className="performance-cell">
           <span>
             سیگنال
           </span>
@@ -2331,7 +3093,7 @@ function PerformanceCard({
           </strong>
         </div>
 
-        <div>
+        <div className="performance-cell">
           <span>
             برد
           </span>
@@ -2341,7 +3103,7 @@ function PerformanceCard({
           </strong>
         </div>
 
-        <div>
+        <div className="performance-cell">
           <span>
             باخت
           </span>
@@ -2358,7 +3120,7 @@ function PerformanceCard({
           marginTop: 8,
         }}
       >
-        <div>
+        <div className="performance-cell">
           <span>
             Win Rate
           </span>
@@ -2368,7 +3130,7 @@ function PerformanceCard({
           </strong>
         </div>
 
-        <div>
+        <div className="performance-cell">
           <span>
             خالص USD
           </span>
@@ -2384,15 +3146,17 @@ function PerformanceCard({
           </strong>
         </div>
 
-        <div>
+        <div className="performance-cell">
           <span>
             وضعیت
           </span>
 
           <strong>
-            {pnl >= 0
+            {pnl > 0
               ? "مثبت"
-              : "منفی"}
+              : pnl < 0
+              ? "منفی"
+              : "خنثی"}
           </strong>
         </div>
       </div>
