@@ -2,113 +2,71 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const tomanFmt = new Intl.NumberFormat("fa-IR");
-const usdFmt = new Intl.NumberFormat("en-US", {
+const faNumber = new Intl.NumberFormat("fa-IR");
+const usdNumber = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-function money(v: number | null | undefined) {
-  const n = Number(v);
-  return `$${usdFmt.format(Number.isFinite(n) ? n : 0)}`;
-}
-
-function toman(v: number | null | undefined) {
-  const n = Number(v);
-
-  return `${tomanFmt.format(
-    Math.round(Number.isFinite(n) ? n : 0)
-  )} تومان`;
-}
-
-function price(v: number | null | undefined) {
-  const n = Number(v);
-
-  return Number.isFinite(n) ? n.toFixed(2) : "—";
-}
-
-function dateFa(v?: string | Date | null) {
-  if (!v) return "—";
-
-  try {
-    const d = new Date(v);
-
-    if (Number.isNaN(d.getTime())) {
-      return "—";
-    }
-
-    return new Intl.DateTimeFormat("fa-IR", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(d);
-  } catch {
-    return "—";
-  }
-}
+type Timeframe = "1min" | "5min" | "15min" | "30min" | "1h" | "4h";
 
 type Candle = {
-  time: string | number;
+  datetime?: string;
+  time?: string;
   open: number;
   high: number;
   low: number;
   close: number;
+  volume?: number;
 };
 
-type ChartPayload = {
-  updatedAt?: string;
-  timeframe?: string;
-  candles?: Candle[];
-  timeframes?: Record<string, Candle[]>;
+type EventRow = {
+  type: string;
+  at: string;
+  price: number;
+  lotClosed: number;
+  pnlUsd: number;
+  pnlToman: number;
+  usdToToman: number;
 };
 
 type Meta = {
-  direction?: "BUY" | "SELL";
+  direction: "BUY" | "SELL";
+  entry: number;
+  stopLoss: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
 
-  entry?: number;
-  stopLoss?: number;
-  tp1?: number;
-  tp2?: number;
-  tp3?: number;
+  totalLot: number;
+  tp1Lot: number;
+  tp2Lot: number;
+  tp3Lot: number;
 
-  totalLot?: number;
-  tp1Lot?: number;
-  tp2Lot?: number;
-  tp3Lot?: number;
+  riskUsd: number;
+  tp1Usd: number;
+  tp2Usd: number;
+  tp3Usd: number;
+  totalPotentialUsd: number;
 
-  riskUsd?: number;
-  tp1Usd?: number;
-  tp2Usd?: number;
-  tp3Usd?: number;
-  totalPotentialUsd?: number;
+  usdToToman: number;
+  riskToman: number;
+  tp1Toman: number;
+  tp2Toman: number;
+  tp3Toman: number;
+  totalPotentialToman: number;
 
-  usdToToman?: number;
-  riskToman?: number;
-  tp1Toman?: number;
-  tp2Toman?: number;
-  tp3Toman?: number;
-  totalPotentialToman?: number;
+  session: string;
+  score: number;
+  confirmations: number;
+  timeframe: string;
+  state: string;
 
-  session?: string;
-  score?: number;
-  confirmations?: number;
-  timeframe?: string;
-  state?: string;
-  breakeven?: boolean;
-  currentPrice?: number;
+  breakeven: boolean;
+  currentPrice: number;
 
-  strength?: string;
-  suggestedVolume?: string;
-  historicalSuccessRate?: number | null;
-  historicalClosedTrades?: number;
+  createdAt?: string;
 
-  events?: {
-    type: string;
-    at: string;
-    price: number;
-    lotClosed: number;
-    pnlUsd: number;
-    pnlToman: number;
-    usdToToman: number;
-  }[];
+  events: EventRow[];
 
   analysis?: {
     reasons?: string[];
@@ -118,76 +76,96 @@ type Meta = {
   };
 };
 
-type Perf = {
+type Performance = {
   trades: number;
+
   tp1: number;
   tp2: number;
   tp3: number;
+
   sl: number;
+  breakeven: number;
+
+  wins: number;
+  losses: number;
+
+  winRate: number;
 
   tp1Toman: number;
   tp2Toman: number;
   tp3Toman: number;
-  slToman: number;
 
+  slToman: number;
   pnlUsd: number;
   pnlToman: number;
 };
 
-type Dashboard = {
-  symbol?: string;
-  contractSize?: number;
-
-  position?: {
-    totalLot?: number;
-    tp1Lot?: number;
-    tp2Lot?: number;
-    tp3Lot?: number;
-    stopUsd?: number;
-    tp1Usd?: number;
-    tp2Usd?: number;
-    tp3Usd?: number;
-  };
-
-  active?: {
-    id: string;
-    status: string;
-    metadata: Meta;
-  } | null;
-
-  latest?: {
-    id: string;
-    status: string;
-    metadata: Meta;
-  } | null;
-
-  performance?: {
-    day?: Perf;
-    week?: Perf;
-    month?: Perf;
-
-    recent?: {
-      id: string;
-      createdAt: string;
-      status: string;
-      metadata: Meta;
-    }[];
-  };
-
-  usdToToman?: {
-    rate: number;
-    asOf: string;
-  } | null;
-
-  chart?: ChartPayload | null;
+type RecentSignal = {
+  id: string;
+  createdAt: string;
+  status: string;
+  metadata: Meta;
 };
 
-const emptyPerf: Perf = {
+type Dashboard = {
+  symbol: string;
+
+  contractSize: number;
+
+  position: {
+    totalLot: number;
+    tp1Lot: number;
+    tp2Lot: number;
+    tp3Lot: number;
+
+    stopUsd: number;
+    tp1Usd: number;
+    tp2Usd: number;
+    tp3Usd: number;
+  };
+
+  active: {
+    id: string;
+    status: string;
+    metadata: Meta;
+  } | null;
+
+  latest: {
+    id: string;
+    status: string;
+    metadata: Meta;
+  } | null;
+
+  candles?: Candle[];
+
+  currentPrice?: number;
+
+  performance: {
+    day: Performance;
+    week: Performance;
+    month: Performance;
+
+    recent: RecentSignal[];
+  };
+
+  usdToToman: {
+    rate: number;
+    asOf: string;
+    delayed?: boolean;
+    delayedMinutes?: number;
+  } | null;
+};
+
+const EMPTY_PERFORMANCE: Performance = {
   trades: 0,
   tp1: 0,
   tp2: 0,
   tp3: 0,
   sl: 0,
+  breakeven: 0,
+  wins: 0,
+  losses: 0,
+  winRate: 0,
   tp1Toman: 0,
   tp2Toman: 0,
   tp3Toman: 0,
@@ -196,3059 +174,3528 @@ const emptyPerf: Perf = {
   pnlToman: 0,
 };
 
-const defaultTimeframes = [
-  "1m",
-  "5m",
-  "15m",
-  "30m",
-  "1h",
-  "4h",
+const TIMEFRAMES: {
+  id: Timeframe;
+  label: string;
+}[] = [
+  { id: "1min", label: "1M" },
+  { id: "5min", label: "5M" },
+  { id: "15min", label: "15M" },
+  { id: "30min", label: "30M" },
+  { id: "1h", label: "1H" },
+  { id: "4h", label: "4H" },
 ];
-
-const ACTIVE_SIGNAL_STATES = new Set([
-  "AI_PENDING",
-  "AI_TP1",
-  "AI_TP2",
-]);
-
-function isActiveSignal(
-  active?: Dashboard["active"]
-): active is NonNullable<Dashboard["active"]> {
-  if (!active) {
-    return false;
-  }
-
-  if (!ACTIVE_SIGNAL_STATES.has(active.status)) {
-    return false;
-  }
-
-  const direction = active.metadata?.direction;
-
-  return direction === "BUY" || direction === "SELL";
-}
 
 export default function AIAnalysisPage() {
   const [data, setData] = useState<Dashboard | null>(null);
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState("");
+
+  const [timeframe, setTimeframe] = useState<Timeframe>("1min");
 
   const [period, setPeriod] = useState<
     "day" | "week" | "month"
   >("day");
 
-  const [selectedTimeframe, setSelectedTimeframe] =
-    useState("1m");
+  const [loading, setLoading] = useState(true);
+  const [changingTimeframe, setChangingTimeframe] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setError("");
+  const [error, setError] = useState("");
 
-      const r = await fetch("/api/ai-analysis", {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-        },
-      });
-
-      let j: any = null;
-
+  const load = useCallback(
+    async (selectedTimeframe: Timeframe = timeframe) => {
       try {
-        j = await r.json();
-      } catch {
-        throw new Error(
-          "پاسخ سرور معتبر نیست. لطفاً API تحلیل هوش مصنوعی را بررسی کنید."
+        setError("");
+
+        const response = await fetch(
+          `/api/ai-analysis?timeframe=${encodeURIComponent(
+            selectedTimeframe
+          )}`,
+          {
+            cache: "no-store",
+          }
         );
-      }
 
-      if (!r.ok || !j?.ok) {
-        throw new Error(
-          j?.error || "خطا در دریافت اطلاعات تحلیل هوش مصنوعی"
+        const json = await response.json();
+
+        if (!response.ok || !json.ok) {
+          throw new Error(
+            json.error || "دریافت اطلاعات بازار انجام نشد."
+          );
+        }
+
+        setData(json.data);
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "خطای ارتباط با موتور تحلیل"
         );
+      } finally {
+        setLoading(false);
+        setChangingTimeframe(false);
       }
-
-      const incoming = j?.data;
-
-      if (!incoming || typeof incoming !== "object") {
-        throw new Error(
-          "داده داشبورد از سرور دریافت نشد."
-        );
-      }
-
-      setData(incoming as Dashboard);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "خطای ارتباط با سرور"
-      );
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+    },
+    [timeframe]
+  );
 
   useEffect(() => {
-    void load();
+    load(timeframe);
 
-    const id = window.setInterval(() => {
-      void load();
-    }, 20000);
+    const timer = window.setInterval(() => {
+      load(timeframe);
+    }, 10000);
 
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [load]);
+    return () => window.clearInterval(timer);
+  }, [load, timeframe]);
 
-  /*
-   * مهم:
-   * برای نمودار دیگر latest را به عنوان سیگنال فعال استفاده نمی‌کنیم.
-   * فقط active معتبر اجازه نمایش Entry / SL / TP را دارد.
-   */
-  const activeSignal = useMemo(() => {
-    return isActiveSignal(data?.active)
-      ? data.active
-      : null;
-  }, [data?.active]);
+  const activeSignal =
+    data?.active?.metadata ||
+    null;
 
-  const activeMeta: Meta | null =
-    activeSignal?.metadata || null;
-
-  /*
-   * برای کارت‌های اطلاعاتی، اگر سیگنال فعال باشد
-   * اطلاعات active نمایش داده می‌شود.
-   * در غیر این صورت آخرین تحلیل ثبت‌شده نمایش داده می‌شود.
-   */
-  const meta: Meta | null =
-    activeSignal?.metadata ||
+  const latestSignal =
     data?.latest?.metadata ||
     null;
 
-  const perf: Perf =
+  const signal =
+    activeSignal ||
+    latestSignal ||
+    null;
+
+  const performance =
     data?.performance?.[period] ||
-    emptyPerf;
-
-  const availableTimeframes = useMemo(() => {
-    const frames =
-      data?.chart?.timeframes;
-
-    if (
-      frames &&
-      typeof frames === "object" &&
-      !Array.isArray(frames)
-    ) {
-      const keys = Object.keys(frames).filter(
-        (key) =>
-          Array.isArray(frames[key])
-      );
-
-      if (keys.length) {
-        return keys;
-      }
-    }
-
-    return defaultTimeframes;
-  }, [data?.chart?.timeframes]);
-
-  useEffect(() => {
-    if (!availableTimeframes.length) {
-      return;
-    }
-
-    if (
-      !availableTimeframes.includes(
-        selectedTimeframe
-      )
-    ) {
-      setSelectedTimeframe(
-        availableTimeframes.includes("1m")
-          ? "1m"
-          : availableTimeframes[0]
-      );
-    }
-  }, [
-    availableTimeframes,
-    selectedTimeframe,
-  ]);
+    EMPTY_PERFORMANCE;
 
   const candles = useMemo(() => {
-    const chart = data?.chart;
+    return Array.isArray(data?.candles)
+      ? data!.candles.filter(
+          (c) =>
+            Number.isFinite(c.open) &&
+            Number.isFinite(c.high) &&
+            Number.isFinite(c.low) &&
+            Number.isFinite(c.close)
+        )
+      : [];
+  }, [data?.candles]);
 
-    if (!chart) {
-      return [];
-    }
+  function changeTimeframe(next: Timeframe) {
+    if (next === timeframe) return;
 
-    const frame =
-      chart.timeframes?.[
-        selectedTimeframe
-      ];
-
-    if (Array.isArray(frame)) {
-      return frame.filter(isValidCandle);
-    }
-
-    if (
-      selectedTimeframe ===
-      (chart.timeframe || "1m")
-    ) {
-      if (Array.isArray(chart.candles)) {
-        return chart.candles.filter(
-          isValidCandle
-        );
-      }
-    }
-
-    return [];
-  }, [
-    data?.chart,
-    selectedTimeframe,
-  ]);
-
-  const chart = useMemo(() => {
-    const pnl = Number(perf.pnlUsd) || 0;
-
-    const tp1 =
-      (Number(perf.tp1) || 0) * 20;
-
-    const tp2 =
-      (Number(perf.tp2) || 0) * 24;
-
-    const tp3 =
-      (Number(perf.tp3) || 0) * 36;
-
-    const sl =
-      (Number(perf.sl) || 0) * 40;
-
-    const max = Math.max(
-      1,
-      Math.abs(pnl),
-      tp1,
-      tp2,
-      tp3,
-      sl
-    );
-
-    return {
-      win: Math.max(0, pnl),
-      loss: Math.max(0, -pnl),
-      max,
-    };
-  }, [perf]);
-
-  const totalLot =
-    Number(data?.position?.totalLot);
-
-  const safeTotalLot =
-    Number.isFinite(totalLot)
-      ? totalLot
-      : 0.1;
-
-  const contractSize =
-    Number(data?.contractSize);
-
-  const safeContractSize =
-    Number.isFinite(contractSize)
-      ? contractSize
-      : 100;
+    setChangingTimeframe(true);
+    setTimeframe(next);
+    load(next);
+  }
 
   return (
     <main
       dir="rtl"
-      className="ai-page"
+      className="ai-root"
     >
-      <style>{css}</style>
+      <style>{styles}</style>
 
-      <div className="shell">
-        <header className="topbar">
-          <div>
-            <div className="eyebrow">
-              AI MARKET ENGINE
+      <div className="ai-container">
+
+        {/* =====================================================
+            HEADER
+        ====================================================== */}
+
+        <header className="ai-header">
+
+          <div className="brand">
+
+            <div className="brand-icon">
+              AI
             </div>
 
-            <h1>
-              تحلیل هوش مصنوعی طلا
-            </h1>
+            <div>
+              <div className="brand-mini">
+                TRADING AI
+              </div>
 
-            <p>
-              فقط XAUUSD · چندتایم‌فریم ·
-              مدیریت TP/SL · کارنامه واقعی ثبت‌شده
-            </p>
+              <h1>
+                تحلیل هوشمند طلا
+              </h1>
+
+              <p>
+                XAUUSD · Real Market Engine
+              </p>
+            </div>
+
           </div>
 
-          <div className="top-actions">
-            <span className="live">
-              <i />
-              سیستم پایش
-            </span>
+          <div className="header-status">
+
+            <div className="connection">
+              <span className="connection-dot" />
+              LIVE MARKET
+            </div>
 
             <button
-              onClick={() => void load()}
-              disabled={busy}
-              type="button"
+              className="refresh-button"
+              onClick={() => load(timeframe)}
+              disabled={loading}
             >
-              {busy
-                ? "در حال دریافت…"
-                : "↻ بروزرسانی"}
+              {loading ? "در حال اتصال..." : "↻ بروزرسانی"}
             </button>
+
           </div>
+
         </header>
 
-        <section className="notice">
-          <b>
-            🤖 این تحلیل هوش مصنوعی است
-          </b>
-
-          <span>
-            این بخش تحلیل و پایش بازار است و
-            سود یا اجرای واقعی بروکر را تضمین
-            نمی‌کند. P/L مدل بر اساس قیمت
-            XAU/USD و حجم مشخص‌شده ثبت می‌شود.
-          </span>
-        </section>
+        {/* =====================================================
+            ERROR
+        ====================================================== */}
 
         {error && (
-          <div className="error">
-            ⚠️ {error}
+          <div className="error-box">
+            <span>⚠️</span>
+            <div>
+              <strong>
+                ارتباط با موتور بازار
+              </strong>
+
+              <p>
+                {error}
+              </p>
+            </div>
           </div>
         )}
 
-        <section className="card market-chart-card">
-          <div className="chart-header">
-            <div>
-              <div className="chart-symbol">
-                <span className="gold-dot" />
-                XAUUSD
+        {/* =====================================================
+            REAL MARKET CHART
+        ====================================================== */}
+
+        <section className="market-section">
+
+          <div className="market-top">
+
+            <div className="market-title">
+
+              <div className="gold-dot" />
+
+              <div>
+                <strong>
+                  XAUUSD
+                </strong>
+
+                <span>
+                  GOLD SPOT
+                </span>
               </div>
 
-              <h2>
-                نمودار زنده بازار طلا
-              </h2>
-
-              <p>
-                داده بازار XAU/USD · کندل‌های چندتایم‌فریم
-              </p>
             </div>
 
-            <div className="chart-status">
-              <span className="chart-live-dot" />
+            <div className="market-live">
 
-              <span>
-                {data?.chart?.updatedAt
-                  ? `آخرین بروزرسانی: ${dateFa(
-                      data.chart.updatedAt
-                    )}`
-                  : "در انتظار داده بازار"}
-              </span>
+              <span className="pulse" />
+
+              قیمت بازار
+
+              <strong>
+                {formatPrice(
+                  data?.currentPrice ||
+                    signal?.currentPrice ||
+                    0
+                )}
+              </strong>
+
             </div>
+
           </div>
 
-          <div className="timeframe-bar">
-            <div className="timeframe-label">
-              تایم‌فریم بازار
-            </div>
+          <div className="timeframes">
 
-            <div className="timeframe-buttons">
-              {availableTimeframes.map(
-                (tf) => (
-                  <button
-                    key={tf}
-                    type="button"
-                    className={
-                      selectedTimeframe === tf
-                        ? "active"
-                        : ""
-                    }
-                    onClick={() =>
-                      setSelectedTimeframe(tf)
-                    }
-                  >
-                    {tf}
-                  </button>
-                )
-              )}
-            </div>
+            {TIMEFRAMES.map((item) => (
 
-            <div className="default-timeframe">
-              <span />
-              پیش‌فرض: 1m
-            </div>
-          </div>
-
-          <GoldChart
-            candles={candles}
-            meta={activeMeta}
-            timeframe={selectedTimeframe}
-            hasActiveSignal={Boolean(activeSignal)}
-          />
-        </section>
-
-        <section className="hero-grid">
-          <div className="card hero-card">
-            <div className="card-head">
-              <span>
-                🟡 XAUUSD
-              </span>
-
-              <span
+              <button
+                key={item.id}
                 className={
-                  activeSignal?.metadata?.direction ===
-                  "BUY"
-                    ? "buy"
-                    : activeSignal?.metadata?.direction ===
-                      "SELL"
-                    ? "sell"
-                    : "neutral"
+                  timeframe === item.id
+                    ? "timeframe active"
+                    : "timeframe"
+                }
+                onClick={() =>
+                  changeTimeframe(item.id)
                 }
               >
-                {activeSignal?.metadata?.direction ===
-                "BUY"
-                  ? "🟢 BUY"
-                  : activeSignal?.metadata?.direction ===
-                    "SELL"
-                  ? "🔴 SELL"
-                  : "NO TRADE"}
-              </span>
-            </div>
+                {item.label}
+              </button>
 
-            <div className="market-current-price">
-              {typeof meta?.currentPrice ===
-              "number"
-                ? price(meta.currentPrice)
-                : candles.length
-                ? price(
-                    candles[
-                      candles.length - 1
-                    ]?.close
-                  )
-                : "—"}
-            </div>
+            ))}
 
-            <div className="price-sub">
-              {activeSignal
-                ? "قیمت فعلی و سیگنال فعال XAUUSD"
-                : "آخرین قیمت ثبت‌شده XAUUSD"}
-            </div>
+          </div>
 
-            <div className="meta-row">
-              <span>
-                سشن:
-                <b>
-                  {meta?.session || "—"}
-                </b>
-              </span>
+          <div className="chart-container">
 
-              <span>
-                تایم‌فریم:
-                <b>
-                  {meta?.timeframe || "—"}
-                </b>
-              </span>
+            {candles.length > 0 ? (
+              <LiveCandlestickChart
+                candles={candles}
+                signal={activeSignal}
+              />
+            ) : (
+              <div className="chart-loading">
 
-              <span>
-                امتیاز:
-                <b>
-                  {meta?.score ?? "—"}/100
-                </b>
-              </span>
+                <div className="chart-loader" />
 
-              <span>
-                تأییدها:
-                <b>
-                  {meta?.confirmations ?? "—"}
-                </b>
-              </span>
-            </div>
+                <strong>
+                  {changingTimeframe
+                    ? "در حال دریافت تایم‌فریم..."
+                    : "در انتظار داده واقعی بازار..."}
+                </strong>
 
-            {meta?.strength && (
-              <div className="signal-strength">
                 <span>
-                  قدرت تحلیل
+                  نمودار فقط از داده واقعی XAUUSD
+                  ساخته می‌شود.
                 </span>
 
-                <b>
-                  {meta.strength}
-                </b>
-
-                {meta.suggestedVolume && (
-                  <small>
-                    حجم پیشنهادی:{" "}
-                    {meta.suggestedVolume}
-                  </small>
-                )}
               </div>
             )}
 
-            {typeof meta?.historicalSuccessRate ===
-              "number" && (
-              <div className="history-rate">
-                موفقیت تاریخی ۳۰ روز اخیر:{" "}
-                <b>
-                  {meta.historicalSuccessRate.toFixed(
-                    1
-                  )}
-                  %
-                </b>
-
-                {meta.historicalClosedTrades
-                  ? ` · ${meta.historicalClosedTrades} معامله بسته‌شده`
-                  : ""}
-              </div>
-            )}
           </div>
 
-          <div className="card fx-card">
-            <div className="label">
-              نرخ واقعی دلار به تومان
-            </div>
+          <div className="chart-footer">
 
-            <div className="fx-number">
-              {data?.usdToToman
-                ? toman(
-                    data.usdToToman.rate
-                  )
-                : "—"}
-            </div>
+            <span>
+              ● داده بازار
+            </span>
 
-            <div className="muted">
-              منبع نرخ در سرور · زمان:
-              {" "}
-              {data?.usdToToman?.asOf
-                ? dateFa(
-                    data.usdToToman.asOf
-                  )
-                : "—"}
-            </div>
+            <span>
+              {timeframeLabel(timeframe)}
+            </span>
 
-            <div className="fx-rule">
-              بدون نرخ آزمایشی؛ اگر سرویس نرخ
-              در دسترس نباشد، محاسبه تومان برای
-              سیگنال جدید متوقف می‌شود.
-            </div>
+            <span>
+              {candles.length
+                ? `${candles.length} کندل`
+                : "بدون داده"}
+            </span>
+
+            <span>
+              بروزرسانی خودکار
+            </span>
+
           </div>
+
         </section>
 
-        <section className="levels-grid">
-          <Level
-            title="ورود"
-            value={activeMeta?.entry}
-            tone="entry"
-          />
+        {/* =====================================================
+            SIGNAL BOX
+        ====================================================== */}
 
-          <Level
-            title="حد ضرر"
-            value={activeMeta?.stopLoss}
-            tone="sl"
-            extra={
-              activeMeta
-                ? `-${money(
-                    activeMeta.riskUsd
-                  )} · ${toman(
-                    activeMeta.riskToman
-                  )}`
-                : undefined
-            }
-          />
+        <section className="signal-section">
 
-          <Level
-            title="TP1 · 0.04 lot"
-            value={activeMeta?.tp1}
-            tone="tp"
-            extra={
-              activeMeta
-                ? `+${money(
-                    activeMeta.tp1Usd
-                  )} · 🇮🇷 ${toman(
-                    activeMeta.tp1Toman
-                  )}`
-                : undefined
-            }
-          />
+          <div className="section-heading">
 
-          <Level
-            title="TP2 · 0.03 lot"
-            value={activeMeta?.tp2}
-            tone="tp"
-            extra={
-              activeMeta
-                ? `+${money(
-                    activeMeta.tp2Usd
-                  )} · 🇮🇷 ${toman(
-                    activeMeta.tp2Toman
-                  )}`
-                : undefined
-            }
-          />
-
-          <Level
-            title="TP3 · 0.03 lot"
-            value={activeMeta?.tp3}
-            tone="tp"
-            extra={
-              activeMeta
-                ? `+${money(
-                    activeMeta.tp3Usd
-                  )} · 🇮🇷 ${toman(
-                    activeMeta.tp3Toman
-                  )}`
-                : undefined
-            }
-          />
-        </section>
-
-        <section className="cards-3">
-          <Info
-            title="حجم کل"
-            value={`${safeTotalLot.toFixed(
-              2
-            )} lot`}
-            sub="0.04 + 0.03 + 0.03"
-          />
-
-          <Info
-            title="ریسک استاپ"
-            value={
-              activeMeta
-                ? `-${money(
-                    activeMeta.riskUsd
-                  )}`
-                : "-$40"
-            }
-            sub={
-              activeMeta
-                ? `🇮🇷 ${toman(
-                    activeMeta.riskToman
-                  )}`
-                : "بر اساس نرخ ثبت‌شده"
-            }
-            danger
-          />
-
-          <Info
-            title="حداکثر سود"
-            value={
-              activeMeta
-                ? `+${money(
-                    activeMeta.totalPotentialUsd
-                  )}`
-                : "+$80"
-            }
-            sub={
-              activeMeta
-                ? `🇮🇷 ${toman(
-                    activeMeta.totalPotentialToman
-                  )}`
-                : "TP1 + TP2 + TP3"
-            }
-            success
-          />
-        </section>
-
-        <section className="card report">
-          <div className="section-title">
             <div>
+              <span>
+                AI SIGNAL
+              </span>
+
               <h2>
-                کارنامه
+                سیگنال فعال
+              </h2>
+            </div>
+
+            <div
+              className={
+                activeSignal
+                  ? "signal-status active"
+                  : "signal-status"
+              }
+            >
+              <span />
+              {activeSignal
+                ? "معامله فعال"
+                : "سیگنال فعال نیست"}
+            </div>
+
+          </div>
+
+          {!signal ? (
+
+            <div className="no-signal">
+
+              <div className="no-signal-icon">
+                ◈
+              </div>
+
+              <strong>
+                در حال حاضر سیگنال فعالی وجود ندارد
+              </strong>
+
+              <span>
+                موتور هوش مصنوعی بازار را برای
+                فرصت مناسب XAUUSD بررسی می‌کند.
+              </span>
+
+            </div>
+
+          ) : (
+
+            <SignalCard
+              signal={signal}
+              active={Boolean(activeSignal)}
+            />
+
+          )}
+
+        </section>
+
+        {/* =====================================================
+            RISK FREE
+        ====================================================== */}
+
+        <section className="riskfree-section">
+
+          <div className="section-heading">
+
+            <div>
+              <span>
+                TRADE MANAGEMENT
+              </span>
+
+              <h2>
+                مدیریت ریسک‌فری
+              </h2>
+            </div>
+
+            <div className="safe-badge">
+              محافظت از سود
+            </div>
+
+          </div>
+
+          <div className="risk-grid">
+
+            <div className="risk-step">
+
+              <div className="step-number">
+                01
+              </div>
+
+              <div>
+                <strong>
+                  قبل از TP1
+                </strong>
+
+                <p>
+                  اگر قیمت مستقیماً به حد ضرر
+                  برسد، نتیجه معامله
+                  <b className="danger-text">
+                    -$40
+                  </b>
+                  خواهد بود.
+                </p>
+              </div>
+
+            </div>
+
+            <div className="risk-arrow">
+              ←
+            </div>
+
+            <div className="risk-step highlight">
+
+              <div className="step-number">
+                02
+              </div>
+
+              <div>
+                <strong>
+                  TP1 فعال شد
+                </strong>
+
+                <p>
+                  TP1 با حجم
+                  <b>0.04 lot</b>
+                  بسته می‌شود و
+                  <b className="success-text">
+                    +$20
+                  </b>
+                  ثبت می‌شود.
+                </p>
+              </div>
+
+            </div>
+
+            <div className="risk-arrow">
+              ←
+            </div>
+
+            <div className="risk-step safe">
+
+              <div className="step-number">
+                03
+              </div>
+
+              <div>
+                <strong>
+                  Risk Free
+                </strong>
+
+                <p>
+                  حد ضرر حجم باقی‌مانده
+                  به نقطه ورود منتقل می‌شود.
+                  بنابراین برگشت قیمت به Entry
+                  باخت محسوب نمی‌شود.
+                </p>
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =====================================================
+            LOT / PROFIT PLAN
+        ====================================================== */}
+
+        <section className="plan-section">
+
+          <div className="section-heading">
+
+            <div>
+              <span>
+                POSITION PLAN
+              </span>
+
+              <h2>
+                ساختار حجم و سود
+              </h2>
+            </div>
+
+            <div className="total-lot">
+              حجم کل
+              <strong>
+                0.10
+              </strong>
+              lot
+            </div>
+
+          </div>
+
+          <div className="plan-grid">
+
+            <ProfitCard
+              number="01"
+              title="TP1"
+              lot="0.04"
+              profit="$20"
+              percent="40%"
+              className="tp1"
+            />
+
+            <ProfitCard
+              number="02"
+              title="TP2"
+              lot="0.03"
+              profit="$24"
+              percent="30%"
+              className="tp2"
+            />
+
+            <ProfitCard
+              number="03"
+              title="TP3"
+              lot="0.03"
+              profit="$36"
+              percent="30%"
+              className="tp3"
+            />
+
+            <div className="total-profit">
+
+              <span>
+                TOTAL POTENTIAL
+              </span>
+
+              <strong>
+                +$80
+              </strong>
+
+              <small>
+                TP1 + TP2 + TP3
+              </small>
+
+            </div>
+
+          </div>
+
+          <div className="plan-note">
+
+            <span>i</span>
+
+            <p>
+              مدل مدیریت معامله به‌صورت مرحله‌ای است:
+              ابتدا بخشی از حجم در TP1 بسته می‌شود،
+              سپس حجم باقی‌مانده وارد وضعیت Risk Free
+              می‌شود و TP2 و TP3 ادامه پیدا می‌کنند.
+            </p>
+
+          </div>
+
+        </section>
+
+        {/* =====================================================
+            PERFORMANCE
+        ====================================================== */}
+
+        <section className="performance-section">
+
+          <div className="section-heading">
+
+            <div>
+              <span>
+                PERFORMANCE
+              </span>
+
+              <h2>
+                کارنامه معاملاتی
               </h2>
 
               <p>
-                ثبت روزانه، هفتگی و ماهانه؛
-                هر TP و SL جداگانه شمرده می‌شود.
+                فقط معاملات ثبت‌شده توسط موتور
               </p>
             </div>
 
-            <div className="tabs">
-              {(
-                [
-                  ["day", "امروز"],
-                  ["week", "این هفته"],
-                  ["month", "این ماه"],
-                ] as const
-              ).map(([k, t]) => (
+            <div className="period-tabs">
+
+              {[
+                ["day", "امروز"],
+                ["week", "هفته"],
+                ["month", "ماه"],
+              ].map(([key, label]) => (
+
                 <button
-                  key={k}
-                  type="button"
+                  key={key}
                   className={
-                    period === k
-                      ? "active"
-                      : ""
+                    period === key
+                      ? "period active"
+                      : "period"
                   }
                   onClick={() =>
-                    setPeriod(k)
+                    setPeriod(
+                      key as
+                        | "day"
+                        | "week"
+                        | "month"
+                    )
                   }
                 >
-                  {t}
+                  {label}
                 </button>
+
               ))}
+
             </div>
+
           </div>
 
-          <div className="stats-grid">
-            <Stat
-              title="معاملات"
-              value={String(
-                perf.trades || 0
-              )}
+          <div className="performance-grid">
+
+            <Metric
+              title="تعداد معاملات"
+              value={String(performance.trades)}
+              icon="▣"
             />
 
-            <Stat
+            <Metric
               title="TP1"
-              value={String(
-                perf.tp1 || 0
-              )}
-              sub={`+${money(
-                (perf.tp1 || 0) * 20
-              )} · 🇮🇷 ${toman(
-                perf.tp1Toman
-              )}`}
+              value={String(performance.tp1)}
+              sub={`+${
+                performance.tp1 * 20
+              }`}
+              icon="1"
+              success
             />
 
-            <Stat
+            <Metric
               title="TP2"
-              value={String(
-                perf.tp2 || 0
-              )}
-              sub={`+${money(
-                (perf.tp2 || 0) * 24
-              )} · 🇮🇷 ${toman(
-                perf.tp2Toman
-              )}`}
+              value={String(performance.tp2)}
+              sub={`+${
+                performance.tp2 * 24
+              }`}
+              icon="2"
+              success
             />
 
-            <Stat
+            <Metric
               title="TP3"
-              value={String(
-                perf.tp3 || 0
-              )}
-              sub={`+${money(
-                (perf.tp3 || 0) * 36
-              )} · 🇮🇷 ${toman(
-                perf.tp3Toman
-              )}`}
+              value={String(performance.tp3)}
+              sub={`+${
+                performance.tp3 * 36
+              }`}
+              icon="3"
+              success
             />
 
-            <Stat
+            <Metric
               title="استاپ"
-              value={String(
-                perf.sl || 0
-              )}
-              sub={`-${money(
-                (perf.sl || 0) * 40
-              )} · 🇮🇷 ${toman(
-                perf.slToman
-              )}`}
+              value={String(performance.sl)}
+              sub={`-${
+                performance.sl * 40
+              }`}
+              icon="×"
               danger
             />
 
-            <Stat
-              title="خالص"
-              value={`${
-                perf.pnlUsd >= 0
-                  ? "+"
-                  : ""
-              }${money(
-                perf.pnlUsd
-              )}`}
-              sub={`${
-                perf.pnlToman >= 0
-                  ? "+"
-                  : "-"
-              }${toman(
-                Math.abs(
-                  perf.pnlToman
-                )
-              )}`}
-              success={
-                perf.pnlUsd >= 0
-              }
-              danger={
-                perf.pnlUsd < 0
-              }
+            <Metric
+              title="Risk Free"
+              value={String(
+                performance.breakeven
+              )}
+              icon="✓"
+              success
             />
+
           </div>
 
-          <div className="chart-wrap">
-            <div className="chart-title">
-              نمودار کوچک سود/زیان
-            </div>
+          <div className="performance-bottom">
 
-            <div className="bars">
-              <div className="bar-col">
-                <span>
-                  برد
-                </span>
+            <div className="winrate-card">
 
-                <div className="bar-track">
-                  <div
-                    className="bar win"
-                    style={{
-                      height: `${Math.max(
-                        4,
-                        (chart.win /
-                          chart.max) *
-                          100
-                      )}%`,
-                    }}
-                  />
+              <div className="winrate-ring">
+
+                <div>
+                  <strong>
+                    {Number(
+                      performance.winRate || 0
+                    ).toFixed(1)}
+                    %
+                  </strong>
+
+                  <span>
+                    Win Rate
+                  </span>
                 </div>
 
-                <b>
-                  +{money(chart.win)}
-                </b>
               </div>
 
-              <div className="bar-col">
+              <div className="winrate-info">
+
                 <span>
-                  باخت
+                  عملکرد معاملات
                 </span>
 
-                <div className="bar-track">
-                  <div
-                    className="bar loss"
-                    style={{
-                      height: `${Math.max(
-                        4,
-                        (chart.loss /
-                          chart.max) *
-                          100
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                <b>
-                  -{money(chart.loss)}
-                </b>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="split">
-          <div className="card analysis-card">
-            <div className="section-title">
-              <div>
-                <h2>
-                  موتور تحلیل
-                </h2>
-
-                <p>
-                  تأییدهای چندلایه قبل از ثبت تحلیل
-                </p>
-              </div>
-
-              <span className="score">
-                {meta?.score ?? 0}/100
-              </span>
-            </div>
-
-            <div className="checks">
-              {(
-                meta?.analysis?.reasons || [
-                  "Trend",
-                  "Structure",
-                  "Momentum",
-                  "Liquidity",
-                  "Pullback",
-                  "Candle",
-                  "Session",
-                  "News",
-                  "Risk",
-                ]
-              ).map(
-                (x, i) => (
-                  <div
-                    key={`${x}-${i}`}
-                    className="check"
-                  >
-                    <span>
-                      ✓
-                    </span>
-
-                    {x}
-                  </div>
-                )
-              )}
-            </div>
-
-            <div className="state">
-              وضعیت:
-              {" "}
-              <b>
-                {stateFa(
-                  meta?.state
-                )}
-              </b>
-
-              {meta?.breakeven && (
-                <em>
+                <strong>
+                  {performance.wins}
                   {" "}
-                  🔐 BE فعال
-                </em>
-              )}
-            </div>
-          </div>
+                  برد
+                </strong>
 
-          <div className="card event-card">
-            <div className="section-title">
-              <div>
-                <h2>
-                  رویدادهای معامله
-                </h2>
+                <small>
+                  {performance.losses}
+                  {" "}
+                  باخت
+                </small>
 
-                <p>
-                  هر برخورد در دیتابیس ثبت می‌شود.
-                </p>
               </div>
+
             </div>
 
-            <div className="events">
-              {meta?.events?.length ? (
-                [...meta.events]
-                  .reverse()
-                  .map(
-                    (e, i) => (
-                      <div
-                        className="event"
-                        key={`${e.type}-${i}`}
-                      >
-                        <span>
-                          {eventIcon(
-                            e.type
-                          )}
-                        </span>
+            <div className="net-profit-card">
 
-                        <div>
-                          <b>
-                            {eventFa(
-                              e.type
-                            )}
-                          </b>
+              <span>
+                NET RESULT
+              </span>
 
-                          <small>
-                            {dateFa(
-                              e.at
-                            )}
-                            {" · "}
-                            {price(
-                              e.price
-                            )}
-                            {" · "}
-                            {Number(
-                              e.lotClosed
-                            ).toFixed(2)}{" "}
-                            lot
-                          </small>
-                        </div>
+              <strong
+                className={
+                  performance.pnlUsd >= 0
+                    ? "success-text"
+                    : "danger-text"
+                }
+              >
+                {performance.pnlUsd >= 0
+                  ? "+"
+                  : ""}
+                {money(
+                  performance.pnlUsd
+                )}
+              </strong>
 
-                        <strong
-                          className={
-                            e.pnlUsd >= 0
-                              ? "green"
-                              : "red"
-                          }
-                        >
-                          {e.pnlUsd >= 0
-                            ? "+"
-                            : ""}
-                          {money(
-                            e.pnlUsd
-                          )}
-
-                          <small>
-                            🇮🇷{" "}
-                            {toman(
-                              e.pnlToman
-                            )}
-                          </small>
-                        </strong>
-                      </div>
-                    )
+              <small>
+                {performance.pnlToman >= 0
+                  ? "+"
+                  : "-"}
+                {toman(
+                  Math.abs(
+                    performance.pnlToman
                   )
-              ) : (
-                <div className="empty">
-                  هنوز رویدادی ثبت نشده است.
-                </div>
-              )}
+                )}
+              </small>
+
             </div>
+
           </div>
+
         </section>
 
-        <section className="card recent">
-          <div className="section-title">
-            <div>
-              <h2>
-                آخرین تحلیل‌ها
-              </h2>
+        {/* =====================================================
+            RECENT TRADES
+        ====================================================== */}
 
-              <p>
-                تاریخچه سیگنال‌های AI فقط برای XAUUSD
-              </p>
+        <section className="history-section">
+
+          <div className="section-heading">
+
+            <div>
+              <span>
+                TRADE HISTORY
+              </span>
+
+              <h2>
+                آخرین معاملات
+              </h2>
             </div>
+
           </div>
 
-          <div className="table">
+          <div className="history-list">
+
             {data?.performance?.recent?.length ? (
-              data.performance.recent.map(
-                (r) => {
-                  const events =
-                    Array.isArray(
-                      r.metadata?.events
-                    )
-                      ? r.metadata.events
-                      : [];
+
+              data.performance.recent
+                .slice(0, 10)
+                .map((item) => {
+
+                  const m =
+                    item.metadata;
 
                   const pnl =
-                    events.reduce(
-                      (a, e) =>
-                        a +
-                        (Number(
-                          e.pnlUsd
-                        ) || 0),
+                    m?.events?.reduce(
+                      (sum, event) =>
+                        sum +
+                        Number(
+                          event.pnlUsd || 0
+                        ),
                       0
-                    );
+                    ) || 0;
 
                   return (
                     <div
-                      className="tr"
-                      key={r.id}
+                      className="history-row"
+                      key={item.id}
                     >
-                      <span>
-                        {dateFa(
-                          r.createdAt
-                        )}
-                      </span>
 
-                      <span>
-                        {r.metadata?.direction ===
-                        "BUY"
-                          ? "🟢 BUY"
-                          : r.metadata?.direction ===
-                            "SELL"
-                          ? "🔴 SELL"
-                          : "NO TRADE"}
-                      </span>
+                      <div className="history-direction">
 
-                      <span>
-                        {r.metadata?.session ||
-                          "—"}
-                      </span>
+                        <span
+                          className={
+                            m.direction ===
+                            "BUY"
+                              ? "direction buy"
+                              : "direction sell"
+                          }
+                        >
+                          {m.direction ===
+                          "BUY"
+                            ? "BUY"
+                            : "SELL"}
+                        </span>
 
-                      <span>
-                        {r.status}
-                      </span>
+                        <div>
+                          <strong>
+                            XAUUSD
+                          </strong>
 
-                      <span>
-                        {r.metadata?.score ??
-                          "—"}
-                        /100
-                      </span>
+                          <small>
+                            {dateFa(
+                              item.createdAt
+                            )}
+                          </small>
+                        </div>
 
-                      <span
-                        className={
-                          pnl >= 0
-                            ? "green"
-                            : "red"
-                        }
-                      >
-                        {pnl >= 0
-                          ? "+"
-                          : ""}
-                        {money(pnl)}
-                      </span>
+                      </div>
+
+                      <div>
+                        <span>
+                          Entry
+                        </span>
+
+                        <strong>
+                          {formatPrice(
+                            m.entry
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>
+                          وضعیت
+                        </span>
+
+                        <strong>
+                          {stateFa(
+                            item.status ||
+                              m.state
+                          )}
+                        </strong>
+                      </div>
+
+                      <div className="history-result">
+
+                        <span>
+                          نتیجه
+                        </span>
+
+                        <strong
+                          className={
+                            pnl >= 0
+                              ? "success-text"
+                              : "danger-text"
+                          }
+                        >
+                          {pnl >= 0
+                            ? "+"
+                            : ""}
+                          {money(pnl)}
+                        </strong>
+
+                      </div>
+
                     </div>
                   );
-                }
-              )
+                })
+
             ) : (
-              <div className="empty">
-                هنوز تحلیلی ثبت نشده است.
+
+              <div className="history-empty">
+                هنوز معامله‌ای ثبت نشده است.
               </div>
+
             )}
+
           </div>
+
         </section>
 
-        <footer>
-          AI Analysis · XAUUSD · Contract size{" "}
-          {safeContractSize} oz · حجم کل 0.10 lot ·
-          TP1 0.04 · TP2 0.03 · TP3 0.03
+        {/* =====================================================
+            ENGINE SETTINGS
+        ====================================================== */}
+
+        <section className="settings-section">
+
+          <div className="section-heading">
+
+            <div>
+              <span>
+                ENGINE SETTINGS
+              </span>
+
+              <h2>
+                تنظیمات موتور تحلیل
+              </h2>
+            </div>
+
+            <div className="settings-status">
+              ● آماده پایش
+            </div>
+
+          </div>
+
+          <div className="settings-grid">
+
+            <Setting
+              title="نماد"
+              value="XAUUSD"
+            />
+
+            <Setting
+              title="حجم کل"
+              value="0.10 LOT"
+            />
+
+            <Setting
+              title="ریسک اولیه"
+              value="-$40"
+            />
+
+            <Setting
+              title="TP Management"
+              value="3 مراحل"
+            />
+
+            <Setting
+              title="Risk Free"
+              value="بعد از TP1"
+            />
+
+            <Setting
+              title="Timeframes"
+              value="1M → 4H"
+            />
+
+            <Setting
+              title="Market Data"
+              value="REAL"
+            />
+
+            <Setting
+              title="Telegram"
+              value="CONNECTED"
+            />
+
+          </div>
+
+        </section>
+
+        {/* =====================================================
+            TELEGRAM
+        ====================================================== */}
+
+        <section className="telegram-section">
+
+          <div className="telegram-icon">
+            ✈
+          </div>
+
+          <div className="telegram-content">
+
+            <span>
+              TELEGRAM AUTOMATION
+            </span>
+
+            <h3>
+              کارنامه و رویدادهای معامله
+              به تلگرام ارسال می‌شوند
+            </h3>
+
+            <p>
+              صدور سیگنال، TP1، فعال‌شدن Risk Free،
+              TP2، TP3، Stop Loss و نتیجه نهایی
+              باید توسط موتور اصلی در تلگرام ثبت شود.
+            </p>
+
+          </div>
+
+          <div className="telegram-state">
+            <span />
+            آماده
+          </div>
+
+        </section>
+
+        {/* =====================================================
+            DISCLAIMER
+        ====================================================== */}
+
+        <div className="disclaimer">
+
+          <strong>
+            ⚠️ توضیح سیستم
+          </strong>
+
+          <span>
+            این بخش تحلیل بازار توسط موتور هوش مصنوعی
+            است و سود را تضمین نمی‌کند. قیمت‌ها و نتایج
+            باید فقط از داده واقعی بازار و رویدادهای
+            ثبت‌شده توسط سرور محاسبه شوند.
+          </span>
+
+        </div>
+
+        <footer className="page-footer">
+          TRADING AI · XAUUSD · REAL MARKET ANALYSIS
         </footer>
+
       </div>
     </main>
   );
 }
 
-/* =========================================================
-   VALIDATION
-========================================================= */
+/* ============================================================
+   SIGNAL CARD
+============================================================ */
 
-function isValidCandle(
-  candle: unknown
-): candle is Candle {
-  if (!candle || typeof candle !== "object") {
-    return false;
-  }
-
-  const c = candle as Partial<Candle>;
-
-  return (
-    (typeof c.time === "string" ||
-      typeof c.time === "number") &&
-    Number.isFinite(Number(c.open)) &&
-    Number.isFinite(Number(c.high)) &&
-    Number.isFinite(Number(c.low)) &&
-    Number.isFinite(Number(c.close))
-  );
-}
-
-/* =========================================================
-   GOLD CHART
-========================================================= */
-
-function GoldChart({
-  candles,
-  meta,
-  timeframe,
-  hasActiveSignal,
+function SignalCard({
+  signal,
+  active,
 }: {
-  candles: Candle[];
-  meta: Meta | null;
-  timeframe: string;
-  hasActiveSignal: boolean;
+  signal: Meta;
+  active: boolean;
 }) {
-  const width = 1200;
-  const height = 520;
-
-  const padding = {
-    top: 38,
-    right: 105,
-    bottom: 52,
-    left: 25,
-  };
-
-  const visibleCandles = useMemo(() => {
-    return candles
-      .filter(isValidCandle)
-      .slice(-120);
-  }, [candles]);
-
-  const chartData = useMemo(() => {
-    if (!visibleCandles.length) {
-      return null;
-    }
-
-    const allValues = visibleCandles.flatMap(
-      (c) => [
-        c.high,
-        c.low,
-        c.open,
-        c.close,
-      ]
-    );
-
-    /*
-     * خیلی مهم:
-     * فقط وقتی سیگنال فعال داریم Entry/SL/TP
-     * در محدوده قیمت نمودار دخالت داده می‌شوند.
-     *
-     * در حالت NO TRADE هیچ سطح قبلی وارد
-     * محاسبه ارتفاع نمودار نمی‌شود.
-     */
-    const signalLevels = hasActiveSignal
-      ? [
-          meta?.entry,
-          meta?.stopLoss,
-          meta?.tp1,
-          meta?.tp2,
-          meta?.tp3,
-        ].filter(
-          (v): v is number =>
-            typeof v === "number" &&
-            Number.isFinite(v)
-        )
-      : [];
-
-    const levels = [
-      ...signalLevels,
-      /*
-       * Support/Resistance دیگر هرگز روی
-       * نمودار رسم نمی‌شوند.
-       */
-    ];
-
-    const minRaw = Math.min(
-      ...allValues,
-      ...(levels.length
-        ? levels
-        : [Math.min(...allValues)])
-    );
-
-    const maxRaw = Math.max(
-      ...allValues,
-      ...(levels.length
-        ? levels
-        : [Math.max(...allValues)])
-    );
-
-    const range = Math.max(
-      0.01,
-      maxRaw - minRaw
-    );
-
-    const paddingPrice = Math.max(
-      range * 0.08,
-      0.25
-    );
-
-    const minPrice =
-      minRaw - paddingPrice;
-
-    const maxPrice =
-      maxRaw + paddingPrice;
-
-    const innerWidth =
-      width -
-      padding.left -
-      padding.right;
-
-    const innerHeight =
-      height -
-      padding.top -
-      padding.bottom;
-
-    const xStep =
-      innerWidth /
-      Math.max(
-        1,
-        visibleCandles.length
-      );
-
-    const candleWidth = Math.max(
-      2,
-      Math.min(9, xStep * 0.62)
-    );
-
-    const y = (value: number) =>
-      padding.top +
-      ((maxPrice - value) /
-        (maxPrice - minPrice)) *
-        innerHeight;
-
-    const x = (index: number) =>
-      padding.left +
-      xStep * index +
-      xStep / 2;
-
-    return {
-      minPrice,
-      maxPrice,
-      innerWidth,
-      innerHeight,
-      xStep,
-      candleWidth,
-      y,
-      x,
-    };
-  }, [
-    visibleCandles,
-    meta,
-    hasActiveSignal,
-  ]);
-
-  if (
-    !visibleCandles.length ||
-    !chartData
-  ) {
-    return (
-      <div className="chart-empty">
-        <div className="chart-empty-icon">
-          ◌
-        </div>
-
-        <h3>
-          در انتظار داده واقعی XAUUSD
-        </h3>
-
-        <p>
-          موتور تحلیل باید داده کندلی بازار را
-          از سرور دریافت کند.
-        </p>
-
-        <span>
-          XAUUSD · {timeframe}
-        </span>
-      </div>
-    );
-  }
-
-  const {
-    minPrice,
-    maxPrice,
-    innerWidth,
-    innerHeight,
-    xStep,
-    candleWidth,
-    y,
-    x,
-  } = chartData;
-
-  /*
-   * فقط در صورت وجود سیگنال فعال
-   * این خطوط روی نمودار ساخته می‌شوند.
-   */
-  const priceLevels = hasActiveSignal
-    ? [
-        {
-          name: "ENTRY",
-          value: meta?.entry,
-          className: "chart-entry",
-        },
-        {
-          name: "SL",
-          value: meta?.stopLoss,
-          className: "chart-sl",
-        },
-        {
-          name: "TP1",
-          value: meta?.tp1,
-          className: "chart-tp",
-        },
-        {
-          name: "TP2",
-          value: meta?.tp2,
-          className: "chart-tp",
-        },
-        {
-          name: "TP3",
-          value: meta?.tp3,
-          className: "chart-tp",
-        },
-      ].filter(
-        (
-          level
-        ): level is {
-          name: string;
-          value: number;
-          className: string;
-        } =>
-          typeof level.value === "number" &&
-          Number.isFinite(level.value)
-      )
-    : [];
-
-  /*
-   * Support / Resistance عمداً حذف شده است.
-   * طبق طراحی جدید، در حالت عادی و حتی در
-   * سیگنال فعال هم روی نمودار نمایش داده نمی‌شوند.
-   */
-
-  const currentPrice =
-    typeof meta?.currentPrice ===
-      "number" &&
-    Number.isFinite(meta.currentPrice)
-      ? meta.currentPrice
-      : visibleCandles[
-          visibleCandles.length - 1
-        ]?.close;
-
-  const gridLines = 6;
+  const buy = signal.direction === "BUY";
 
   return (
-    <div className="gold-chart">
-      <div className="chart-toolbar">
-        <div>
-          <span className="chart-toolbar-symbol">
-            XAU/USD
-          </span>
+    <div className="signal-card">
 
-          <span className="chart-toolbar-tf">
-            {timeframe}
-          </span>
+      <div className="signal-main">
+
+        <div className="signal-direction">
+
+          <div
+            className={
+              buy
+                ? "direction-large buy-bg"
+                : "direction-large sell-bg"
+            }
+          >
+            {buy ? "▲" : "▼"}
+          </div>
+
+          <div>
+
+            <span>
+              {active
+                ? "ACTIVE POSITION"
+                : "LATEST SIGNAL"}
+            </span>
+
+            <h3>
+              {buy ? "BUY" : "SELL"}
+            </h3>
+
+            <small>
+              XAUUSD ·{" "}
+              {timeframeLabel(
+                signal.timeframe as Timeframe
+              )}
+            </small>
+
+          </div>
+
         </div>
 
-        <div className="chart-toolbar-info">
+        <div className="signal-score">
+
           <span>
-            {visibleCandles.length} کندل
+            قدرت تحلیل
           </span>
 
-          {hasActiveSignal &&
-            meta?.direction && (
-              <span
-                className={
-                  meta.direction === "BUY"
-                    ? "chart-buy"
-                    : "chart-sell"
-                }
-              >
-                {meta.direction}
-              </span>
-            )}
+          <strong>
+            {signal.score || 0}
+            <small>/100</small>
+          </strong>
 
-          {!hasActiveSignal && (
-            <span className="chart-neutral">
-              NO TRADE
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="svg-chart-wrap">
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          className="svg-chart"
-          role="img"
-          aria-label="نمودار XAUUSD"
-          preserveAspectRatio="none"
-        >
-          <defs>
-            <linearGradient
-              id="chartBg"
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="1"
-            >
-              <stop
-                offset="0%"
-                stopColor="#12100b"
-              />
-
-              <stop
-                offset="100%"
-                stopColor="#08090b"
-              />
-            </linearGradient>
-
-            <filter id="goldGlow">
-              <feGaussianBlur
-                stdDeviation="3"
-                result="blur"
-              />
-
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          <rect
-            x="0"
-            y="0"
-            width={width}
-            height={height}
-            rx="20"
-            fill="url(#chartBg)"
-          />
-
-          {Array.from(
-            { length: gridLines },
-            (_, i) => {
-              const ratio =
-                i /
-                (gridLines - 1);
-
-              const yy =
-                padding.top +
-                ratio *
-                  innerHeight;
-
-              const value =
-                maxPrice -
-                ratio *
-                  (maxPrice -
-                    minPrice);
-
-              return (
-                <g
-                  key={`grid-${i}`}
-                >
-                  <line
-                    x1={
-                      padding.left
-                    }
-                    x2={
-                      width -
-                      padding.right
-                    }
-                    y1={yy}
-                    y2={yy}
-                    stroke="#ffffff"
-                    strokeOpacity="0.07"
-                    strokeDasharray="5 8"
-                  />
-
-                  <text
-                    x={
-                      width -
-                      padding.right +
-                      12
-                    }
-                    y={yy + 4}
-                    fill="#777d87"
-                    fontSize="12"
-                    direction="ltr"
-                  >
-                    {value.toFixed(2)}
-                  </text>
-                </g>
-              );
-            }
-          )}
-
-          {visibleCandles.map(
-            (candle, index) => {
-              const cx = x(index);
-
-              const openY =
-                y(candle.open);
-
-              const closeY =
-                y(candle.close);
-
-              const highY =
-                y(candle.high);
-
-              const lowY =
-                y(candle.low);
-
-              const bullish =
-                candle.close >=
-                candle.open;
-
-              const bodyTop =
-                Math.min(
-                  openY,
-                  closeY
-                );
-
-              const bodyHeight =
-                Math.max(
-                  1.5,
-                  Math.abs(
-                    openY -
-                      closeY
+          <div className="score-line">
+            <i
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.max(
+                    0,
+                    signal.score || 0
                   )
-                );
+                )}%`,
+              }}
+            />
+          </div>
 
-              return (
-                <g
-                  key={`candle-${String(
-                    candle.time
-                  )}-${index}`}
-                >
-                  <line
-                    x1={cx}
-                    x2={cx}
-                    y1={highY}
-                    y2={lowY}
-                    stroke={
-                      bullish
-                        ? "#52dc91"
-                        : "#ff6565"
-                    }
-                    strokeWidth="1.5"
-                    opacity="0.9"
-                  />
+        </div>
 
-                  <rect
-                    x={
-                      cx -
-                      candleWidth /
-                        2
-                    }
-                    y={bodyTop}
-                    width={
-                      candleWidth
-                    }
-                    height={
-                      bodyHeight
-                    }
-                    rx="1.5"
-                    fill={
-                      bullish
-                        ? "#3fcf82"
-                        : "#ed5b5b"
-                    }
-                    opacity="0.95"
-                  />
-                </g>
-              );
-            }
-          )}
-
-          {priceLevels.map(
-            (level) => {
-              const yy =
-                y(level.value);
-
-              const isEntry =
-                level.name ===
-                "ENTRY";
-
-              const isSL =
-                level.name ===
-                "SL";
-
-              return (
-                <g
-                  key={`${level.name}-${level.value}`}
-                >
-                  <line
-                    x1={
-                      padding.left
-                    }
-                    x2={
-                      width -
-                      padding.right
-                    }
-                    y1={yy}
-                    y2={yy}
-                    stroke={
-                      isEntry
-                        ? "#e9c15a"
-                        : isSL
-                        ? "#ff5757"
-                        : "#d6ad45"
-                    }
-                    strokeWidth={
-                      isEntry
-                        ? 2
-                        : 1.5
-                    }
-                    strokeDasharray={
-                      isEntry
-                        ? undefined
-                        : "8 6"
-                    }
-                    filter={
-                      isEntry
-                        ? "url(#goldGlow)"
-                        : undefined
-                    }
-                    opacity="0.95"
-                  />
-
-                  <rect
-                    x={
-                      width -
-                      padding.right +
-                      7
-                    }
-                    y={yy - 12}
-                    width="72"
-                    height="22"
-                    rx="7"
-                    fill={
-                      isEntry
-                        ? "#d9ad3e"
-                        : isSL
-                        ? "#6e2424"
-                        : "#493916"
-                    }
-                  />
-
-                  <text
-                    x={
-                      width -
-                      padding.right +
-                      15
-                    }
-                    y={yy + 3}
-                    fill={
-                      isEntry
-                        ? "#171208"
-                        : "#fff"
-                    }
-                    fontSize="10"
-                    fontWeight="900"
-                    direction="ltr"
-                  >
-                    {level.name}
-                  </text>
-
-                  <text
-                    x={
-                      width -
-                      padding.right +
-                      8
-                    }
-                    y={yy + 27}
-                    fill="#aeb4bf"
-                    fontSize="10"
-                    direction="ltr"
-                  >
-                    {level.value.toFixed(
-                      2
-                    )}
-                  </text>
-                </g>
-              );
-            }
-          )}
-
-          {typeof currentPrice ===
-            "number" &&
-            Number.isFinite(
-              currentPrice
-            ) && (
-              <g>
-                <line
-                  x1={
-                    padding.left
-                  }
-                  x2={
-                    width -
-                    padding.right
-                  }
-                  y1={y(
-                    currentPrice
-                  )}
-                  y2={y(
-                    currentPrice
-                  )}
-                  stroke="#f2f4f7"
-                  strokeOpacity="0.45"
-                  strokeDasharray="2 6"
-                />
-
-                <circle
-                  cx={
-                    width -
-                    padding.right -
-                    4
-                  }
-                  cy={y(
-                    currentPrice
-                  )}
-                  r="4"
-                  fill="#f4f6f8"
-                />
-
-                <rect
-                  x={
-                    width -
-                    padding.right +
-                    7
-                  }
-                  y={
-                    y(
-                      currentPrice
-                    ) - 12
-                  }
-                  width="72"
-                  height="22"
-                  rx="7"
-                  fill="#f0f2f4"
-                />
-
-                <text
-                  x={
-                    width -
-                    padding.right +
-                    14
-                  }
-                  y={
-                    y(
-                      currentPrice
-                    ) + 3
-                  }
-                  fill="#08090b"
-                  fontSize="10"
-                  fontWeight="900"
-                  direction="ltr"
-                >
-                  {currentPrice.toFixed(
-                    2
-                  )}
-                </text>
-              </g>
-            )}
-
-          {visibleCandles.map(
-            (candle, index) => {
-              if (
-                index !==
-                  visibleCandles.length -
-                    1 &&
-                index % 20 !== 0
-              ) {
-                return null;
-              }
-
-              const label =
-                formatCandleTime(
-                  candle.time
-                );
-
-              return (
-                <text
-                  key={`time-${String(
-                    candle.time
-                  )}-${index}`}
-                  x={x(index)}
-                  y={
-                    height -
-                    18
-                  }
-                  textAnchor="middle"
-                  fill="#696f79"
-                  fontSize="10"
-                  direction="ltr"
-                >
-                  {label}
-                </text>
-              );
-            }
-          )}
-        </svg>
       </div>
 
-      <div className="chart-legend">
-        {hasActiveSignal ? (
-          <>
-            <span>
-              <i className="legend-entry" />
-              Entry
-            </span>
+      <div className="signal-levels">
 
-            <span>
-              <i className="legend-sl" />
-              Stop Loss
-            </span>
+        <SignalLevel
+          title="ENTRY"
+          value={signal.entry}
+          type="entry"
+        />
 
-            <span>
-              <i className="legend-tp" />
-              TP1 / TP2 / TP3
-            </span>
-          </>
-        ) : (
-          <span className="chart-only-price">
-            <i className="legend-price" />
-            قیمت فعلی · بدون سیگنال فعال
+        <SignalLevel
+          title="STOP LOSS"
+          value={signal.stopLoss}
+          type="sl"
+          extra={`-${
+            signal.riskUsd || 40
+          }`}
+        />
+
+        <SignalLevel
+          title="TP1 · 0.04"
+          value={signal.tp1}
+          type="tp"
+          extra="+$20"
+        />
+
+        <SignalLevel
+          title="TP2 · 0.03"
+          value={signal.tp2}
+          type="tp"
+          extra="+$24"
+        />
+
+        <SignalLevel
+          title="TP3 · 0.03"
+          value={signal.tp3}
+          type="tp"
+          extra="+$36"
+        />
+
+      </div>
+
+      <div className="signal-bottom">
+
+        <div>
+          <span>
+            حجم کل
           </span>
-        )}
 
-        <span>
-          <i className="legend-price" />
-          قیمت فعلی
-        </span>
+          <strong>
+            0.10 LOT
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            سشن
+          </span>
+
+          <strong>
+            {signal.session || "—"}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            تأییدیه
+          </span>
+
+          <strong>
+            {signal.confirmations || 0}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            وضعیت
+          </span>
+
+          <strong className="gold-text">
+            {stateFa(signal.state)}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Risk Free
+          </span>
+
+          <strong
+            className={
+              signal.breakeven
+                ? "success-text"
+                : "muted-text"
+            }
+          >
+            {signal.breakeven
+              ? "فعال"
+              : "منتظر TP1"}
+          </strong>
+        </div>
+
       </div>
+
     </div>
   );
 }
 
-function formatCandleTime(
-  value: string | number
-) {
-  try {
-    const date =
-      typeof value === "number"
-        ? new Date(
-            value < 10000000000
-              ? value * 1000
-              : value
-          )
-        : new Date(value);
+/* ============================================================
+   SIGNAL LEVEL
+============================================================ */
 
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return String(value);
-    }
-
-    return new Intl.DateTimeFormat(
-      "en-US",
-      {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }
-    ).format(date);
-  } catch {
-    return String(value);
-  }
-}
-
-function Level({
+function SignalLevel({
   title,
   value,
+  type,
   extra,
-  tone,
 }: {
   title: string;
-  value?: number;
+  value: number;
+  type: "entry" | "sl" | "tp";
   extra?: string;
-  tone: string;
 }) {
   return (
-    <div
-      className={`level ${tone}`}
-    >
+    <div className={`signal-level ${type}`}>
+
       <span>
         {title}
       </span>
 
-      <b>
-        {typeof value ===
-        "number" &&
-        Number.isFinite(value)
-          ? price(value)
-          : "—"}
-      </b>
+      <strong>
+        {formatPrice(value)}
+      </strong>
 
       {extra && (
         <small>
           {extra}
         </small>
       )}
+
     </div>
   );
 }
 
-function Info({
+/* ============================================================
+   PROFIT CARD
+============================================================ */
+
+function ProfitCard({
+  number,
   title,
-  value,
-  sub,
-  danger,
-  success,
+  lot,
+  profit,
+  percent,
+  className,
 }: {
+  number: string;
   title: string;
-  value: string;
-  sub: string;
-  danger?: boolean;
-  success?: boolean;
+  lot: string;
+  profit: string;
+  percent: string;
+  className: string;
 }) {
   return (
-    <div className="info">
-      <span>
-        {title}
-      </span>
+    <div className={`profit-card ${className}`}>
 
-      <b
-        className={
-          danger
-            ? "red"
-            : success
-            ? "green"
-            : ""
-        }
-      >
-        {value}
-      </b>
+      <div className="profit-top">
+
+        <span>
+          {number}
+        </span>
+
+        <strong>
+          {title}
+        </strong>
+
+      </div>
+
+      <div className="profit-main">
+        {profit}
+      </div>
+
+      <div className="profit-details">
+
+        <span>
+          حجم بسته‌شدن
+        </span>
+
+        <b>
+          {lot} LOT
+        </b>
+
+      </div>
+
+      <div className="profit-progress">
+
+        <i
+          style={{
+            width: percent,
+          }}
+        />
+
+      </div>
 
       <small>
-        {sub}
+        {percent} از حجم کل
       </small>
+
     </div>
   );
 }
 
-function Stat({
+/* ============================================================
+   METRIC
+============================================================ */
+
+function Metric({
   title,
   value,
   sub,
-  danger,
+  icon,
   success,
+  danger,
 }: {
   title: string;
   value: string;
   sub?: string;
-  danger?: boolean;
+  icon: string;
   success?: boolean;
+  danger?: boolean;
 }) {
   return (
-    <div className="stat">
+    <div className="metric">
+
+      <div className="metric-icon">
+        {icon}
+      </div>
+
       <span>
         {title}
       </span>
 
-      <b
+      <strong
         className={
-          danger
-            ? "red"
-            : success
-            ? "green"
+          success
+            ? "success-text"
+            : danger
+            ? "danger-text"
             : ""
         }
       >
         {value}
-      </b>
+      </strong>
 
       {sub && (
         <small>
-          {sub}
+          {sub} USD
         </small>
       )}
+
     </div>
   );
 }
 
-function stateFa(v?: string) {
+/* ============================================================
+   SETTING
+============================================================ */
+
+function Setting({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}) {
   return (
-    {
-      AI_PENDING: "در انتظار",
-      AI_TP1: "TP1 خورد",
-      AI_TP2: "TP2 خورد",
-      AI_TP3: "TP3 تکمیل شد",
-      AI_SL: "استاپ خورد",
-      AI_BE: "بریک‌ایون / بسته‌شده",
-      AI_NO_TRADE: "بدون معامله",
-    } as Record<
-      string,
-      string
-    >
-  )[v || ""] || "بدون معامله";
+    <div className="setting">
+
+      <span>
+        {title}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
+
+      <i />
+
+    </div>
+  );
 }
 
-function eventFa(v: string) {
+/* ============================================================
+   REAL CANDLESTICK CHART
+============================================================ */
+
+function LiveCandlestickChart({
+  candles,
+  signal,
+}: {
+  candles: Candle[];
+  signal: Meta | null;
+}) {
+  const visible = candles.slice(-100);
+
+  if (!visible.length) {
+    return (
+      <div className="chart-loading">
+        داده واقعی نمودار موجود نیست.
+      </div>
+    );
+  }
+
+  const width = 1200;
+  const height = 520;
+
+  const padding = {
+    top: 25,
+    right: 75,
+    bottom: 35,
+    left: 15,
+  };
+
+  const chartWidth =
+    width -
+    padding.left -
+    padding.right;
+
+  const chartHeight =
+    height -
+    padding.top -
+    padding.bottom;
+
+  const highs = visible.map(
+    (c) => Number(c.high)
+  );
+
+  const lows = visible.map(
+    (c) => Number(c.low)
+  );
+
+  let maxPrice = Math.max(...highs);
+  let minPrice = Math.min(...lows);
+
+  if (signal) {
+    maxPrice = Math.max(
+      maxPrice,
+      signal.entry,
+      signal.stopLoss,
+      signal.tp1,
+      signal.tp2,
+      signal.tp3
+    );
+
+    minPrice = Math.min(
+      minPrice,
+      signal.entry,
+      signal.stopLoss,
+      signal.tp1,
+      signal.tp2,
+      signal.tp3
+    );
+  }
+
+  const range =
+    Math.max(
+      maxPrice - minPrice,
+      0.01
+    );
+
+  const extra = range * 0.08;
+
+  maxPrice += extra;
+  minPrice -= extra;
+
+  const finalRange =
+    maxPrice - minPrice;
+
+  const xStep =
+    chartWidth / visible.length;
+
+  function y(price: number) {
+    return (
+      padding.top +
+      ((maxPrice - price) /
+        finalRange) *
+        chartHeight
+    );
+  }
+
+  function x(index: number) {
+    return (
+      padding.left +
+      index * xStep +
+      xStep / 2
+    );
+  }
+
+  const gridLines = 7;
+
   return (
-    {
-      TP1: "TP1 رسید",
-      TP2: "TP2 رسید",
-      TP3: "TP3 رسید",
-      SL: "استاپ خورد",
-      BREAKEVEN: "بریک‌ایون",
-    } as Record<
-      string,
-      string
-    >
-  )[v] || v;
+    <div className="svg-chart">
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="نمودار واقعی XAUUSD"
+      >
+
+        <defs>
+
+          <linearGradient
+            id="chartGold"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="0"
+          >
+            <stop
+              offset="0%"
+              stopColor="#8b651f"
+            />
+
+            <stop
+              offset="50%"
+              stopColor="#e5bd55"
+            />
+
+            <stop
+              offset="100%"
+              stopColor="#fff0a7"
+            />
+
+          </linearGradient>
+
+        </defs>
+
+        {/* Grid */}
+
+        {Array.from({
+          length: gridLines,
+        }).map((_, index) => {
+
+          const value =
+            maxPrice -
+            (finalRange /
+              (gridLines - 1)) *
+              index;
+
+          const yy = y(value);
+
+          return (
+            <g key={index}>
+
+              <line
+                x1={padding.left}
+                x2={
+                  width -
+                  padding.right
+                }
+                y1={yy}
+                y2={yy}
+                stroke="#ffffff"
+                strokeOpacity="0.06"
+              />
+
+              <text
+                x={
+                  width -
+                  padding.right +
+                  10
+                }
+                y={yy + 4}
+                fill="#777d88"
+                fontSize="13"
+              >
+                {value.toFixed(2)}
+              </text>
+
+            </g>
+          );
+        })}
+
+        {/* Candles */}
+
+        {visible.map((candle, index) => {
+
+          const bullish =
+            candle.close >= candle.open;
+
+          const candleX = x(index);
+
+          const bodyTop = y(
+            Math.max(
+              candle.open,
+              candle.close
+            )
+          );
+
+          const bodyBottom = y(
+            Math.min(
+              candle.open,
+              candle.close
+            )
+          );
+
+          const bodyHeight =
+            Math.max(
+              2,
+              bodyBottom - bodyTop
+            );
+
+          const candleWidth =
+            Math.max(
+              3,
+              Math.min(
+                10,
+                xStep * 0.58
+              )
+            );
+
+          return (
+            <g key={`${candle.datetime}-${index}`}>
+
+              <line
+                x1={candleX}
+                x2={candleX}
+                y1={y(candle.high)}
+                y2={y(candle.low)}
+                stroke={
+                  bullish
+                    ? "#48d88a"
+                    : "#ef6565"
+                }
+                strokeWidth="1.4"
+              />
+
+              <rect
+                x={
+                  candleX -
+                  candleWidth / 2
+                }
+                y={bodyTop}
+                width={candleWidth}
+                height={bodyHeight}
+                rx="1"
+                fill={
+                  bullish
+                    ? "#48d88a"
+                    : "#ef6565"
+                }
+                opacity="0.95"
+              />
+
+            </g>
+          );
+        })}
+
+        {/* Current price */}
+
+        {visible.length > 0 && (
+          <>
+            <line
+              x1={padding.left}
+              x2={
+                width -
+                padding.right
+              }
+              y1={y(
+                visible[
+                  visible.length - 1
+                ].close
+              )}
+              y2={y(
+                visible[
+                  visible.length - 1
+                ].close
+              )}
+              stroke="#e7bd4e"
+              strokeDasharray="6 5"
+              strokeWidth="1.3"
+              opacity="0.9"
+            />
+
+            <rect
+              x={
+                width -
+                padding.right +
+                5
+              }
+              y={
+                y(
+                  visible[
+                    visible.length - 1
+                  ].close
+                ) - 11
+              }
+              width="67"
+              height="22"
+              rx="5"
+              fill="#d7ad43"
+            />
+
+            <text
+              x={
+                width -
+                padding.right +
+                10
+              }
+              y={
+                y(
+                  visible[
+                    visible.length - 1
+                  ].close
+                ) + 4
+              }
+              fill="#0b0b0b"
+              fontSize="12"
+              fontWeight="700"
+            >
+              {visible[
+                visible.length - 1
+              ].close.toFixed(2)}
+            </text>
+          </>
+        )}
+
+        {/* Active signal levels */}
+
+        {signal && (
+          <>
+
+            <ChartLevel
+              label="ENTRY"
+              value={signal.entry}
+              y={y(signal.entry)}
+              color="#d7ad43"
+              width={width}
+              right={padding.right}
+            />
+
+            <ChartLevel
+              label="SL"
+              value={signal.stopLoss}
+              y={y(signal.stopLoss)}
+              color="#ef6565"
+              width={width}
+              right={padding.right}
+            />
+
+            <ChartLevel
+              label="TP1"
+              value={signal.tp1}
+              y={y(signal.tp1)}
+              color="#49d88a"
+              width={width}
+              right={padding.right}
+            />
+
+            <ChartLevel
+              label="TP2"
+              value={signal.tp2}
+              y={y(signal.tp2)}
+              color="#49d88a"
+              width={width}
+              right={padding.right}
+            />
+
+            <ChartLevel
+              label="TP3"
+              value={signal.tp3}
+              y={y(signal.tp3)}
+              color="#49d88a"
+              width={width}
+              right={padding.right}
+            />
+
+          </>
+        )}
+
+      </svg>
+
+    </div>
+  );
 }
 
-function eventIcon(v: string) {
-  if (v === "SL") {
-    return "🛑";
+/* ============================================================
+   CHART LEVEL
+============================================================ */
+
+function ChartLevel({
+  label,
+  value,
+  y,
+  color,
+  width,
+  right,
+}: {
+  label: string;
+  value: number;
+  y: number;
+  color: string;
+  width: number;
+  right: number;
+}) {
+  return (
+    <g>
+
+      <line
+        x1="15"
+        x2={width - right}
+        y1={y}
+        y2={y}
+        stroke={color}
+        strokeWidth="1"
+        strokeDasharray="4 5"
+        opacity="0.8"
+      />
+
+      <rect
+        x={width - right + 5}
+        y={y - 10}
+        width="68"
+        height="20"
+        rx="5"
+        fill={color}
+      />
+
+      <text
+        x={width - right + 10}
+        y={y + 4}
+        fill="#050505"
+        fontSize="11"
+        fontWeight="800"
+      >
+        {label} {value.toFixed(2)}
+      </text>
+
+    </g>
+  );
+}
+
+/* ============================================================
+   HELPERS
+============================================================ */
+
+function formatPrice(value?: number) {
+  if (
+    value === undefined ||
+    value === null ||
+    !Number.isFinite(Number(value))
+  ) {
+    return "—";
   }
 
-  if (v === "TP3") {
-    return "🏆";
+  return Number(value).toFixed(2);
+}
+
+function money(value: number) {
+  return `$${usdNumber.format(
+    Number(value || 0)
+  )}`;
+}
+
+function toman(value: number) {
+  return `${faNumber.format(
+    Math.round(Number(value || 0))
+  )} تومان`;
+}
+
+function dateFa(
+  value?: string | Date | null
+) {
+  if (!value) return "—";
+
+  try {
+    return new Intl.DateTimeFormat(
+      "fa-IR",
+      {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }
+    ).format(new Date(value));
+  } catch {
+    return "—";
   }
-
-  if (v === "BREAKEVEN") {
-    return "🔐";
-  }
-
-  return "🎯";
 }
 
-const css = `
-*{
-  box-sizing:border-box;
+function timeframeLabel(
+  timeframe?: Timeframe | string
+) {
+  const map: Record<
+    string,
+    string
+  > = {
+    "1min": "1 Minute",
+    "5min": "5 Minute",
+    "15min": "15 Minute",
+    "30min": "30 Minute",
+    "1h": "1 Hour",
+    "4h": "4 Hour",
+  };
+
+  return map[timeframe || ""] || "1 Minute";
 }
 
-html,
-body{
-  margin:0;
-  padding:0;
-  background:#05070b;
+function stateFa(value?: string) {
+  const map: Record<
+    string,
+    string
+  > = {
+    WAITING: "در انتظار",
+    ACTIVE: "فعال",
+    TP1_HIT: "TP1 فعال شد",
+    TP2_HIT: "TP2 فعال شد",
+    TP3_HIT: "معامله تکمیل شد",
+    SL_HIT: "استاپ لاس",
+    BREAKEVEN_HIT:
+      "ریسک‌فری / بریک‌ایون",
+    AI_PENDING: "در انتظار",
+    AI_TP1: "TP1 فعال",
+    AI_TP2: "TP2 فعال",
+    AI_TP3: "تکمیل شده",
+    AI_SL: "استاپ لاس",
+    AI_BE: "ریسک‌فری",
+  };
+
+  return (
+    map[value || ""] ||
+    value ||
+    "بدون وضعیت"
+  );
 }
 
-body{
-  color:#f4f7fb;
-  font-family:Tahoma,Arial,sans-serif;
+/* ============================================================
+   STYLES
+============================================================ */
+
+const styles = `
+* {
+  box-sizing: border-box;
 }
 
-button{
-  font-family:inherit;
+body {
+  margin: 0;
+  background: #050505;
+  color: #f5f5f5;
+  font-family:
+    Tahoma,
+    Arial,
+    sans-serif;
 }
 
-.ai-page{
-  min-height:100vh;
+.ai-root {
+  min-height: 100vh;
   background:
     radial-gradient(
-      circle at 10% 0%,
-      #3b2b08 0,
+      circle at 20% 0%,
+      rgba(214, 165, 55, 0.09),
       transparent 28%
     ),
     radial-gradient(
-      circle at 90% 15%,
-      #16341d 0,
+      circle at 90% 10%,
+      rgba(33, 83, 57, 0.08),
       transparent 25%
     ),
     linear-gradient(
       145deg,
-      #040608,
-      #0c0d10 55%,
-      #080806
+      #030303,
+      #080808 48%,
+      #050505
     );
-  padding:22px;
+  padding: 22px;
 }
 
-.shell{
-  max-width:1450px;
-  margin:auto;
+.ai-container {
+  width: 100%;
+  max-width: 1450px;
+  margin: 0 auto;
 }
 
-.topbar{
-  display:flex;
-  justify-content:space-between;
-  gap:18px;
-  align-items:center;
-  margin-bottom:18px;
+/* HEADER */
+
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
 }
 
-.eyebrow{
-  font-size:12px;
-  letter-spacing:3px;
-  color:#d7a93a;
-  font-weight:900;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
-.topbar h1{
-  font-size:34px;
-  margin:8px 0;
-}
-
-.topbar p{
-  margin:0;
-  color:#aeb4bf;
-  font-size:16px;
-}
-
-.top-actions{
-  display:flex;
-  gap:10px;
-  align-items:center;
-}
-
-.top-actions button,
-.tabs button,
-.timeframe-buttons button{
-  border:1px solid #ffffff16;
-  background:#15171b;
-  color:#fff;
-  border-radius:13px;
-  padding:12px 16px;
-  font-weight:800;
-  cursor:pointer;
-  transition:.2s;
-}
-
-.top-actions button:hover,
-.tabs button:hover,
-.timeframe-buttons button:hover{
-  border-color:#c79b35;
-  transform:translateY(-1px);
-}
-
-.top-actions button:disabled{
-  opacity:.6;
-  cursor:wait;
-}
-
-.live{
-  border:1px solid #2c6a3b;
-  background:#0c1b11;
-  color:#7fe69a;
-  padding:11px 14px;
-  border-radius:13px;
-  font-weight:800;
-}
-
-.live i{
-  display:inline-block;
-  width:8px;
-  height:8px;
-  background:#49d76b;
-  border-radius:50%;
-  margin-left:7px;
-  box-shadow:
-    0 0 14px #49d76b;
-}
-
-.notice,
-.error,
-.card,
-.level,
-.info{
-  background:rgba(15,16,19,.88);
-  border:1px solid #ffffff12;
-  box-shadow:0 18px 50px #0007;
-  backdrop-filter:blur(16px);
-}
-
-.notice{
-  padding:17px 20px;
-  border-radius:17px;
-  margin-bottom:16px;
-  display:flex;
-  gap:14px;
-  align-items:center;
-}
-
-.notice b{
-  color:#e2b74f;
-  font-size:17px;
-  white-space:nowrap;
-}
-
-.notice span{
-  color:#aeb4bf;
-  font-size:14px;
-  line-height:1.8;
-}
-
-.error{
-  padding:14px 18px;
-  border-radius:14px;
-  color:#ff9e9e;
-  margin-bottom:16px;
-}
-
-.market-chart-card{
-  padding:0;
-  overflow:hidden;
-  margin-bottom:16px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(21,19,13,.97),
-      rgba(10,12,15,.95)
-    );
-}
-
-.chart-header{
-  padding:22px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:20px;
-  border-bottom:1px solid #ffffff0b;
-}
-
-.chart-symbol{
-  display:flex;
-  align-items:center;
-  gap:9px;
-  color:#e5bd56;
-  font-weight:900;
-  font-size:14px;
-  letter-spacing:1px;
-}
-
-.gold-dot{
-  width:10px;
-  height:10px;
-  border-radius:50%;
-  background:#e0b64e;
-  box-shadow:0 0 15px #d8aa3c;
-}
-
-.chart-header h2{
-  margin:9px 0 5px;
-  font-size:23px;
-}
-
-.chart-header p{
-  margin:0;
-  color:#858c97;
-  font-size:13px;
-}
-
-.chart-status{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  color:#858c97;
-  font-size:12px;
-  white-space:nowrap;
-}
-
-.chart-live-dot{
-  width:8px;
-  height:8px;
-  border-radius:50%;
-  background:#4bd978;
-  box-shadow:0 0 12px #4bd978;
-}
-
-.timeframe-bar{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  padding:14px 22px;
-  border-bottom:1px solid #ffffff0b;
-  background:rgba(0,0,0,.18);
-}
-
-.timeframe-label{
-  color:#8f96a2;
-  font-size:12px;
-  font-weight:800;
-  white-space:nowrap;
-}
-
-.timeframe-buttons{
-  display:flex;
-  gap:6px;
-  flex-wrap:wrap;
-}
-
-.timeframe-buttons button{
-  padding:8px 13px;
-  min-width:52px;
-  border-radius:10px;
-  font-size:12px;
-}
-
-.timeframe-buttons button.active{
-  background:#d4aa43;
-  color:#151107;
-  border-color:#d4aa43;
-  box-shadow:
-    0 0 18px rgba(212,170,67,.2);
-}
-
-.default-timeframe{
-  margin-right:auto;
-  color:#707782;
-  font-size:11px;
-  display:flex;
-  align-items:center;
-  gap:7px;
-}
-
-.default-timeframe span{
-  width:6px;
-  height:6px;
-  background:#d5aa42;
-  border-radius:50%;
-  box-shadow:0 0 8px #d5aa42;
-}
-
-.gold-chart{
-  width:100%;
-}
-
-.chart-toolbar{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:13px 22px 10px;
-  color:#858c97;
-  font-size:11px;
-}
-
-.chart-toolbar-symbol{
-  color:#e4bd5a;
-  font-weight:900;
-  direction:ltr;
-  display:inline-block;
-  margin-left:8px;
-}
-
-.chart-toolbar-tf{
-  color:#777e89;
-  direction:ltr;
-}
-
-.chart-toolbar-info{
-  display:flex;
-  gap:12px;
-  align-items:center;
-}
-
-.chart-buy{
-  color:#5ddd91;
-  font-weight:900;
-}
-
-.chart-sell{
-  color:#ff6d6d;
-  font-weight:900;
-}
-
-.chart-neutral{
-  color:#858c97;
-  font-weight:800;
-}
-
-.svg-chart-wrap{
-  width:100%;
-  padding:0 12px 12px;
-  overflow:hidden;
-}
-
-.svg-chart{
-  width:100%;
-  min-height:390px;
-  display:block;
-  border-radius:20px;
-}
-
-.chart-legend{
-  display:flex;
-  align-items:center;
-  gap:17px;
-  flex-wrap:wrap;
-  padding:0 22px 19px;
-  color:#858c97;
-  font-size:11px;
-}
-
-.chart-legend span{
-  display:flex;
-  align-items:center;
-  gap:6px;
-}
-
-.chart-legend i{
-  display:inline-block;
-  width:17px;
-  height:3px;
-  border-radius:5px;
-}
-
-.legend-entry{
-  background:#e7bd50;
-}
-
-.legend-sl{
-  background:#ff5757;
-}
-
-.legend-tp{
-  background:#d6ad45;
-}
-
-.legend-price{
-  background:#f2f4f7;
-}
-
-.chart-only-price{
-  color:#a0a6b0;
-}
-
-.chart-empty{
-  min-height:440px;
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  align-items:center;
-  text-align:center;
-  padding:40px 20px;
-  background:
-    radial-gradient(
-      circle at center,
-      rgba(196,151,48,.07),
-      transparent 45%
-    );
-}
-
-.chart-empty-icon{
-  width:70px;
-  height:70px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:1px solid #d2a53f33;
-  color:#d2a53f;
-  font-size:38px;
-  margin-bottom:15px;
-  box-shadow:
-    0 0 35px rgba(210,165,63,.08);
-}
-
-.chart-empty h3{
-  margin:0 0 8px;
-  font-size:18px;
-}
-
-.chart-empty p{
-  margin:0 0 13px;
-  color:#7d848f;
-  font-size:13px;
-}
-
-.chart-empty span{
-  direction:ltr;
-  color:#c49b39;
-  font-size:12px;
-  font-weight:800;
-}
-
-.hero-grid{
-  display:grid;
-  grid-template-columns:1.6fr 1fr;
-  gap:16px;
-}
-
-.card{
-  border-radius:22px;
-  padding:22px;
-}
-
-.hero-card{
+.brand-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #0a0804;
   background:
     linear-gradient(
       135deg,
-      rgba(27,24,15,.95),
-      rgba(12,14,17,.9)
+      #8b641d,
+      #e4bb53,
+      #fff0ad
     );
+  font-size: 15px;
+  font-weight: 1000;
+  box-shadow:
+    0 0 30px
+    rgba(221, 177, 67, 0.18);
 }
 
-.card-head,
-.meta-row,
-.section-title{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:12px;
+.brand-mini {
+  color: #caa348;
+  font-size: 10px;
+  letter-spacing: 3px;
+  font-weight: 900;
 }
 
-.card-head{
-  font-size:18px;
-  font-weight:900;
+.ai-header h1 {
+  margin: 5px 0 2px;
+  font-size: 25px;
 }
 
-.buy,
-.green{
-  color:#62e48b;
+.ai-header p {
+  margin: 0;
+  color: #747983;
+  font-size: 12px;
+  direction: ltr;
+  text-align: right;
 }
 
-.sell,
-.red{
-  color:#ff7272;
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.neutral{
-  color:#a3a8b0;
+.connection {
+  padding: 10px 13px;
+  border: 1px solid rgba(71, 220, 133, 0.15);
+  border-radius: 11px;
+  background: rgba(37, 116, 65, 0.08);
+  color: #70dd99;
+  font-size: 11px;
+  font-weight: 800;
+  direction: ltr;
 }
 
-.market-current-price{
-  font-size:45px;
-  font-weight:900;
-  letter-spacing:1px;
-  margin-top:24px;
-  color:#f0f2f5;
-  direction:ltr;
-  text-align:right;
+.connection-dot,
+.pulse {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #4cdc88;
+  box-shadow:
+    0 0 12px
+    rgba(76, 220, 136, 0.8);
 }
 
-.price-sub,
-.muted,
-.label,
-.section-title p{
-  color:#8f96a2;
-  font-size:14px;
+.refresh-button {
+  min-height: 40px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: #111214;
+  color: #ddd;
+  border-radius: 11px;
+  padding: 0 15px;
+  cursor: pointer;
+  font-weight: 800;
 }
 
-.meta-row{
-  margin-top:25px;
-  padding-top:16px;
-  border-top:1px solid #ffffff0d;
-  color:#8f96a2;
-  flex-wrap:wrap;
+.refresh-button:hover {
+  border-color: rgba(215, 173, 67, 0.5);
 }
 
-.meta-row b{
-  color:#f5f7fa;
-  margin-right:5px;
+/* ERROR */
+
+.error-box {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 15px 17px;
+  margin-bottom: 16px;
+  border-radius: 15px;
+  border: 1px solid rgba(255, 86, 86, 0.18);
+  background: rgba(88, 22, 22, 0.15);
+  color: #ff8b8b;
 }
 
-.signal-strength{
-  margin-top:16px;
-  padding:13px 15px;
-  border-radius:13px;
-  border:1px solid #d2a53f25;
-  background:#151109;
-  display:flex;
-  align-items:center;
-  gap:12px;
-  flex-wrap:wrap;
+.error-box strong {
+  display: block;
 }
 
-.signal-strength span{
-  color:#8e95a1;
-  font-size:12px;
+.error-box p {
+  margin: 5px 0 0;
+  color: #a78a8a;
+  font-size: 12px;
 }
 
-.signal-strength b{
-  color:#e4b84f;
-}
+/* MARKET */
 
-.signal-strength small{
-  color:#aeb4bf;
-}
-
-.history-rate{
-  margin-top:10px;
-  color:#858c97;
-  font-size:12px;
-}
-
-.history-rate b{
-  color:#62e48b;
-}
-
-.fx-number{
-  font-size:34px;
-  font-weight:900;
-  color:#e8c260;
-  margin:13px 0;
-}
-
-.fx-rule{
-  margin-top:18px;
-  padding:12px;
-  border-radius:12px;
-  background:#17130a;
-  color:#cdbb8a;
-  font-size:12px;
-  line-height:1.8;
-}
-
-.levels-grid{
-  display:grid;
-  grid-template-columns:repeat(5,1fr);
-  gap:12px;
-  margin:16px 0;
-}
-
-.level{
-  border-radius:18px;
-  padding:17px;
-  min-height:122px;
-}
-
-.level span,
-.info span,
-.stat span{
-  display:block;
-  color:#9298a3;
-  font-size:13px;
-}
-
-.level b{
-  display:block;
-  font-size:27px;
-  margin:12px 0;
-  direction:ltr;
-  text-align:right;
-}
-
-.level small,
-.info small,
-.stat small{
-  display:block;
-  color:#aeb4bf;
-  font-size:12px;
-  line-height:1.7;
-}
-
-.level.entry b{
-  color:#e9edf3;
-}
-
-.level.sl{
-  border-color:#6c2424;
-}
-
-.level.sl b{
-  color:#ff7373;
-}
-
-.level.tp{
-  border-color:#5b481b;
-}
-
-.level.tp b{
-  color:#e5b94e;
-}
-
-.cards-3{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:12px;
-  margin-bottom:16px;
-}
-
-.info{
-  border-radius:18px;
-  padding:18px;
-}
-
-.info b{
-  display:block;
-  font-size:28px;
-  margin:10px 0;
-}
-
-.report{
-  margin-bottom:16px;
-}
-
-.section-title h2{
-  margin:0 0 6px;
-  font-size:21px;
-}
-
-.tabs{
-  display:flex;
-  gap:7px;
-}
-
-.tabs button.active{
-  background:#d2a53f;
-  color:#17120a;
-  border-color:#d2a53f;
-}
-
-.stats-grid{
-  display:grid;
-  grid-template-columns:repeat(6,1fr);
-  gap:10px;
-  margin-top:18px;
-}
-
-.stat{
-  padding:16px;
-  border-radius:16px;
-  background:#0c0e12;
-  border:1px solid #ffffff0d;
-}
-
-.stat b{
-  display:block;
-  font-size:27px;
-  margin:10px 0;
-}
-
-.chart-wrap{
-  margin-top:16px;
-  border-top:1px solid #ffffff0d;
-  padding-top:18px;
-}
-
-.chart-title{
-  font-weight:800;
-  margin-bottom:12px;
-}
-
-.bars{
-  height:190px;
-  display:flex;
-  justify-content:center;
-  gap:35px;
-  align-items:flex-end;
-}
-
-.bar-col{
-  height:100%;
-  width:90px;
-  display:flex;
-  flex-direction:column;
-  justify-content:flex-end;
-  align-items:center;
-  gap:7px;
-  color:#9ca3ae;
-}
-
-.bar-track{
-  height:135px;
-  width:34px;
-  background:#181a1f;
-  border-radius:10px;
-  display:flex;
-  align-items:flex-end;
-  overflow:hidden;
-}
-
-.bar{
-  width:100%;
-  border-radius:10px 10px 0 0;
-}
-
-.bar.win{
+.market-section {
+  border:
+    1px solid
+    rgba(255,255,255,0.08);
+  border-radius: 22px;
+  overflow: hidden;
   background:
     linear-gradient(
-      180deg,
-      #4bd978,
-      #173d26
+      145deg,
+      rgba(14,14,15,0.98),
+      rgba(8,8,9,0.98)
     );
+  box-shadow:
+    0 25px 80px
+    rgba(0,0,0,0.45);
 }
 
-.bar.loss{
+.market-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 17px 20px 13px;
+}
+
+.market-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gold-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #dfb44a;
+  box-shadow:
+    0 0 15px
+    rgba(223,180,74,0.75);
+}
+
+.market-title strong {
+  display: block;
+  font-size: 17px;
+  direction: ltr;
+  text-align: right;
+}
+
+.market-title span {
+  display: block;
+  margin-top: 3px;
+  color: #676c75;
+  font-size: 9px;
+  letter-spacing: 2px;
+  direction: ltr;
+  text-align: right;
+}
+
+.market-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #737983;
+  font-size: 11px;
+}
+
+.market-live strong {
+  margin-right: 4px;
+  color: #e5bb51;
+  font-size: 18px;
+  direction: ltr;
+}
+
+.timeframes {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 20px 13px;
+}
+
+.timeframe {
+  border: 1px solid rgba(255,255,255,0.06);
+  background: #111214;
+  color: #777d86;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  direction: ltr;
+}
+
+.timeframe:hover {
+  color: #eee;
+}
+
+.timeframe.active {
+  color: #090806;
   background:
     linear-gradient(
-      180deg,
-      #ff6d6d,
-      #4a1e1e
+      135deg,
+      #bd8d2c,
+      #edc65f
+    );
+  border-color: #d8ad46;
+}
+
+.chart-container {
+  height: 520px;
+  min-height: 400px;
+  position: relative;
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(212,164,48,0.025),
+      transparent 55%
     );
 }
 
-.split{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:16px;
-  margin-bottom:16px;
+.svg-chart {
+  width: 100%;
+  height: 100%;
 }
 
-.checks{
-  display:grid;
-  grid-template-columns:repeat(2,1fr);
-  gap:8px;
-  margin-top:17px;
+.svg-chart svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
-.check{
-  padding:11px 12px;
-  border:1px solid #ffffff0d;
-  border-radius:12px;
-  color:#c8cdd5;
-  font-size:14px;
+.chart-loading {
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #858a93;
 }
 
-.check span{
-  color:#67df8c;
-  margin-left:8px;
+.chart-loading strong {
+  color: #c9cdd4;
+  font-size: 14px;
 }
 
-.score{
-  padding:9px 13px;
-  border-radius:10px;
-  color:#e5b94e;
-  background:#211a0b;
-  border:1px solid #5a4517;
-  font-weight:900;
-  direction:ltr;
+.chart-loading span {
+  color: #656a73;
+  font-size: 11px;
 }
 
-.state{
-  margin-top:16px;
-  color:#aeb4bf;
+.chart-loader {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border:
+    2px solid
+    rgba(221,178,67,0.15);
+  border-top-color: #dcb149;
+  animation:
+    chartSpin 0.8s linear infinite;
 }
 
-.state b{
-  color:#e5b94e;
+@keyframes chartSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.state em{
-  color:#67df8c;
-  font-style:normal;
+.chart-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+  padding: 10px 18px;
+  border-top:
+    1px solid
+    rgba(255,255,255,0.05);
+  color: #5f646d;
+  font-size: 9px;
 }
 
-.events{
-  margin-top:14px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
+.chart-footer span:first-child {
+  color: #69db92;
 }
 
-.event{
-  display:grid;
-  grid-template-columns:35px 1fr auto;
-  gap:10px;
-  align-items:center;
-  padding:11px;
-  border-radius:13px;
-  background:#0b0d11;
-  border:1px solid #ffffff0b;
+/* SECTION */
+
+.signal-section,
+.riskfree-section,
+.plan-section,
+.performance-section,
+.history-section,
+.settings-section {
+  margin-top: 17px;
 }
 
-.event>span{
-  font-size:22px;
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 12px;
 }
 
-.event b{
-  display:block;
+.section-heading > div:first-child > span {
+  color: #bd9131;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 2px;
 }
 
-.event small{
-  display:block;
-  color:#818894;
-  font-size:11px;
-  margin-top:4px;
+.section-heading h2 {
+  margin: 5px 0 0;
+  font-size: 20px;
 }
 
-.event strong{
-  text-align:left;
+.section-heading p {
+  margin: 5px 0 0;
+  color: #666c76;
+  font-size: 11px;
 }
 
-.recent{
-  margin-bottom:16px;
+/* SIGNAL */
+
+.signal-card {
+  overflow: hidden;
+  border-radius: 21px;
+  border:
+    1px solid
+    rgba(215,173,67,0.2);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(29,25,15,0.94),
+      rgba(12,12,13,0.98)
+    );
+  box-shadow:
+    0 20px 65px
+    rgba(0,0,0,0.35);
 }
 
-.table{
-  margin-top:15px;
+.signal-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
 }
 
-.tr{
-  display:grid;
+.signal-direction {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.direction-large {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  font-size: 25px;
+}
+
+.buy-bg {
+  color: #4ee18d;
+  background: rgba(55, 194, 111, 0.09);
+  border:
+    1px solid
+    rgba(72,215,132,0.17);
+}
+
+.sell-bg {
+  color: #ff7272;
+  background: rgba(235, 80, 80, 0.08);
+  border:
+    1px solid
+    rgba(235,80,80,0.17);
+}
+
+.signal-direction span,
+.signal-score > span {
+  color: #6d727b;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+}
+
+.signal-direction h3 {
+  margin: 5px 0;
+  font-size: 25px;
+}
+
+.signal-direction small {
+  color: #747983;
+  font-size: 10px;
+  direction: ltr;
+}
+
+.signal-score {
+  width: 180px;
+}
+
+.signal-score > strong {
+  display: block;
+  margin: 5px 0;
+  color: #e7bf55;
+  font-size: 25px;
+}
+
+.signal-score > strong small {
+  color: #777d86;
+  font-size: 10px;
+}
+
+.score-line {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #242428;
+}
+
+.score-line i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      90deg,
+      #8b651f,
+      #e8c15a
+    );
+}
+
+.signal-levels {
+  display: grid;
   grid-template-columns:
-    1.3fr
-    .8fr
-    .8fr
-    .9fr
-    .6fr
-    .7fr;
-  gap:8px;
-  padding:13px 10px;
-  border-bottom:1px solid #ffffff0a;
-  color:#c8cdd5;
-  font-size:13px;
+    repeat(5, 1fr);
+  gap: 8px;
+  padding: 0 14px 14px;
 }
 
-.tr:first-child{
-  border-top:1px solid #ffffff0a;
+.signal-level {
+  min-height: 105px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.025);
+  border:
+    1px solid
+    rgba(255,255,255,0.055);
 }
 
-.empty{
-  text-align:center;
-  padding:30px;
-  color:#737a86;
+.signal-level > span {
+  display: block;
+  color: #707680;
+  font-size: 9px;
+  letter-spacing: .7px;
+  direction: ltr;
+  text-align: right;
 }
 
-.ai-page footer{
-  text-align:center;
-  color:#656c77;
-  font-size:12px;
-  padding:12px 0 30px;
+.signal-level strong {
+  display: block;
+  margin: 13px 0 7px;
+  color: #eee;
+  font-size: 21px;
+  direction: ltr;
+  text-align: right;
 }
 
-@media(max-width:1050px){
-
-  .levels-grid{
-    grid-template-columns:repeat(3,1fr);
-  }
-
-  .stats-grid{
-    grid-template-columns:repeat(3,1fr);
-  }
-
-  .hero-grid,
-  .split{
-    grid-template-columns:1fr;
-  }
-
-  .topbar{
-    align-items:flex-start;
-    flex-direction:column;
-  }
-
-  .top-actions{
-    width:100%;
-  }
-
-  .chart-header{
-    align-items:flex-start;
-    flex-direction:column;
-  }
-
-  .chart-status{
-    white-space:normal;
-  }
+.signal-level small {
+  color: #747b84;
+  font-size: 10px;
 }
 
-@media(max-width:650px){
+.signal-level.sl {
+  border-color:
+    rgba(239,101,101,0.18);
+}
 
-  .ai-page{
-    padding:12px;
+.signal-level.sl strong {
+  color: #ff7474;
+}
+
+.signal-level.tp {
+  border-color:
+    rgba(215,173,67,0.14);
+}
+
+.signal-level.tp strong {
+  color: #e8bf56;
+}
+
+.signal-level.entry strong {
+  color: #f1f1f1;
+}
+
+.signal-bottom {
+  display: grid;
+  grid-template-columns:
+    repeat(5, 1fr);
+  border-top:
+    1px solid
+    rgba(255,255,255,0.06);
+}
+
+.signal-bottom > div {
+  padding: 13px 16px;
+  border-left:
+    1px solid
+    rgba(255,255,255,0.05);
+}
+
+.signal-bottom > div:last-child {
+  border-left: 0;
+}
+
+.signal-bottom span {
+  display: block;
+  color: #686e77;
+  font-size: 9px;
+}
+
+.signal-bottom strong {
+  display: block;
+  margin-top: 6px;
+  color: #ddd;
+  font-size: 12px;
+}
+
+/* NO SIGNAL */
+
+.no-signal {
+  min-height: 185px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border:
+    1px dashed
+    rgba(255,255,255,0.08);
+  border-radius: 19px;
+  background: rgba(255,255,255,0.015);
+}
+
+.no-signal-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 5px;
+  border-radius: 15px;
+  color: #c89d3d;
+  background: rgba(200,157,61,0.07);
+  font-size: 23px;
+}
+
+.no-signal strong {
+  font-size: 14px;
+}
+
+.no-signal span {
+  color: #666c75;
+  font-size: 11px;
+}
+
+/* STATUS */
+
+.signal-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #707680;
+  border:
+    1px solid
+    rgba(255,255,255,0.06);
+  border-radius: 9px;
+  padding: 8px 11px;
+  font-size: 10px;
+}
+
+.signal-status span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5d626b;
+}
+
+.signal-status.active {
+  color: #6fe199;
+  border-color:
+    rgba(75,215,132,0.15);
+  background:
+    rgba(52,169,94,0.05);
+}
+
+.signal-status.active span {
+  background: #50dc8a;
+  box-shadow:
+    0 0 12px
+    rgba(80,220,138,0.8);
+}
+
+.safe-badge,
+.settings-status {
+  padding: 8px 11px;
+  border-radius: 9px;
+  color: #66dc91;
+  background:
+    rgba(54,180,98,0.07);
+  border:
+    1px solid
+    rgba(54,180,98,0.13);
+  font-size: 9px;
+}
+
+/* RISK FREE */
+
+.risk-grid {
+  display: grid;
+  grid-template-columns:
+    1fr 35px 1fr 35px 1fr;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.risk-step {
+  display: flex;
+  gap: 12px;
+  padding: 17px;
+  border:
+    1px solid
+    rgba(255,255,255,0.06);
+  border-radius: 16px;
+  background: #0b0c0e;
+}
+
+.risk-step.highlight {
+  border-color:
+    rgba(215,173,67,0.18);
+  background:
+    rgba(215,173,67,0.035);
+}
+
+.risk-step.safe {
+  border-color:
+    rgba(70,211,129,0.17);
+  background:
+    rgba(70,211,129,0.035);
+}
+
+.step-number {
+  color: #c69b3c;
+  font-size: 11px;
+  font-weight: 900;
+  direction: ltr;
+}
+
+.risk-step strong {
+  display: block;
+  font-size: 13px;
+}
+
+.risk-step p {
+  margin: 7px 0 0;
+  color: #737983;
+  font-size: 11px;
+  line-height: 1.9;
+}
+
+.risk-step p b {
+  margin: 0 4px;
+  color: #e7bd54;
+}
+
+.risk-arrow {
+  display: grid;
+  place-items: center;
+  color: #6b7078;
+  font-size: 17px;
+}
+
+/* PLAN */
+
+.total-lot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #696f78;
+  font-size: 10px;
+}
+
+.total-lot strong {
+  color: #dfb34b;
+  font-size: 17px;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, 1fr);
+  gap: 10px;
+}
+
+.profit-card,
+.total-profit {
+  min-height: 180px;
+  padding: 17px;
+  border-radius: 17px;
+  background: #0b0c0e;
+  border:
+    1px solid
+    rgba(255,255,255,0.06);
+}
+
+.profit-card.tp1 {
+  border-color:
+    rgba(217,175,65,0.16);
+}
+
+.profit-card.tp2 {
+  border-color:
+    rgba(69,194,122,0.12);
+}
+
+.profit-card.tp3 {
+  border-color:
+    rgba(79,137,218,0.13);
+}
+
+.profit-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.profit-top span {
+  color: #646a73;
+  font-size: 10px;
+}
+
+.profit-top strong {
+  color: #d6a944;
+  font-size: 12px;
+}
+
+.profit-main {
+  margin: 24px 0 17px;
+  color: #e7bd54;
+  font-size: 30px;
+  font-weight: 900;
+  direction: ltr;
+  text-align: right;
+}
+
+.profit-details {
+  display: flex;
+  justify-content: space-between;
+  color: #626873;
+  font-size: 9px;
+}
+
+.profit-details b {
+  color: #d6d9de;
+}
+
+.profit-progress {
+  height: 4px;
+  margin-top: 17px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #1d1e21;
+}
+
+.profit-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      90deg,
+      #79571a,
+      #e1b64e
+    );
+}
+
+.profit-card small {
+  display: block;
+  margin-top: 7px;
+  color: #555b64;
+  font-size: 8px;
+}
+
+.total-profit {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(215,173,67,0.08),
+      transparent 70%
+    );
+}
+
+.total-profit span {
+  color: #777d86;
+  font-size: 9px;
+  letter-spacing: 2px;
+  direction: ltr;
+}
+
+.total-profit strong {
+  margin: 12px 0 3px;
+  color: #e9c35e;
+  font-size: 36px;
+  direction: ltr;
+}
+
+.total-profit small {
+  color: #676d76;
+  font-size: 10px;
+}
+
+.plan-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 13px 15px;
+  border-radius: 13px;
+  background: rgba(215,173,67,0.035);
+  border:
+    1px solid
+    rgba(215,173,67,0.08);
+}
+
+.plan-note > span {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #0a0906;
+  background: #d4a943;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.plan-note p {
+  margin: 0;
+  color: #787e87;
+  font-size: 10px;
+  line-height: 1.9;
+}
+
+/* PERFORMANCE */
+
+.performance-section {
+  padding: 20px;
+  border-radius: 20px;
+  border:
+    1px solid
+    rgba(255,255,255,0.07);
+  background: #0b0c0e;
+}
+
+.period-tabs {
+  display: flex;
+  gap: 5px;
+}
+
+.period {
+  border:
+    1px solid
+    rgba(255,255,255,0.05);
+  background: #121316;
+  color: #70757e;
+  border-radius: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.period.active {
+  color: #0a0804;
+  background: #d8ad45;
+  border-color: #d8ad45;
+}
+
+.performance-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(6, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.metric {
+  position: relative;
+  min-height: 120px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #111215;
+  border:
+    1px solid
+    rgba(255,255,255,0.045);
+}
+
+.metric-icon {
+  position: absolute;
+  top: 13px;
+  left: 13px;
+  color: #777d86;
+  font-size: 12px;
+}
+
+.metric > span {
+  color: #666c75;
+  font-size: 9px;
+}
+
+.metric > strong {
+  display: block;
+  margin-top: 17px;
+  font-size: 25px;
+}
+
+.metric small {
+  display: block;
+  margin-top: 4px;
+  color: #646a73;
+  font-size: 9px;
+  direction: ltr;
+  text-align: right;
+}
+
+.performance-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.winrate-card,
+.net-profit-card {
+  min-height: 155px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 15px;
+  background: #111215;
+  border:
+    1px solid
+    rgba(255,255,255,0.045);
+}
+
+.winrate-ring {
+  width: 105px;
+  height: 105px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      #d9ae46 0deg,
+      #d9ae46 calc(var(--winrate, 0) * 3.6deg),
+      #242529 calc(var(--winrate, 0) * 3.6deg),
+      #242529 360deg
+    );
+  position: relative;
+}
+
+.winrate-ring::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: #111215;
+}
+
+.winrate-ring > div {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.winrate-ring strong {
+  display: block;
+  color: #e4bd58;
+  font-size: 21px;
+  direction: ltr;
+}
+
+.winrate-ring span {
+  color: #626872;
+  font-size: 8px;
+  direction: ltr;
+}
+
+.winrate-info span {
+  display: block;
+  color: #666c75;
+  font-size: 10px;
+}
+
+.winrate-info strong {
+  display: block;
+  margin-top: 9px;
+  color: #61dc8e;
+  font-size: 16px;
+}
+
+.winrate-info small {
+  display: block;
+  margin-top: 5px;
+  color: #ef7474;
+  font-size: 10px;
+}
+
+.net-profit-card {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.net-profit-card span {
+  color: #676d76;
+  font-size: 9px;
+  letter-spacing: 2px;
+  direction: ltr;
+}
+
+.net-profit-card strong {
+  margin-top: 12px;
+  font-size: 36px;
+  direction: ltr;
+}
+
+.net-profit-card small {
+  color: #757b84;
+  font-size: 11px;
+}
+
+/* HISTORY */
+
+.history-section {
+  padding: 20px;
+  border-radius: 20px;
+  border:
+    1px solid
+    rgba(255,255,255,0.07);
+  background: #0b0c0e;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns:
+    1.5fr
+    1fr
+    1fr
+    1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 13px;
+  border-radius: 12px;
+  background: #111215;
+  border:
+    1px solid
+    rgba(255,255,255,0.04);
+}
+
+.history-direction {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.direction {
+  min-width: 48px;
+  padding: 6px;
+  text-align: center;
+  border-radius: 7px;
+  font-size: 8px;
+  font-weight: 900;
+  direction: ltr;
+}
+
+.direction.buy {
+  color: #61df91;
+  background: rgba(68,207,126,0.08);
+}
+
+.direction.sell {
+  color: #f27878;
+  background: rgba(232,86,86,0.08);
+}
+
+.history-row span {
+  display: block;
+  color: #5f646d;
+  font-size: 8px;
+}
+
+.history-row strong {
+  display: block;
+  margin-top: 5px;
+  color: #d9dce1;
+  font-size: 11px;
+}
+
+.history-row small {
+  display: block;
+  margin-top: 3px;
+  color: #5e636c;
+  font-size: 8px;
+}
+
+.history-result {
+  text-align: left;
+}
+
+.history-empty {
+  padding: 35px;
+  text-align: center;
+  color: #626872;
+  font-size: 11px;
+}
+
+/* SETTINGS */
+
+.settings-section {
+  padding: 20px;
+  border-radius: 20px;
+  border:
+    1px solid
+    rgba(255,255,255,0.07);
+  background: #0b0c0e;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, 1fr);
+  gap: 8px;
+}
+
+.setting {
+  position: relative;
+  min-height: 75px;
+  padding: 13px;
+  border-radius: 13px;
+  background: #111215;
+  border:
+    1px solid
+    rgba(255,255,255,0.04);
+}
+
+.setting span {
+  display: block;
+  color: #656a73;
+  font-size: 8px;
+}
+
+.setting strong {
+  display: block;
+  margin-top: 9px;
+  color: #d9ae48;
+  font-size: 12px;
+  direction: ltr;
+  text-align: right;
+}
+
+.setting i {
+  position: absolute;
+  top: 13px;
+  left: 13px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #53d987;
+  box-shadow:
+    0 0 8px
+    rgba(83,217,135,0.65);
+}
+
+/* TELEGRAM */
+
+.telegram-section {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 17px;
+  padding: 17px 19px;
+  border-radius: 17px;
+  border:
+    1px solid
+    rgba(69,159,224,0.13);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(31,91,132,0.09),
+      rgba(11,14,17,0.98)
+    );
+}
+
+.telegram-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  color: #62b8e8;
+  background: rgba(66,166,221,0.08);
+  font-size: 20px;
+}
+
+.telegram-content {
+  flex: 1;
+}
+
+.telegram-content > span {
+  color: #4b99c7;
+  font-size: 8px;
+  letter-spacing: 2px;
+}
+
+.telegram-content h3 {
+  margin: 5px 0;
+  font-size: 13px;
+}
+
+.telegram-content p {
+  margin: 0;
+  color: #676e78;
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+.telegram-state {
+  color: #67d990;
+  font-size: 10px;
+}
+
+.telegram-state span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: #58dc8b;
+}
+
+/* DISCLAIMER */
+
+.disclaimer {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 17px;
+  padding: 14px 16px;
+  border-radius: 13px;
+  background: rgba(216,174,69,0.025);
+  border:
+    1px solid
+    rgba(216,174,69,0.06);
+}
+
+.disclaimer strong {
+  color: #b99137;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.disclaimer span {
+  color: #606670;
+  font-size: 9px;
+  line-height: 1.9;
+}
+
+.page-footer {
+  padding: 20px 0 10px;
+  text-align: center;
+  color: #3f434a;
+  font-size: 8px;
+  letter-spacing: 2px;
+  direction: ltr;
+}
+
+/* COLORS */
+
+.success-text {
+  color: #62df90 !important;
+}
+
+.danger-text {
+  color: #f17474 !important;
+}
+
+.gold-text {
+  color: #e0b64e !important;
+}
+
+.muted-text {
+  color: #666c75 !important;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1050px) {
+
+  .signal-levels {
+    grid-template-columns:
+      repeat(3, 1fr);
   }
 
-  .topbar h1{
-    font-size:26px;
+  .signal-bottom {
+    grid-template-columns:
+      repeat(3, 1fr);
   }
 
-  .topbar p{
-    font-size:13px;
+  .signal-bottom > div:nth-child(4),
+  .signal-bottom > div:nth-child(5) {
+    border-top:
+      1px solid
+      rgba(255,255,255,0.05);
   }
 
-  .notice{
-    align-items:flex-start;
-    flex-direction:column;
+  .plan-grid {
+    grid-template-columns:
+      repeat(2, 1fr);
   }
 
-  .hero-grid,
-  .cards-3{
-    grid-template-columns:1fr;
+  .performance-grid {
+    grid-template-columns:
+      repeat(3, 1fr);
   }
 
-  .levels-grid{
-    grid-template-columns:repeat(2,1fr);
+  .settings-grid {
+    grid-template-columns:
+      repeat(2, 1fr);
   }
 
-  .level{
-    min-height:110px;
+  .risk-grid {
+    grid-template-columns: 1fr;
   }
 
-  .level b{
-    font-size:23px;
+  .risk-arrow {
+    transform: rotate(-90deg);
+    height: 15px;
   }
 
-  .stats-grid{
-    grid-template-columns:repeat(2,1fr);
+}
+
+@media (max-width: 700px) {
+
+  .ai-root {
+    padding: 10px;
   }
 
-  .tr{
-    grid-template-columns:1fr 1fr;
-    font-size:12px;
+  .ai-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
-  .tr span:nth-child(n+3){
-    display:none;
+  .header-status {
+    width: 100%;
   }
 
-  .market-current-price{
-    font-size:38px;
+  .connection,
+  .refresh-button {
+    flex: 1;
+    text-align: center;
   }
 
-  .meta-row{
-    flex-wrap:wrap;
-    justify-content:flex-start;
+  .market-top {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
   }
 
-  .top-actions{
-    justify-content:space-between;
+  .chart-container {
+    height: 390px;
+    min-height: 330px;
   }
 
-  .timeframe-bar{
-    align-items:flex-start;
-    flex-direction:column;
+  .chart-footer {
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
-  .default-timeframe{
-    margin-right:0;
+  .signal-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 18px;
   }
 
-  .chart-toolbar{
-    padding-right:14px;
-    padding-left:14px;
+  .signal-score {
+    width: 100%;
   }
 
-  .svg-chart-wrap{
-    padding-right:5px;
-    padding-left:5px;
+  .signal-levels {
+    grid-template-columns:
+      repeat(2, 1fr);
   }
 
-  .svg-chart{
-    min-height:330px;
+  .signal-bottom {
+    grid-template-columns:
+      repeat(2, 1fr);
   }
 
-  .chart-legend{
-    gap:10px;
-    padding-right:14px;
-    padding-left:14px;
+  .signal-bottom > div {
+    border-top:
+      1px solid
+      rgba(255,255,255,0.05);
   }
 
-  .chart-empty{
-    min-height:350px;
+  .plan-grid {
+    grid-template-columns: 1fr;
   }
 
-  .chart-header{
-    padding:17px;
+  .performance-grid {
+    grid-template-columns:
+      repeat(2, 1fr);
   }
 
-  .timeframe-bar{
-    padding:12px 17px;
+  .performance-bottom {
+    grid-template-columns: 1fr;
   }
 
-  .signal-strength{
-    align-items:flex-start;
-    flex-direction:column;
-    gap:6px;
+  .winrate-card {
+    justify-content: center;
   }
+
+  .history-row {
+    grid-template-columns:
+      1fr 1fr;
+  }
+
+  .history-result {
+    text-align: right;
+  }
+
+  .telegram-section {
+    align-items: flex-start;
+  }
+
+}
+
+@media (max-width: 430px) {
+
+  .brand-icon {
+    width: 43px;
+    height: 43px;
+  }
+
+  .ai-header h1 {
+    font-size: 21px;
+  }
+
+  .timeframes {
+    overflow-x: auto;
+  }
+
+  .timeframe {
+    flex: 0 0 auto;
+  }
+
+  .chart-container {
+    height: 330px;
+  }
+
+  .signal-levels {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .signal-bottom {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .performance-grid {
+    grid-template-columns:
+      1fr 1fr;
+  }
+
+  .settings-grid {
+    grid-template-columns:
+      1fr 1fr;
+  }
+
+  .disclaimer {
+    flex-direction: column;
+  }
+
 }
 `;
